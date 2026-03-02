@@ -1,0 +1,12 @@
+{
+  "name": "@fitgrade/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FitGrade web dashboard — Next.js (App Router), Tailwind, shadcn/ui",
+  "scripts": {
+    "dev": "echo \"Next.js not yet installed\"",
+    "build": "echo \"Next.js not yet installed\"",
+    "lint": "echo \"ESLint not yet installed\"",
+    "test": "echo \"Jest not yet installed\""
+  }
+}

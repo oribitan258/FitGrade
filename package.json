@@ -1,0 +1,21 @@
+{
+  "name": "fitgrade",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FitGrade — PE grading & attendance system (Hebrew/RTL)",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
