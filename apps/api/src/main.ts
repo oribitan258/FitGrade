@@ -1,5 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { NestFactory, Reflector } from '@nestjs/core';
+import { ValidationPipe, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
@@ -19,6 +19,9 @@ async function bootstrap(): Promise<void> {
     origin: process.env['WEB_URL'] ?? 'http://localhost:3000',
     credentials: true,
   });
+
+  // ─── Global serializer (applies @Exclude() on every response) ────────────
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   // ─── Global validation pipe ───────────────────────────────
   app.useGlobalPipes(

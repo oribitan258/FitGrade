@@ -4,6 +4,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { GradingModule } from './grading/grading.module';
+import { AuthModule } from './auth/auth.module';
+import { ClassesModule } from './classes/classes.module';
+import { StudentsModule } from './students/students.module';
 
 @Module({
   imports: [
@@ -13,8 +16,10 @@ import { GradingModule } from './grading/grading.module';
     }),
     PrismaModule,
     GradingModule,
+    AuthModule,
+    ClassesModule,
+    StudentsModule,
     // Remaining feature modules added in subsequent phases:
-    // AuthModule, UsersModule, ClassesModule, StudentsModule,
     // ResultsModule, AttendanceModule, ExportsModule
   ],
   controllers: [AppController],
