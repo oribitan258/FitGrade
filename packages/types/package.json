@@ -2,15 +2,21 @@
   "name": "@fitgrade/types",
   "version": "0.0.0",
   "private": true,
-  "description": "FitGrade shared TypeScript types, Zod schemas, and grade utilities",
+  "description": "FitGrade shared TypeScript interfaces, Zod schemas, and grade utilities",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
   },
   "scripts": {
-    "build": "echo \"TypeScript compiler not yet installed\"",
-    "lint": "echo \"ESLint not yet installed\"",
-    "test": "echo \"Jest not yet installed\""
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.2"
   }
 }

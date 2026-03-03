@@ -1,35 +1,93 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  // shadcn/ui requires class-based dark mode toggling
+  darkMode: ['class'],
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
     './lib/**/*.{ts,tsx}',
   ],
   theme: {
+    container: {
+      center: true,
+      padding: '2rem',
+      screens: { '2xl': '1400px' },
+    },
     extend: {
-      // Custom colors for FitGrade grade labels
+      // ── shadcn/ui CSS-variable color tokens ─────────────────────────
+      // Values are defined as HSL channels in globals.css :root {}
       colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        // ── FitGrade domain colors ───────────────────────────────────
+        // Used by GradeBadge and chart axes via getHebrewGradeLabel()
         grade: {
-          excellent: '#16a34a', // מצטיין — green-600
+          excellent: '#16a34a', // מצטיין  — green-600
           good: '#2563eb',      // טוב מאוד / טוב — blue-600
-          pass: '#d97706',      // עובר — amber-600
-          fail: '#dc2626',      // נכשל — red-600
+          pass: '#d97706',      // עובר    — amber-600
+          fail: '#dc2626',      // נכשל    — red-600
         },
       },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+      // ── Animations used by shadcn/ui Accordion, Collapsible, etc. ──
+      keyframes: {
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
+        },
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
+      },
+      // ── Hebrew-first font stack ──────────────────────────────────────
       fontFamily: {
-        // Hebrew-first font stack: system fonts that render Hebrew well
-        sans: [
-          'Segoe UI',
-          'Arial',
-          'system-ui',
-          '-apple-system',
-          'sans-serif',
-        ],
+        sans: ['Segoe UI', 'Arial', 'system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },
-  plugins: [],
+  // tailwindcss-animate is required by shadcn/ui components
+  plugins: [require('tailwindcss-animate')],
 };
 
 export default config;
