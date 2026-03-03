@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { GradingModule } from './grading/grading.module';
 
 @Module({
   imports: [
@@ -11,9 +12,10 @@ import { PrismaModule } from './prisma/prisma.module';
       envFilePath: '.env',
     }),
     PrismaModule,
-    // Feature modules will be added here in subsequent phases:
+    GradingModule,
+    // Remaining feature modules added in subsequent phases:
     // AuthModule, UsersModule, ClassesModule, StudentsModule,
-    // TestsModule, ResultsModule, AttendanceModule, ExportsModule
+    // ResultsModule, AttendanceModule, ExportsModule
   ],
   controllers: [AppController],
   providers: [AppService],

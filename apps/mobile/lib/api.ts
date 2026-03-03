@@ -2,19 +2,25 @@
  * Typed fetch wrapper for all API calls from the mobile app.
  *
  * - Automatically attaches the JWT Authorization header from MMKV storage.
- * - Throws a typed ApiError on non-2xx responses.
+ * - Throws an ApiError (Error subclass) on non-2xx responses so React Query
+ *   and error boundaries receive a proper Error instance with a stack trace.
  * - On 401: clears the stored token (auth module handles redirect to /login).
  *
  * Storage integration and full error handling added in auth phase.
  * This stub establishes the module so imports resolve during scaffolding.
  */
 
+import { ApiError } from '@fitgrade/types';
+
+export type { ApiError };
+
 const API_BASE_URL = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/api';
 
-export interface ApiError {
-  statusCode: number;
-  message: string;
-  error: string;
+/** Shape of the raw JSON error body returned by the NestJS API. */
+interface RawErrorBody {
+  statusCode?: number;
+  message?: string;
+  error?: string;
 }
 
 async function request<T>(
@@ -33,16 +39,15 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as Partial<ApiError>;
-    const error: ApiError = {
-      statusCode: response.status,
-      message: body.message ?? 'שגיאה לא צפויה',
-      error: body.error ?? 'Unknown Error',
-    };
-    throw error;
+    const body = await response.json().catch(() => ({})) as RawErrorBody;
+    throw new ApiError(
+      response.status,
+      body.message ?? 'שגיאה לא צפויה',
+      body.error ?? 'Unknown Error',
+    );
   }
 
-  return response.json() as Promise<T>;
+  return (await response.json()) as T;
 }
 
 export const api = {

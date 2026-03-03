@@ -17,26 +17,32 @@ import { MMKV } from 'react-native-mmkv';
 
 const storage = new MMKV({ id: 'fitgrade-storage' });
 
+/** All MMKV storage keys in one place — prevents typo bugs and aids grep. */
+const STORAGE_KEYS = {
+  ACCESS_TOKEN: 'access_token',
+  LAST_CLASS_ID: 'last_class_id',
+} as const;
+
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
 export function getAccessToken(): string | undefined {
-  return storage.getString('access_token');
+  return storage.getString(STORAGE_KEYS.ACCESS_TOKEN);
 }
 
 export function setAccessToken(token: string): void {
-  storage.set('access_token', token);
+  storage.set(STORAGE_KEYS.ACCESS_TOKEN, token);
 }
 
 export function clearAccessToken(): void {
-  storage.delete('access_token');
+  storage.delete(STORAGE_KEYS.ACCESS_TOKEN);
 }
 
 // ─── Last-used class (for faster app open) ─────────────────────────────────
 
 export function getLastClassId(): string | undefined {
-  return storage.getString('last_class_id');
+  return storage.getString(STORAGE_KEYS.LAST_CLASS_ID);
 }
 
 export function setLastClassId(classId: string): void {
-  storage.set('last_class_id', classId);
+  storage.set(STORAGE_KEYS.LAST_CLASS_ID, classId);
 }

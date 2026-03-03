@@ -1,5 +1,4 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Redirect } from 'expo-router';
 import { getHebrewGradeLabel } from '@fitgrade/types';
 
 // In production this screen will redirect to (teacher) if a JWT is stored,
