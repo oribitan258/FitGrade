@@ -1,37 +1,155 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Req,
+  Res,
+  HttpCode,
+  HttpStatus,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import type { Request, Response } from 'express';
+import { AuthService } from './auth.service';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { StudentLoginDto } from './dto/student-login.dto';
+import { AuthResponseDto } from './dto/auth-response.dto';
+import { Public } from '../common/decorators/public.decorator';
+import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import type { TeacherRecord } from './auth.types';
 
-/**
- * AuthController — placeholder for Google OAuth 2.0 flow.
- *
- * Full implementation (Passport GoogleStrategy, JWT issuing, refresh tokens)
- * added in the auth phase. These stubs establish the routes so the module
- * compiles and Swagger documents the intended endpoints.
- */
+/** Refresh token cookie lifetime must match JWT_REFRESH_EXPIRES_IN (7 days). */
+const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_COOKIE_NAME = 'refresh_token';
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  // ─── Teacher Google OAuth ──────────────────────────────────────────────────
+
   /**
-   * Redirects the browser to Google's OAuth consent screen.
-   * In production: protected by @UseGuards(GoogleAuthGuard).
+   * Initiates Google OAuth consent screen redirect.
+   * GoogleAuthGuard handles the redirect — the handler body never executes.
    */
+  @Public()
   @Get('google')
+  @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Initiate Google OAuth login (teacher)' })
   @ApiResponse({ status: 302, description: 'Redirect to Google consent screen' })
-  googleLogin(): { message: string } {
-    // Passport GoogleAuthGuard will handle the redirect.
-    // Returning a placeholder until the guard is added.
-    return { message: 'Google OAuth not yet configured' };
+  googleLogin(): void {
+    // Passport handles the redirect before reaching here.
   }
 
   /**
-   * Google OAuth callback — exchanges code for tokens, issues JWT.
-   * In production: protected by @UseGuards(GoogleAuthGuard).
+   * Google callback — exchanges auth code, upserts teacher, issues JWT pair.
+   * Stores refresh token in httpOnly cookie; returns access token in body.
    */
+  @Public()
   @Get('google/callback')
-  @ApiOperation({ summary: 'Google OAuth callback' })
-  @ApiResponse({ status: 200, description: 'JWT issued, redirect to dashboard' })
-  googleCallback(): { message: string } {
-    return { message: 'Google OAuth callback not yet configured' };
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Google OAuth callback — issues JWT pair' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'OAuth failed' })
+  async googleCallback(
+    @Req() req: Request & { user: TeacherRecord },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
+    const payload: JwtPayload = { sub: req.user.id, role: 'TEACHER' };
+    const { accessToken, refreshToken } = await this.authService.issueTokenPair(payload);
+    this.setRefreshCookie(res, refreshToken);
+    return { accessToken };
+  }
+
+  // ─── Student login ─────────────────────────────────────────────────────────
+
+  /**
+   * Student credential login: classCode + studentCode + password.
+   * Issues a read-only JWT scoped to the student's class.
+   */
+  @Public()
+  @Post('student')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Student login (class code + student code + password)' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  async studentLogin(
+    @Body() dto: StudentLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
+    const student = await this.authService.validateStudentLogin(
+      dto.classCode,
+      dto.studentCode,
+      dto.password,
+    );
+    const payload: JwtPayload = {
+      sub: student.studentId,
+      role: 'STUDENT',
+      classId: student.classId,
+    };
+    const { accessToken, refreshToken } = await this.authService.issueTokenPair(payload);
+    this.setRefreshCookie(res, refreshToken);
+    return { accessToken };
+  }
+
+  // ─── Token refresh ─────────────────────────────────────────────────────────
+
+  /**
+   * Exchanges the httpOnly refresh token cookie for a new access token.
+   * No request body needed — the cookie is read automatically.
+   */
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using httpOnly cookie' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Missing, invalid, or expired refresh token' })
+  async refresh(
+    @Req() req: Request & { cookies: Record<string, string> },
+  ): Promise<AuthResponseDto> {
+    const token = req.cookies[REFRESH_COOKIE_NAME];
+    if (token === undefined || token === '') {
+      throw new UnauthorizedException('טוקן רענון חסר');
+    }
+    const accessToken = await this.authService.refreshAccessToken(token);
+    return { accessToken };
+  }
+
+  // ─── Logout ───────────────────────────────────────────────────────────────
+
+  /**
+   * Clears the refresh token cookie.
+   * Marked @Public() — clearing a cookie is safe regardless of auth state,
+   * and allows logout even when the access token has already expired.
+   */
+  @Public()
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout — clears refresh token cookie' })
+  @ApiResponse({ status: 204, description: 'Logged out' })
+  logout(@Res({ passthrough: true }) res: Response): void {
+    res.clearCookie(REFRESH_COOKIE_NAME);
+  }
+
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private setRefreshCookie(res: Response, token: string): void {
+    res.cookie(REFRESH_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env['NODE_ENV'] === 'production',
+      maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+      path: '/',
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -7,6 +8,7 @@ import { GradingModule } from './grading/grading.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassesModule } from './classes/classes.module';
 import { StudentsModule } from './students/students.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -23,6 +25,18 @@ import { StudentsModule } from './students/students.module';
     // ResultsModule, AttendanceModule, ExportsModule
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    /**
+     * Register JwtAuthGuard globally so every route is protected by default.
+     * Routes that must be public (auth, health check) use @Public() to opt out.
+     * This must be in AppModule (not AuthModule) so the Reflector DI token
+     * resolves correctly before route metadata is read.
+     */
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+  ],
 })
 export class AppModule {}
