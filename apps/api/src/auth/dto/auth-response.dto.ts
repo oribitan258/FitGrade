@@ -10,5 +10,5 @@ export class AuthResponseDto {
     description: 'Short-lived JWT access token (15 min). Include as Authorization: Bearer <token>.',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
-  accessToken: string;
+  accessToken!: string;
 }

@@ -8,6 +8,8 @@ import { GradingModule } from './grading/grading.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassesModule } from './classes/classes.module';
 import { StudentsModule } from './students/students.module';
+import { TestsModule } from './tests/tests.module';
+import { AttendanceModule } from './attendance/attendance.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -21,8 +23,10 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     AuthModule,
     ClassesModule,
     StudentsModule,
+    TestsModule,
+    AttendanceModule,
     // Remaining feature modules added in subsequent phases:
-    // ResultsModule, AttendanceModule, ExportsModule
+    // ExportsModule
   ],
   controllers: [AppController],
   providers: [

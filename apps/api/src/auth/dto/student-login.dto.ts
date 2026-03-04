@@ -6,16 +6,16 @@ export class StudentLoginDto {
   @ApiProperty({ example: 'AB3X7Q' })
   @IsString()
   @IsNotEmpty()
-  classCode: string;
+  classCode!: string;
 
   /** The student's assigned code within the class. */
   @ApiProperty({ example: '301' })
   @IsString()
   @IsNotEmpty()
-  studentCode: string;
+  studentCode!: string;
 
   @ApiProperty({ example: 'myPassword123' })
   @IsString()
   @IsNotEmpty()
-  password: string;
+  password!: string;
 }

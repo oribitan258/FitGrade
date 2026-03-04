@@ -7,23 +7,23 @@ import { Gender } from '@prisma/client';
  */
 export class StudentResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'ישראל' })
-  firstName: string;
+  firstName!: string;
 
   @ApiProperty({ example: 'ישראלי' })
-  lastName: string;
+  lastName!: string;
 
   @ApiProperty({ example: '301' })
-  studentCode: string;
+  studentCode!: string;
 
   @ApiProperty({ enum: Gender, enumName: 'Gender' })
-  gender: Gender;
+  gender!: Gender;
 
   @ApiProperty()
-  dateOfBirth: Date;
+  dateOfBirth!: Date;
 
   @ApiProperty()
-  createdAt: Date;
+  createdAt!: Date;
 }

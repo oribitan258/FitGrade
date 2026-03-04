@@ -13,12 +13,12 @@ export class CreateStudentDto {
   @ApiProperty({ example: 'ישראל' })
   @IsString()
   @IsNotEmpty()
-  firstName: string;
+  firstName!: string;
 
   @ApiProperty({ example: 'ישראלי' })
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  lastName!: string;
 
   /**
    * ISO 8601 date string (e.g. "2009-03-15").
@@ -26,11 +26,11 @@ export class CreateStudentDto {
    */
   @ApiProperty({ example: '2009-03-15' })
   @IsDateString()
-  dateOfBirth: string;
+  dateOfBirth!: string;
 
   @ApiProperty({ enum: Gender, enumName: 'Gender', example: Gender.MALE })
   @IsEnum(Gender)
-  gender: Gender;
+  gender!: Gender;
 
   /**
    * Teacher-assigned student code — unique within the class (enforced
@@ -40,11 +40,11 @@ export class CreateStudentDto {
   @IsString()
   @MinLength(2)
   @MaxLength(10)
-  studentCode: string;
+  studentCode!: string;
 
   /** Initial password chosen by or assigned to the student. Minimum 8 characters. */
   @ApiProperty({ example: 'securePass1', minLength: 8 })
   @IsString()
   @MinLength(8)
-  password: string;
+  password!: string;
 }
