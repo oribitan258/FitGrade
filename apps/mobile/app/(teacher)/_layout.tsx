@@ -25,6 +25,12 @@ export default function TeacherLayout(): React.JSX.Element {
           headerShown: false, // Custom header rendered inside the screen
         }}
       />
+      <Stack.Screen
+        name="session/[sessionId]"
+        options={{
+          headerShown: false, // Custom header rendered inside the screen
+        }}
+      />
     </Stack>
   );
 }
