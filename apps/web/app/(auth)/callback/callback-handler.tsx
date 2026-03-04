@@ -17,7 +17,7 @@ export function CallbackHandler(): null {
     const token = searchParams.get('token');
     if (token !== null && token !== '') {
       setToken(token);
-      router.replace('/dashboard');
+      router.replace('/classes');
     } else {
       router.replace('/login');
     }
