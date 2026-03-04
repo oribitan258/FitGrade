@@ -16,6 +16,7 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
@@ -32,7 +33,10 @@ const REFRESH_COOKIE_NAME = 'refresh_token';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // ─── Teacher Google OAuth ──────────────────────────────────────────────────
 
@@ -51,22 +55,24 @@ export class AuthController {
 
   /**
    * Google callback — exchanges auth code, upserts teacher, issues JWT pair.
-   * Stores refresh token in httpOnly cookie; returns access token in body.
+   * Stores refresh token in httpOnly cookie; redirects browser to the web app
+   * at /auth/callback?token=<accessToken> so the client can store the token.
    */
   @Public()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Google OAuth callback — issues JWT pair' })
-  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiOperation({ summary: 'Google OAuth callback — redirects to web app with access token' })
+  @ApiResponse({ status: 302, description: 'Redirect to web app /auth/callback?token=...' })
   @ApiResponse({ status: 401, description: 'OAuth failed' })
   async googleCallback(
     @Req() req: Request & { user: TeacherRecord },
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AuthResponseDto> {
+    @Res() res: Response,
+  ): Promise<void> {
     const payload: JwtPayload = { sub: req.user.id, role: 'TEACHER' };
     const { accessToken, refreshToken } = await this.authService.issueTokenPair(payload);
     this.setRefreshCookie(res, refreshToken);
-    return { accessToken };
+    const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
+    res.redirect(`${webUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
   }
 
   // ─── Student login ─────────────────────────────────────────────────────────
