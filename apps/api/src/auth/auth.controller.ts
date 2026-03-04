@@ -30,6 +30,14 @@ import type { TeacherRecord } from './auth.types';
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_COOKIE_NAME = 'refresh_token';
 
+/**
+ * Short-lived cookie set before mobile OAuth to indicate the callback should
+ * redirect to the app's deep-link scheme instead of the web app URL.
+ * TTL covers the maximum expected OAuth round-trip (5 minutes).
+ */
+const MOBILE_AUTH_COOKIE = 'fitgrade_mobile_auth';
+const MOBILE_AUTH_COOKIE_TTL_MS = 5 * 60 * 1000;
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -54,25 +62,58 @@ export class AuthController {
   }
 
   /**
+   * Mobile app entry point for Google OAuth.
+   * Sets a short-lived httpOnly cookie to flag this as a mobile-initiated flow,
+   * then redirects to the standard Google OAuth route. The callback uses the
+   * cookie to redirect to the app's deep-link scheme (fitgrade://) instead of
+   * the web app URL, so expo-web-browser can intercept and return the token.
+   */
+  @Public()
+  @Get('google/mobile')
+  @ApiOperation({ summary: 'Initiate Google OAuth login from the mobile app' })
+  @ApiResponse({ status: 302, description: 'Redirect to Google consent screen via /auth/google' })
+  googleMobileLogin(@Res() res: Response): void {
+    res.cookie(MOBILE_AUTH_COOKIE, '1', {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env['NODE_ENV'] === 'production',
+      maxAge: MOBILE_AUTH_COOKIE_TTL_MS,
+      path: '/api/auth',
+    });
+    res.redirect('/api/auth/google');
+  }
+
+  /**
    * Google callback — exchanges auth code, upserts teacher, issues JWT pair.
-   * Stores refresh token in httpOnly cookie; redirects browser to the web app
-   * at /auth/callback?token=<accessToken> so the client can store the token.
+   * Stores refresh token in httpOnly cookie; redirects browser to either:
+   *   - The web app at /auth/callback?token=... (standard web flow), OR
+   *   - The mobile deep-link fitgrade://auth/callback?token=... (mobile flow,
+   *     detected via the MOBILE_AUTH_COOKIE set by googleMobileLogin).
    */
   @Public()
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  @ApiOperation({ summary: 'Google OAuth callback — redirects to web app with access token' })
-  @ApiResponse({ status: 302, description: 'Redirect to web app /auth/callback?token=...' })
+  @ApiOperation({ summary: 'Google OAuth callback — redirects to web app or mobile app with access token' })
+  @ApiResponse({ status: 302, description: 'Redirect to /auth/callback?token=... (web) or fitgrade://auth/callback?token=... (mobile)' })
   @ApiResponse({ status: 401, description: 'OAuth failed' })
   async googleCallback(
-    @Req() req: Request & { user: TeacherRecord },
+    @Req() req: Request & { user: TeacherRecord; cookies: Record<string, string> },
     @Res() res: Response,
   ): Promise<void> {
     const payload: JwtPayload = { sub: req.user.id, role: 'TEACHER' };
     const { accessToken, refreshToken } = await this.authService.issueTokenPair(payload);
     this.setRefreshCookie(res, refreshToken);
-    const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
-    res.redirect(`${webUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
+
+    const isMobile = req.cookies[MOBILE_AUTH_COOKIE] === '1';
+    res.clearCookie(MOBILE_AUTH_COOKIE, { path: '/api/auth' });
+
+    if (isMobile) {
+      const mobileScheme = this.configService.get<string>('MOBILE_SCHEME', 'fitgrade://');
+      res.redirect(`${mobileScheme}auth/callback?token=${encodeURIComponent(accessToken)}`);
+    } else {
+      const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
+      res.redirect(`${webUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
+    }
   }
 
   // ─── Student login ─────────────────────────────────────────────────────────

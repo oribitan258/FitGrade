@@ -1,6 +1,7 @@
 import { I18nManager } from 'react-native';
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // ─── RTL enforcement — MUST be the first code that runs ──────────────────────
 //
@@ -18,20 +19,29 @@ I18nManager.allowRTL(true);
 I18nManager.forceRTL(true);
 // ─────────────────────────────────────────────────────────────────────────────
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 30 * 1000, // 30 seconds
+    },
+  },
+});
+
 export default function RootLayout(): React.JSX.Element {
   useEffect(() => {
     // Re-assert on mount in case a hot reload partially reset the flag.
-    // The module-level calls above handle the first render; this handles
-    // edge cases during development fast-refresh cycles.
     I18nManager.allowRTL(true);
     I18nManager.forceRTL(true);
   }, []);
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(teacher)" />
-    </Stack>
+    <QueryClientProvider client={queryClient}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="(teacher)" />
+      </Stack>
+    </QueryClientProvider>
   );
 }

@@ -5,12 +5,10 @@
  * - Throws an ApiError (Error subclass) on non-2xx responses so React Query
  *   and error boundaries receive a proper Error instance with a stack trace.
  * - On 401: clears the stored token (auth module handles redirect to /login).
- *
- * Storage integration and full error handling added in auth phase.
- * This stub establishes the module so imports resolve during scaffolding.
  */
 
 import { ApiError } from '@fitgrade/types';
+import { getAccessToken, clearAccessToken } from './storage';
 
 export type { ApiError };
 
@@ -23,23 +21,23 @@ interface RawErrorBody {
   error?: string;
 }
 
-async function request<T>(
-  path: string,
-  options?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  const token = getAccessToken();
 
-  // TODO (auth phase): read JWT from MMKV storage and attach as Bearer token
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> | undefined),
+    ...(token !== undefined ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const response = await fetch(url, { ...options, headers });
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as RawErrorBody;
+    if (response.status === 401) {
+      clearAccessToken();
+    }
+    const body = (await response.json().catch(() => ({}))) as RawErrorBody;
     throw new ApiError(
       response.status,
       body.message ?? 'שגיאה לא צפויה',
@@ -47,6 +45,7 @@ async function request<T>(
     );
   }
 
+  if (response.status === 204) return undefined as unknown as T;
   return (await response.json()) as T;
 }
 
@@ -55,16 +54,10 @@ export const api = {
     request<T>(path, { method: 'GET' }),
 
   post: <T>(path: string, body: unknown): Promise<T> =>
-    request<T>(path, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
 
   patch: <T>(path: string, body: unknown): Promise<T> =>
-    request<T>(path, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
 
   delete: <T>(path: string): Promise<T> =>
     request<T>(path, { method: 'DELETE' }),

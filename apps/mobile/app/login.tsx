@@ -1,11 +1,104 @@
-// Placeholder — Teacher Google OAuth login screen.
-// Full implementation added in auth phase.
-import { View, Text, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { setAccessToken } from '../lib/storage';
+import { ApiError } from '@fitgrade/types';
+import { COLORS, FONT_SIZE_BODY, FONT_SIZE_BUTTON, MIN_TOUCH_TARGET } from '../constants/ui';
 
+const API_BASE = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/api';
+
+/**
+ * Teacher Google OAuth login screen.
+ *
+ * Flow:
+ * 1. Tap "כניסה עם Google" → WebBrowser.openAuthSessionAsync opens an in-app browser.
+ * 2. Browser navigates to GET /api/auth/google/mobile on the backend, which sets
+ *    a short-lived cookie and redirects to the standard Google OAuth route.
+ * 3. After Google auth, the backend callback detects the cookie and redirects to
+ *    fitgrade://auth/callback?token=<accessToken>.
+ * 4. The OS intercepts the fitgrade:// deep-link scheme, closes the browser, and
+ *    openAuthSessionAsync returns with the redirect URL.
+ * 5. App parses the token, stores it in MMKV, and navigates to the teacher dashboard.
+ */
 export default function LoginScreen(): React.JSX.Element {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function handleGoogleLogin(): Promise<void> {
+    setLoading(true);
+    try {
+      // The redirect URL uses the app's registered deep-link scheme (app.json: "scheme": "fitgrade")
+      const redirectUrl = Linking.createURL('auth/callback');
+      const result = await WebBrowser.openAuthSessionAsync(
+        `${API_BASE}/auth/google/mobile`,
+        redirectUrl,
+      );
+
+      if (result.type === 'success') {
+        const parsed = Linking.parse(result.url);
+        const token = parsed.queryParams?.['token'];
+        if (typeof token === 'string' && token !== '') {
+          setAccessToken(token);
+          router.replace('/(teacher)');
+        } else {
+          Alert.alert('שגיאה', 'לא התקבל טוקן מהשרת — נסה שוב');
+        }
+      } else if (result.type === 'cancel') {
+        // User closed the browser — no error shown, just re-enable the button
+      } else {
+        Alert.alert('שגיאה', 'הכניסה נכשלה — נסה שוב');
+      }
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : 'שגיאת חיבור — בדוק את חיבור האינטרנט';
+      Alert.alert('שגיאת כניסה', message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>כניסה למערכת</Text>
+      {/* App header */}
+      <View style={styles.header}>
+        <Text style={styles.appName}>FitGrade</Text>
+        <Text style={styles.appSubtitle}>מערכת ציונים לחינוך גופני</Text>
+      </View>
+
+      {/* Login section */}
+      <View style={styles.loginSection}>
+        <Text style={styles.loginHeading}>כניסת מורים</Text>
+
+        <TouchableOpacity
+          style={[styles.googleButton, loading && styles.googleButtonDisabled]}
+          onPress={() => {
+            void handleGoogleLogin();
+          }}
+          disabled={loading}
+          accessibilityLabel="כניסה עם חשבון Google"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: loading }}
+        >
+          {loading ? (
+            <ActivityIndicator color="#ffffff" size="small" />
+          ) : (
+            <Text style={styles.googleButtonText}>כניסה עם Google</Text>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.disclaimer}>
+          כניסה מיועדת למורים בלבד. תלמידים יכנסו דרך אתר האינטרנט.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -13,17 +106,54 @@ export default function LoginScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    paddingStart: 32,
+    paddingEnd: 32,
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    paddingStart: 24,
-    paddingEnd: 24,
   },
-  title: {
-    fontSize: 24,
+  header: {
+    marginBottom: 64,
+  },
+  appName: {
+    fontSize: 38,
     fontWeight: 'bold',
     textAlign: 'right',
-    width: '100%',
-    color: '#0f172a',
+    color: COLORS.foreground,
+  },
+  appSubtitle: {
+    fontSize: FONT_SIZE_BODY,
+    textAlign: 'right',
+    color: COLORS.muted,
+    marginTop: 6,
+  },
+  loginSection: {
+    gap: 16,
+  },
+  loginHeading: {
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'right',
+    color: COLORS.foreground,
+  },
+  googleButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    minHeight: Math.max(MIN_TOUCH_TARGET, 56),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleButtonDisabled: {
+    opacity: 0.6,
+  },
+  googleButtonText: {
+    color: '#ffffff',
+    fontSize: FONT_SIZE_BUTTON,
+    fontWeight: '600',
+  },
+  disclaimer: {
+    fontSize: 13,
+    textAlign: 'right',
+    color: COLORS.muted,
+    lineHeight: 20,
   },
 });
