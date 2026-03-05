@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Gender } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Minimal student data required for grade calculation. */
 export interface StudentForGrading {
-  gender: Gender;
+  gender: string;
   dateOfBirth: Date;
 }
 
@@ -38,7 +38,7 @@ export class GradingRepository {
    */
   async findNormRow(
     testTypeId: string,
-    gender: Gender,
+    gender: string,
     age: number,
     rawValue: Prisma.Decimal,
   ): Promise<{ score: number } | null> {

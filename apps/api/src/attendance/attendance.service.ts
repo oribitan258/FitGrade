@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import type { AttendanceStatus } from '@prisma/client';
+import type { AttendanceStatus } from '../common/prisma-enums';
 import { AttendanceRepository } from './attendance.repository';
 import type { BulkAttendanceDto } from './dto/bulk-attendance.dto';
 import type { AttendanceResponseDto } from './dto/attendance-response.dto';

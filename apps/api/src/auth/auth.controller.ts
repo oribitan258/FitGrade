@@ -1,5 +1,6 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Body,
@@ -114,6 +115,29 @@ export class AuthController {
       const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
       res.redirect(`${webUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
     }
+  }
+
+  // ─── Dev bypass login (local development only) ────────────────────────────
+
+  /**
+   * Issues a teacher JWT for the seeded dummy teacher without Google OAuth.
+   * Blocked in production — safe to leave in code.
+   */
+  @Public()
+  @Post('dev-login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[DEV ONLY] Bypass Google OAuth — logs in as dummy teacher' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 403, description: 'Not available in production' })
+  async devLogin(
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto> {
+    if (process.env['NODE_ENV'] === 'production') {
+      throw new ForbiddenException('Dev login is not available in production');
+    }
+    const { accessToken, refreshToken } = await this.authService.devLogin();
+    this.setRefreshCookie(res, refreshToken);
+    return { accessToken };
   }
 
   // ─── Student login ─────────────────────────────────────────────────────────

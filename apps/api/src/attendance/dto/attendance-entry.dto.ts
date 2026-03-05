@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { AttendanceStatus } from '@prisma/client';
+import { AttendanceStatus } from '../../common/prisma-enums';
 
 export class AttendanceEntryDto {
   @ApiProperty({ description: 'ID of the student' })

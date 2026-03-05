@@ -10,7 +10,9 @@
  * norm rows, via CASCADE) before recreating them.
  */
 
-import { PrismaClient, Gender, TestInputType } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { Gender, TestInputType, Semester } from '../src/common/prisma-enums';
 
 const prisma = new PrismaClient();
 
@@ -25,7 +27,7 @@ const SCORE_FAIL = 40;
 
 /** One NormTable band: rawValue ∈ [minValue, maxValue) earns `score`. */
 interface NormBand {
-  gender: Gender;
+  gender: string;
   minAge: number;
   maxAge: number;
   minValue: string; // Decimal — pass as string for Prisma coercion
@@ -41,33 +43,33 @@ interface NormBand {
 // Age group 14–17 (typical years 9–11):
 const run2000Bands14to17: NormBand[] = [
   // MALE
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '0',   maxValue: '480',  score: SCORE_EXCELLENT },  // < 8 min
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '480', maxValue: '540',  score: SCORE_VERY_GOOD }, // 8–9 min
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '540', maxValue: '600',  score: SCORE_GOOD },      // 9–10 min
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '600', maxValue: '660',  score: SCORE_PASS },      // 10–11 min
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '660', maxValue: '9999', score: SCORE_FAIL },      // > 11 min
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '0',   maxValue: '480',  score: SCORE_EXCELLENT },  // < 8 min
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '480', maxValue: '540',  score: SCORE_VERY_GOOD }, // 8–9 min
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '540', maxValue: '600',  score: SCORE_GOOD },      // 9–10 min
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '600', maxValue: '660',  score: SCORE_PASS },      // 10–11 min
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '660', maxValue: '9999', score: SCORE_FAIL },      // > 11 min
   // FEMALE
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '0',   maxValue: '540',  score: SCORE_EXCELLENT },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '540', maxValue: '620',  score: SCORE_VERY_GOOD },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '620', maxValue: '720',  score: SCORE_GOOD },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '720', maxValue: '800',  score: SCORE_PASS },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '800', maxValue: '9999', score: SCORE_FAIL },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '0',   maxValue: '540',  score: SCORE_EXCELLENT },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '540', maxValue: '620',  score: SCORE_VERY_GOOD },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '620', maxValue: '720',  score: SCORE_GOOD },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '720', maxValue: '800',  score: SCORE_PASS },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '800', maxValue: '9999', score: SCORE_FAIL },
 ];
 
 // Age group 18–19 (upper high school / drafting age):
 const run2000Bands18to19: NormBand[] = [
   // MALE — slightly harder thresholds at this age
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '0',   maxValue: '460',  score: SCORE_EXCELLENT },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '460', maxValue: '520',  score: SCORE_VERY_GOOD },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '520', maxValue: '580',  score: SCORE_GOOD },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '580', maxValue: '640',  score: SCORE_PASS },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '640', maxValue: '9999', score: SCORE_FAIL },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '0',   maxValue: '460',  score: SCORE_EXCELLENT },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '460', maxValue: '520',  score: SCORE_VERY_GOOD },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '520', maxValue: '580',  score: SCORE_GOOD },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '580', maxValue: '640',  score: SCORE_PASS },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '640', maxValue: '9999', score: SCORE_FAIL },
   // FEMALE
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '0',   maxValue: '520',  score: SCORE_EXCELLENT },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '520', maxValue: '600',  score: SCORE_VERY_GOOD },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '600', maxValue: '700',  score: SCORE_GOOD },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '700', maxValue: '780',  score: SCORE_PASS },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '780', maxValue: '9999', score: SCORE_FAIL },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '0',   maxValue: '520',  score: SCORE_EXCELLENT },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '520', maxValue: '600',  score: SCORE_VERY_GOOD },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '600', maxValue: '700',  score: SCORE_GOOD },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '700', maxValue: '780',  score: SCORE_PASS },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '780', maxValue: '9999', score: SCORE_FAIL },
 ];
 
 // ─── Push-ups — REPS (count, higher = better) ─────────────────────────────────
@@ -77,33 +79,33 @@ const run2000Bands18to19: NormBand[] = [
 // Age group 14–17:
 const pushUpBands14to17: NormBand[] = [
   // MALE
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '0',  maxValue: '14',  score: SCORE_FAIL },
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '14', maxValue: '18',  score: SCORE_PASS },
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '18', maxValue: '25',  score: SCORE_GOOD },
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '25', maxValue: '35',  score: SCORE_VERY_GOOD },
-  { gender: 'MALE', minAge: 14, maxAge: 17, minValue: '35', maxValue: '999', score: SCORE_EXCELLENT },
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '0',  maxValue: '14',  score: SCORE_FAIL },
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '14', maxValue: '18',  score: SCORE_PASS },
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '18', maxValue: '25',  score: SCORE_GOOD },
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '25', maxValue: '35',  score: SCORE_VERY_GOOD },
+  { gender: Gender.MALE, minAge: 14, maxAge: 17, minValue: '35', maxValue: '999', score: SCORE_EXCELLENT },
   // FEMALE
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '0',  maxValue: '9',   score: SCORE_FAIL },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '9',  maxValue: '12',  score: SCORE_PASS },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '12', maxValue: '18',  score: SCORE_GOOD },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '18', maxValue: '25',  score: SCORE_VERY_GOOD },
-  { gender: 'FEMALE', minAge: 14, maxAge: 17, minValue: '25', maxValue: '999', score: SCORE_EXCELLENT },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '0',  maxValue: '9',   score: SCORE_FAIL },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '9',  maxValue: '12',  score: SCORE_PASS },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '12', maxValue: '18',  score: SCORE_GOOD },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '18', maxValue: '25',  score: SCORE_VERY_GOOD },
+  { gender: Gender.FEMALE, minAge: 14, maxAge: 17, minValue: '25', maxValue: '999', score: SCORE_EXCELLENT },
 ];
 
 // Age group 18–19:
 const pushUpBands18to19: NormBand[] = [
   // MALE
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '0',  maxValue: '16',  score: SCORE_FAIL },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '16', maxValue: '20',  score: SCORE_PASS },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '20', maxValue: '28',  score: SCORE_GOOD },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '28', maxValue: '38',  score: SCORE_VERY_GOOD },
-  { gender: 'MALE', minAge: 18, maxAge: 19, minValue: '38', maxValue: '999', score: SCORE_EXCELLENT },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '0',  maxValue: '16',  score: SCORE_FAIL },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '16', maxValue: '20',  score: SCORE_PASS },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '20', maxValue: '28',  score: SCORE_GOOD },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '28', maxValue: '38',  score: SCORE_VERY_GOOD },
+  { gender: Gender.MALE, minAge: 18, maxAge: 19, minValue: '38', maxValue: '999', score: SCORE_EXCELLENT },
   // FEMALE
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '0',  maxValue: '10',  score: SCORE_FAIL },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '10', maxValue: '14',  score: SCORE_PASS },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '14', maxValue: '20',  score: SCORE_GOOD },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '20', maxValue: '28',  score: SCORE_VERY_GOOD },
-  { gender: 'FEMALE', minAge: 18, maxAge: 19, minValue: '28', maxValue: '999', score: SCORE_EXCELLENT },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '0',  maxValue: '10',  score: SCORE_FAIL },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '10', maxValue: '14',  score: SCORE_PASS },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '14', maxValue: '20',  score: SCORE_GOOD },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '20', maxValue: '28',  score: SCORE_VERY_GOOD },
+  { gender: Gender.FEMALE, minAge: 18, maxAge: 19, minValue: '28', maxValue: '999', score: SCORE_EXCELLENT },
 ];
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -158,6 +160,72 @@ async function main(): Promise<void> {
   );
 
   console.log('Seeding complete.');
+
+  // ─── Dev login data ─────────────────────────────────────────────────────────
+  console.log('\nSeeding dev login data...');
+
+  // Cleanup: remove existing dev class (and its enrollments) then teacher
+  const existingDevClass = await prisma.class.findFirst({
+    where: { joinCode: 'CLASS10' },
+    select: { id: true, enrollments: { select: { studentId: true } } },
+  });
+  if (existingDevClass) {
+    const studentIds = existingDevClass.enrollments.map((e) => e.studentId);
+    await prisma.classEnrollment.deleteMany({ where: { classId: existingDevClass.id } });
+    await prisma.class.delete({ where: { id: existingDevClass.id } });
+    if (studentIds.length > 0) {
+      await prisma.student.deleteMany({ where: { id: { in: studentIds } } });
+    }
+  }
+  await prisma.user.deleteMany({ where: { email: 'teacher@test.com' } });
+
+  // Create dev teacher (googleId is a placeholder — dev-login bypasses OAuth)
+  const devTeacher = await prisma.user.create({
+    data: {
+      email: 'teacher@test.com',
+      name: 'מורה לבדיקות',
+      googleId: 'dev-google-id-do-not-use-in-prod',
+      avatarUrl: null,
+    },
+    select: { id: true },
+  });
+  console.log(`Created dev teacher: id=${devTeacher.id}`);
+
+  // Create dev class belonging to the dev teacher
+  const devClass = await prisma.class.create({
+    data: {
+      name: "כיתה י' 1",
+      academicYear: '2024-2025',
+      semester: Semester.A,
+      joinCode: 'CLASS10',
+      joinCodeExpiresAt: new Date('2099-12-31'),
+      teacherId: devTeacher.id,
+    },
+    select: { id: true },
+  });
+  console.log(`Created dev class: id=${devClass.id} joinCode=CLASS10`);
+
+  // Create dev student with bcrypt-hashed password
+  const passwordHash = await bcrypt.hash('password123', 10);
+  const devStudent = await prisma.student.create({
+    data: {
+      firstName: 'תלמיד',
+      lastName: 'בדיקות',
+      dateOfBirth: new Date('2008-06-15'), // ~16 years old
+      gender: Gender.MALE,
+      studentCode: '12345',
+      passwordHash,
+    },
+    select: { id: true },
+  });
+  console.log(`Created dev student: id=${devStudent.id} studentCode=12345`);
+
+  // Enroll dev student in dev class
+  await prisma.classEnrollment.create({
+    data: { classId: devClass.id, studentId: devStudent.id },
+  });
+  console.log('Enrolled dev student in dev class.');
+  console.log('Dev login data seeding complete.');
 }
 
 main()

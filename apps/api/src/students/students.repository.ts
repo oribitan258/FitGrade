@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Gender, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StudentResponseDto } from './dto/student-response.dto';
 
@@ -11,7 +11,7 @@ export interface CreateStudentInput {
   firstName: string;
   lastName: string;
   dateOfBirth: Date;
-  gender: Gender;
+  gender: string;
   studentCode: string;
   passwordHash: string; // pre-hashed by StudentsService
 }

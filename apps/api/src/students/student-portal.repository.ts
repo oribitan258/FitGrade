@@ -31,7 +31,7 @@ export class StudentPortalRepository {
       total: records.length,
       records: records.map((r) => ({
         date: r.date.toISOString().split('T')[0]!,
-        status: r.status,
+        status: r.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
       })),
     };
   }

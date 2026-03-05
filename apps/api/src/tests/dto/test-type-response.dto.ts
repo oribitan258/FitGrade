@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TestInputType } from '@prisma/client';
 
 export class TestTypeResponseDto {
   @ApiProperty()
@@ -11,8 +10,8 @@ export class TestTypeResponseDto {
   @ApiPropertyOptional({ nullable: true })
   descriptionHe!: string | null;
 
-  @ApiProperty({ enum: TestInputType })
-  inputType!: TestInputType;
+  @ApiProperty()
+  inputType!: string;
 
   @ApiPropertyOptional({ nullable: true, description: 'Unit label in Hebrew, e.g. "שניות"' })
   unit!: string | null;

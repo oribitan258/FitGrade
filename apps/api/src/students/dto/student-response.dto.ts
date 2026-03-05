@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Gender } from '@prisma/client';
 
 /**
  * Shape returned for every student response.
@@ -18,8 +17,8 @@ export class StudentResponseDto {
   @ApiProperty({ example: '301' })
   studentCode!: string;
 
-  @ApiProperty({ enum: Gender, enumName: 'Gender' })
-  gender!: Gender;
+  @ApiProperty()
+  gender!: string;
 
   @ApiProperty()
   dateOfBirth!: Date;

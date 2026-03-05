@@ -3,52 +3,15 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────
-// ENUMS
+// NOTE: SQLite does not support native enums.
+// All enum-typed fields use String.
+// TypeScript enum constants live in src/common/prisma-enums.ts
 // ─────────────────────────────────────────────
-
-enum Role {
-  TEACHER
-  STUDENT
-}
-
-enum Gender {
-  MALE
-  FEMALE
-  OTHER
-}
-
-enum Semester {
-  A
-  B
-}
-
-enum TestInputType {
-  TIME      // Value in seconds (e.g., 1-mile run)
-  REPS      // Integer count (e.g., push-ups)
-  PASS_FAIL // Boolean — score is 100 (pass) or 0 (fail)
-  GENERAL   // Arbitrary decimal (e.g., flexibility in cm)
-}
-
-enum AttendanceStatus {
-  PRESENT
-  ABSENT
-  LATE
-  EXCUSED
-}
-
-enum AuditAction {
-  GRADE_OVERRIDE    // Teacher manually overrides calculated grade
-  GRADE_ENTRY       // Initial grade entry
-  RESULT_EDIT       // Editing a previously entered raw value
-  ATTENDANCE_CHANGE // Changing attendance status
-  STUDENT_ENROLLED  // Student added to class
-  STUDENT_REMOVED   // Student removed from class
-}
 
 // ─────────────────────────────────────────────
 // TEACHER (Google OAuth)
@@ -77,7 +40,7 @@ model Class {
   id                String    @id @default(cuid())
   name              String // e.g., "כיתה י' 1"
   academicYear      String // e.g., "2024-2025"
-  semester          Semester
+  semester          String // "A" | "B"
   joinCode          String    @unique // 6-char alphanumeric
   joinCodeExpiresAt DateTime? // null = never expires
   createdAt         DateTime  @default(now())
@@ -103,7 +66,7 @@ model Student {
   firstName    String
   lastName     String
   dateOfBirth  DateTime // Used for age-based norm table lookup
-  gender       Gender
+  gender       String // "MALE" | "FEMALE" | "OTHER"
   studentCode  String // Teacher-assigned code (unique per class, enforced in service layer)
   passwordHash String // bcrypt hash
   createdAt    DateTime @default(now())
@@ -130,8 +93,6 @@ model ClassEnrollment {
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  // studentCode uniqueness within a class is enforced at the service layer,
-  // not here, because studentCode is a field on Student, not on this join table.
   @@unique([classId, studentId])
   @@index([classId])
   @@index([studentId])
@@ -143,13 +104,13 @@ model ClassEnrollment {
 // ─────────────────────────────────────────────
 
 model FitnessTestType {
-  id            String        @id @default(cuid())
+  id            String   @id @default(cuid())
   nameHe        String // Hebrew name, e.g., "ריצה 1 ק\"מ"
   descriptionHe String? // Optional Hebrew description
-  inputType     TestInputType
+  inputType     String // "TIME" | "REPS" | "PASS_FAIL" | "GENERAL"
   unit          String? // e.g., "שניות", "חזרות", "ס\"מ"
-  isGlobal      Boolean       @default(true) // true = system-seeded
-  createdAt     DateTime      @default(now())
+  isGlobal      Boolean  @default(true) // true = system-seeded
+  createdAt     DateTime @default(now())
 
   normTables NormTable[]
   sessions   TestSession[]
@@ -160,13 +121,10 @@ model FitnessTestType {
 // ─────────────────────────────────────────────
 // NORM TABLES (System-seeded, read-only)
 // ─────────────────────────────────────────────
-// One row = one grade band for a specific (testType, gender, age range, raw value range).
-// Score (0–100) maps to Hebrew label via getHebrewGradeLabel() in packages/types.
-// ─────────────────────────────────────────────
 
 model NormTable {
   id       String  @id @default(cuid())
-  gender   Gender
+  gender   String // "MALE" | "FEMALE" | "OTHER"
   minAge   Int // Minimum age in years (inclusive)
   maxAge   Int // Maximum age in years (inclusive)
   minValue Decimal // Raw value lower bound (inclusive)
@@ -223,7 +181,6 @@ model TestResult {
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  // Effective grade = gradeOverride ?? calculatedGrade (resolved in service layer)
   @@unique([sessionId, studentId])
   @@index([studentId])
   @@map("test_results")
@@ -234,12 +191,12 @@ model TestResult {
 // ─────────────────────────────────────────────
 
 model AttendanceRecord {
-  id        String           @id @default(cuid())
-  date      DateTime         @db.Date
-  status    AttendanceStatus @default(PRESENT)
+  id        String   @id @default(cuid())
+  date      DateTime
+  status    String   @default("PRESENT") // "PRESENT" | "ABSENT" | "LATE" | "EXCUSED"
   notes     String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   classId String
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
@@ -260,13 +217,13 @@ model AttendanceRecord {
 // ─────────────────────────────────────────────
 
 model AuditLog {
-  id         String      @id @default(cuid())
-  action     AuditAction
+  id         String   @id @default(cuid())
+  action     String // "GRADE_OVERRIDE" | "GRADE_ENTRY" | "RESULT_EDIT" | "ATTENDANCE_CHANGE" | "STUDENT_ENROLLED" | "STUDENT_REMOVED"
   entityType String // "TestResult" | "AttendanceRecord" | "ClassEnrollment"
   entityId   String // ID of the affected record
-  oldValue   Json? // Snapshot before change
-  newValue   Json? // Snapshot after change
-  createdAt  DateTime    @default(now())
+  oldValue   String? // JSON snapshot before change
+  newValue   String? // JSON snapshot after change
+  createdAt  DateTime @default(now())
 
   actorId String // userId (teacher) who performed the action
   actor   User   @relation(fields: [actorId], references: [id])

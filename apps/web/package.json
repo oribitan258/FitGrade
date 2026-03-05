@@ -20,7 +20,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.3.0",
+    "framer-motion": "^12.35.0",
     "lucide-react": "^0.400.0",
     "next": "^14.2.4",
     "react": "^18.3.1",
@@ -28,6 +28,7 @@
     "react-hook-form": "^7.52.1",
     "recharts": "^2.12.7",
     "swr": "^2.2.5",
+    "tailwind-merge": "^2.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -51,10 +52,15 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "jsdom",
-    "setupFilesAfterFramework": ["@testing-library/jest-dom"],
+    "setupFilesAfterFramework": [
+      "@testing-library/jest-dom"
+    ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/$1"
     },
-    "testPathIgnorePatterns": ["<rootDir>/node_modules/", "<rootDir>/.next/"]
+    "testPathIgnorePatterns": [
+      "<rootDir>/node_modules/",
+      "<rootDir>/.next/"
+    ]
   }
 }

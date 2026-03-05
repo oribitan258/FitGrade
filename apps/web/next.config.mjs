@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // Tell Next.js webpack to transpile the TypeScript source of @fitgrade/types
   // (workspace package — no separate build step needed in development)
   transpilePackages: ['@fitgrade/types'],

@@ -7,7 +7,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Gender } from '@prisma/client';
+import { Gender } from '../../common/prisma-enums';
 
 export class CreateStudentDto {
   @ApiProperty({ example: 'ישראל' })

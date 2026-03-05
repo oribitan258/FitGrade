@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -58,6 +58,24 @@ export class AuthService {
     }
 
     return record;
+  }
+
+  // ─── Dev bypass (local development only) ──────────────────────────────────
+
+  /**
+   * Issues a teacher JWT for the seeded dummy teacher without Google OAuth.
+   * Only callable when NODE_ENV !== 'production' (enforced in the controller).
+   */
+  async devLogin(): Promise<TokenPair> {
+    const teacher = await this.authRepository.findTeacherByEmail('teacher@test.com');
+    if (!teacher) {
+      throw new NotFoundException(
+        'Dev teacher not found. Run: pnpm prisma:seed',
+      );
+    }
+    const payload: JwtPayload = { sub: teacher.id, role: 'TEACHER' };
+    this.logger.warn('Dev login used — should never happen in production');
+    return this.issueTokenPair(payload);
   }
 
   // ─── Token issuing ─────────────────────────────────────────────────────────

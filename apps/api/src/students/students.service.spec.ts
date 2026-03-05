@@ -1,6 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Gender } from '@prisma/client';
+import { Gender } from '../common/prisma-enums';
 import { StudentsService } from './students.service';
 import { StudentsRepository } from './students.repository';
 import type { StudentResponseDto } from './dto/student-response.dto';

@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Semester } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Semester } from '../common/prisma-enums';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ClassResponseDto } from './dto/class-response.dto';
 

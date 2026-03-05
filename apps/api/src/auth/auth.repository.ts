@@ -36,6 +36,16 @@ export class AuthRepository {
   }
 
   /**
+   * Finds a teacher by email — used only by the dev-login bypass endpoint.
+   */
+  async findTeacherByEmail(email: string): Promise<TeacherRecord | null> {
+    return this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+  }
+
+  /**
    * Finds the student+class record needed for credential validation.
    * Returns the passwordHash so AuthService can run bcrypt.compare.
    *

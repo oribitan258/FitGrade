@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Semester } from '@prisma/client';
 
 export class ClassResponseDto {
   @ApiProperty()
@@ -11,8 +10,8 @@ export class ClassResponseDto {
   @ApiProperty({ example: '2024-2025' })
   academicYear!: string;
 
-  @ApiProperty({ enum: Semester, enumName: 'Semester' })
-  semester!: Semester;
+  @ApiProperty()
+  semester!: string;
 
   @ApiProperty({ example: 'AB3X7Q' })
   joinCode!: string;

@@ -45,7 +45,7 @@ export default function StudentLayout({
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/20">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-50 via-indigo-50/10 to-white">
       {/* Student header */}
       <header className="sticky top-0 z-10 border-b bg-background">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
