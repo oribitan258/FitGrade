@@ -21,4 +21,7 @@ export class SessionResponseDto {
 
   @ApiPropertyOptional({ nullable: true, description: 'Server-side stopwatch start time' })
   startedAt!: Date | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Timestamp when the session was explicitly closed' })
+  completedAt!: Date | null;
 }

@@ -4,6 +4,7 @@ import { TestsRepository } from './tests.repository';
 import type { CreateSessionDto } from './dto/create-session.dto';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
+import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import type { SubmitResultDto } from './dto/submit-result.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
 
@@ -38,6 +39,7 @@ export class TestsService {
       dto.testTypeId,
       dto.notes,
       dto.isStopwatch ?? false,
+      dto.conductedAt !== undefined ? new Date(dto.conductedAt) : undefined,
     );
 
     this.logger.log(
@@ -45,6 +47,61 @@ export class TestsService {
     );
 
     return session;
+  }
+
+  /**
+   * Returns full session details including enrolled students and recorded results.
+   * Verifies the session belongs to the teacher's class.
+   */
+  async getSessionWithStudents(
+    sessionId: string,
+    teacherId: string,
+  ): Promise<SessionDetailResponseDto> {
+    return this.testsRepository.findSessionWithStudents(sessionId, teacherId);
+  }
+
+  /**
+   * Sets the server-side startedAt timestamp for stopwatch sessions.
+   * Verifies session ownership before updating.
+   */
+  async startSession(
+    sessionId: string,
+    teacherId: string,
+  ): Promise<SessionResponseDto> {
+    await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+    const session = await this.testsRepository.startSession(sessionId);
+    this.logger.log(`Session started: id=${sessionId} teacher=${teacherId}`);
+    return session;
+  }
+
+  /**
+   * Marks a session as completed by setting completedAt to now.
+   * Verifies session ownership before updating.
+   */
+  async completeSession(
+    sessionId: string,
+    teacherId: string,
+  ): Promise<SessionResponseDto> {
+    await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+    const session = await this.testsRepository.completeSession(sessionId);
+    this.logger.log(`Session completed: id=${sessionId} teacher=${teacherId}`);
+    return session;
+  }
+
+  /**
+   * Deletes a single test result (undo / correction).
+   * Verifies the session belongs to the teacher's class before deleting.
+   */
+  async deleteResult(
+    sessionId: string,
+    studentId: string,
+    teacherId: string,
+  ): Promise<void> {
+    await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+    await this.testsRepository.deleteResult(sessionId, studentId);
+    this.logger.log(
+      `Result deleted: session=${sessionId} student=${studentId} teacher=${teacherId}`,
+    );
   }
 
   /**

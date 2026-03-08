@@ -1,13 +1,25 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import { AlertTriangle, ChevronRight, TrendingUp } from 'lucide-react';
 import { getHebrewGradeLabel } from '@fitgrade/types';
-import { useClass, useStudents } from '@/hooks/use-classes';
-import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from 'recharts';
+import type { ProgressPoint, StudentTestHistory } from '@fitgrade/types';
+import { useClass, useClassDetails } from '@/hooks/use-classes';
+import { useStudentProfile } from '@/hooks/use-student-profile';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  ReferenceDot,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -31,6 +43,22 @@ const STAGGER = {
   show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
 };
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Ministry norm used across all tests for delta calculation. */
+const NATIONAL_NORM = 74;
+
+/**
+ * Full Israeli school-year month sequence used as the X-axis template.
+ * October (index 1) is the "baseline" data point referenced in the design spec.
+ */
+const SCHOOL_YEAR_MONTHS = [
+  "ספט'", "אוק'", "נוב'", "דצמ'", "ינו'", "פבר'", "מרץ", "אפר'", "מאי",
+] as const;
+
+/** Index of October (אוק') within SCHOOL_YEAR_MONTHS — used to anchor the default tooltip. */
+const OCT_INDEX = 1;
+
 // ─── Animated number counter ─────────────────────────────────────────────────
 
 interface AnimatedNumberProps { to: number; suffix?: string; className?: string; duration?: number }
@@ -45,79 +73,6 @@ function AnimatedNumber({ to, suffix = '', className, duration = 1.2 }: Animated
   }, [to, duration, count]);
 
   return <motion.span className={className}>{display}</motion.span>;
-}
-
-// ─── Test definitions & mock data ────────────────────────────────────────────
-
-const TEST_TYPES = [
-  { id: 'run2000',  label: "ריצת 2,000מ",  emoji: '🏃', unit: "דק'",   norm: 74 },
-  { id: 'pushups',  label: "שכיבות סמיכה", emoji: '💪', unit: "חז'",   norm: 70 },
-  { id: 'pullups',  label: "מתח מעקה",     emoji: '🏋️', unit: "חז'",   norm: 72 },
-  { id: 'flex',     label: "גמישות",        emoji: '🤸', unit: "ס\"מ", norm: 68 },
-] as const;
-
-const BASE_HISTORY: Record<string, readonly number[]> = {
-  run2000: [70, 73, 76, 74, 80, 85],
-  pushups: [62, 67, 71, 69, 75, 80],
-  pullups: [68, 72, 76, 73, 80, 84],
-  flex:    [64, 68, 72, 70, 76, 79],
-};
-
-const STUDENT_MODIFIERS = [1.02, 0.87, 1.12, 0.76, 0.97, 0.90, 1.18, 0.73, 1.06, 0.93] as const;
-
-function getStudentHistory(testId: string, studentIndex: number): number[] {
-  const base = BASE_HISTORY[testId]!;
-  const mod  = STUDENT_MODIFIERS[studentIndex % STUDENT_MODIFIERS.length]!;
-  return base.map((v) => Math.min(100, Math.max(10, Math.round(v * mod))));
-}
-
-function getLatestScore(testId: string, studentIndex: number): number {
-  const hist = getStudentHistory(testId, studentIndex);
-  return hist[hist.length - 1]!;
-}
-
-/**
- * Maps a 0-100 score to the real-world measurement teachers recorded in the field.
- * Each test has its own physical scale derived from ministry norm tables.
- */
-function getRawResult(testId: string, score: number): string {
-  switch (testId) {
-    case 'run2000': {
-      // Lower time = faster = higher score. Score 100 → 7:00 | Score 0 → 12:30
-      const totalSec = Math.round(750 - (score / 100) * 330);
-      const mm = Math.floor(totalSec / 60);
-      const ss = totalSec % 60;
-      return `${mm}:${ss.toString().padStart(2, '0')}`;
-    }
-    case 'pushups':
-      // More reps = better = higher score. Score 100 → 60 reps | Score 0 → 10 reps
-      return String(Math.round(10 + (score / 100) * 50));
-    case 'pullups':
-      // More reps = better. Score 100 → 27 reps | Score 0 → 2 reps
-      return String(Math.round(2 + (score / 100) * 25));
-    case 'flex': {
-      // cm from baseline (can be negative). Score 100 → +25 cm | Score 0 → -8 cm
-      const cm = Math.round(-8 + (score / 100) * 33);
-      return cm >= 0 ? `+${cm}` : String(cm);
-    }
-    default:
-      return String(score);
-  }
-}
-
-const MOCK_ATTENDANCE = [95, 88, 100, 75, 91, 82, 98, 70, 93, 86] as const;
-const BASE_ATTENDANCE_TREND = [80, 83, 85, 82, 88, 95] as const;
-
-function getAttendance(idx: number): number {
-  return MOCK_ATTENDANCE[idx % MOCK_ATTENDANCE.length]!;
-}
-
-function getAttendanceTrend(idx: number): { i: number; v: number }[] {
-  const mod = STUDENT_MODIFIERS[idx % STUDENT_MODIFIERS.length]!;
-  return BASE_ATTENDANCE_TREND.map((v, i) => ({
-    i,
-    v: Math.min(100, Math.max(30, Math.round(v * mod))),
-  }));
 }
 
 // ─── Fitness-level helpers ────────────────────────────────────────────────────
@@ -138,7 +93,7 @@ const LEVEL = {
   fail:      { label: 'מתחת לנורמה', bg: 'bg-red-500',     badge: 'bg-red-50     text-red-700     border-red-200',     color: '#ef4444', avatarGrad: 'from-slate-400   to-slate-600'  },
 } as const;
 
-// ─── Per-test color themes ────────────────────────────────────────────────────
+// ─── Per-test color themes (cycled by index, no hardcoded IDs) ────────────────
 
 interface NormTheme {
   readonly cardBg:      string;
@@ -151,8 +106,8 @@ interface NormTheme {
   readonly areaColor:   string;
 }
 
-const NORM_THEMES: Record<string, NormTheme> = {
-  run2000: {
+const NORM_THEME_CYCLE: NormTheme[] = [
+  {
     cardBg:      'rgba(236,253,245,0.82)',
     cardBorder:  'rgba(255,255,255,0.88)',
     cardGlow:    '0 8px 32px rgba(15,23,42,0.10)',
@@ -162,7 +117,7 @@ const NORM_THEMES: Record<string, NormTheme> = {
     accentColor: 'rgba(16,185,129,0.85)',
     areaColor:   '#10b981',
   },
-  pushups: {
+  {
     cardBg:      'rgba(255,247,237,0.82)',
     cardBorder:  'rgba(255,255,255,0.88)',
     cardGlow:    '0 8px 32px rgba(15,23,42,0.10)',
@@ -172,7 +127,7 @@ const NORM_THEMES: Record<string, NormTheme> = {
     accentColor: 'rgba(251,146,60,0.85)',
     areaColor:   '#f97316',
   },
-  pullups: {
+  {
     cardBg:      'rgba(238,242,255,0.82)',
     cardBorder:  'rgba(255,255,255,0.88)',
     cardGlow:    '0 8px 32px rgba(15,23,42,0.10)',
@@ -182,7 +137,7 @@ const NORM_THEMES: Record<string, NormTheme> = {
     accentColor: 'rgba(99,102,241,0.85)',
     areaColor:   '#6366f1',
   },
-  flex: {
+  {
     cardBg:      'rgba(245,243,255,0.82)',
     cardBorder:  'rgba(255,255,255,0.88)',
     cardGlow:    '0 8px 32px rgba(15,23,42,0.10)',
@@ -192,7 +147,7 @@ const NORM_THEMES: Record<string, NormTheme> = {
     accentColor: 'rgba(139,92,246,0.85)',
     areaColor:   '#8b5cf6',
   },
-};
+];
 
 function interpolateRGB(
   score: number,
@@ -224,7 +179,6 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
   const scoreOffset   = circumference - (score / 100) * circumference;
   const strokeColor   = interpolateRGB(score, theme.lowRGB, theme.highRGB);
 
-  // Arc draws from angle=0 (SVG right). CSS rotate-[-90deg] puts it at visual top.
   const normAngle = (norm / 100) * 2 * Math.PI;
   const normDotX  = cx + radius * Math.cos(normAngle);
   const normDotY  = cy + radius * Math.sin(normAngle);
@@ -232,9 +186,7 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
-        {/* Background track */}
         <circle cx={cx} cy={cy} r={radius} fill="none" stroke={theme.trackColor} strokeWidth={stroke} />
-        {/* Animated score arc */}
         <motion.circle
           cx={cx} cy={cy} r={radius}
           fill="none"
@@ -246,7 +198,6 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
           animate={{ strokeDashoffset: scoreOffset }}
           transition={{ ease: [0.22, 1, 0.36, 1], duration: 1.4, delay: 0.3 }}
         />
-        {/* Norm marker dot */}
         <motion.circle
           cx={normDotX} cy={normDotY} r={stroke * 0.72}
           fill="white"
@@ -257,7 +208,6 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
           transition={{ duration: 0.4, delay: 1.75 }}
         />
       </svg>
-      {/* Centre label (not rotated — outside the SVG) */}
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 pointer-events-none">
         <div style={{ color: strokeColor }} className="text-2xl font-extrabold leading-none tabular-nums">
           <AnimatedNumber to={score} duration={1.4} />
@@ -268,31 +218,24 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
   );
 }
 
-// ─── Ultimate Test Card — ring + norm delta + area sparkline in one card ───────
+// ─── Ultimate Test Card (real data — no raw-value mock) ───────────────────────
 
 interface UltimateTestCardProps {
-  testId:  string;
-  label:   string;
-  emoji:   string;
-  unit:    string;
-  score:   number;
-  norm:    number;
-  history: number[];
+  themeIndex: number;
+  label:      string;
+  unit:       string | null;
+  score:      number;
+  history:    number[];
 }
 
-function UltimateTestCard({ testId, label, emoji, unit, score, norm, history }: UltimateTestCardProps): React.JSX.Element {
-  const theme      = NORM_THEMES[testId] ?? NORM_THEMES['run2000']!;
+function UltimateTestCard({ themeIndex, label, unit, score, history }: UltimateTestCardProps): React.JSX.Element {
+  const theme      = NORM_THEME_CYCLE[themeIndex % NORM_THEME_CYCLE.length]!;
   const level      = fitnessLevel(score);
   const lv         = LEVEL[level];
-  const delta      = score - norm;
+  const delta      = score - NATIONAL_NORM;
   const gradeLabel = getHebrewGradeLabel(score);
   const areaData   = history.map((v, i) => ({ i, v }));
   const ringColor  = interpolateRGB(score, theme.lowRGB, theme.highRGB);
-
-  // Primary display: real-world measurement (time / reps / cm)
-  const rawResult  = getRawResult(testId, score);
-  // Norm in real-world units — gives teachers a concrete benchmark
-  const normRaw    = getRawResult(testId, norm);
 
   return (
     <motion.div
@@ -307,41 +250,36 @@ function UltimateTestCard({ testId, label, emoji, unit, score, norm, history }: 
         boxShadow:            theme.cardGlow,
       }}
     >
-      {/* ── Header ─────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-lg" aria-hidden="true">{emoji}</span>
-          <span className="text-sm font-bold text-slate-800">{label}</span>
-        </div>
+        <span className="text-sm font-bold text-slate-800">{label}</span>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${lv.badge}`}>
           {gradeLabel}
         </span>
       </div>
 
-      {/* ── Primary row: ring (score) + raw result hero ────────────── */}
+      {/* ── Primary row: ring + metrics ─────────────────────────────── */}
       <div className="flex items-center gap-4">
-        {/* Radial ring shows 0-100 normalised score */}
-        <NormRing score={score} norm={norm} theme={theme} size={100} stroke={8} />
+        <NormRing score={score} norm={NATIONAL_NORM} theme={theme} size={100} stroke={8} />
 
-        {/* Raw result + comparison */}
-        <div className="flex flex-1 flex-col gap-1.5 min-w-0">
-          {/* BIG raw result — what the teacher actually measured */}
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <motion.span
-              className="text-[2rem] font-black tabular-nums leading-none tracking-tight"
-              style={{ color: ringColor }}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ease: EASE, duration: 0.6, delay: 0.4 }}
-            >
-              {rawResult}
-            </motion.span>
-            <span className="text-sm font-bold" style={{ color: theme.accentColor }}>
-              {unit}
-            </span>
-          </div>
+        <div className="flex flex-1 flex-col gap-2 min-w-0">
+          {/* Grade label */}
+          <motion.span
+            className="text-2xl font-black leading-none"
+            style={{ color: ringColor }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ease: EASE, duration: 0.6, delay: 0.4 }}
+          >
+            {gradeLabel}
+          </motion.span>
 
-          {/* Delta chip — score points vs ministry norm */}
+          {/* Unit badge (if available) */}
+          {unit && (
+            <span className="text-xs font-medium text-slate-400">{unit}</span>
+          )}
+
+          {/* Delta chip */}
           <div
             className="inline-flex items-center gap-1 self-start rounded-full px-2 py-0.5 text-xs font-bold"
             style={{
@@ -355,43 +293,264 @@ function UltimateTestCard({ testId, label, emoji, unit, score, norm, history }: 
             {delta >= 0 ? '+' : ''}{delta} נק' מהנורמה
           </div>
 
-          {/* Norm in raw units */}
+          {/* Norm baseline */}
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <span
               className="inline-block h-2 w-2 rounded-full border-[1.5px] bg-white flex-shrink-0"
               style={{ borderColor: ringColor }}
             />
-            נורמה: <span className="font-semibold text-slate-600">{normRaw} {unit}</span>
+            נורמה ארצית: <span className="font-semibold text-slate-600">{NATIONAL_NORM} נק'</span>
           </div>
         </div>
       </div>
 
-      {/* ── Sparkline — personal trend ─────────────────────────────── */}
-      <div>
-        <div style={{ height: 44 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={areaData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
-              <defs>
-                <linearGradient id={`spark-${testId}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor={theme.areaColor} stopOpacity={0.40} />
-                  <stop offset="95%" stopColor={theme.areaColor} stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <Area
-                type="monotone"
-                dataKey="v"
-                stroke={theme.areaColor}
-                strokeWidth={2.5}
-                fill={`url(#spark-${testId})`}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+      {/* ── Sparkline — personal trend ──────────────────────────────── */}
+      {history.length > 1 && (
+        <div>
+          <div style={{ height: 44 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={areaData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+                <defs>
+                  <linearGradient id={`spark-${themeIndex}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={theme.areaColor} stopOpacity={0.40} />
+                    <stop offset="95%" stopColor={theme.areaColor} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="v"
+                  stroke={theme.areaColor}
+                  strokeWidth={2.5}
+                  fill={`url(#spark-${themeIndex})`}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">מגמה אישית — {history.length} מדידות</p>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1">מגמת ציון — {history.length} מדידות</p>
-      </div>
+      )}
     </motion.div>
+  );
+}
+
+// ─── Class Progress Chart ─────────────────────────────────────────────────────
+// Premium animated turquoise-emerald flowing area chart.
+
+interface ClassProgressTooltipProps {
+  active?:  boolean;
+  payload?: Array<{ dataKey: string; value: number | null; color: string }>;
+  label?:   string;
+}
+
+function ClassProgressTooltip({ active, payload, label }: ClassProgressTooltipProps): React.JSX.Element | null {
+  if (!active || !payload?.length || !label) return null;
+
+  const avgEntry  = payload.find((p) => p.dataKey === 'avg');
+  const normEntry = payload.find((p) => p.dataKey === 'norm');
+
+  if (avgEntry?.value == null) return null;
+
+  return (
+    <div
+      style={{
+        background:           'rgba(15,23,42,0.82)',
+        backdropFilter:       'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border:               '1px solid rgba(45,212,191,0.25)',
+        boxShadow:            '0 8px 32px rgba(45,212,191,0.15)',
+        borderRadius:         12,
+        padding:              '10px 14px',
+        minWidth:             140,
+        direction:            'rtl',
+      }}
+    >
+      <p className="text-[11px] font-semibold text-teal-300 mb-1.5">{label}</p>
+      {normEntry?.value != null && (
+        <p className="text-[11px] text-slate-400 mb-0.5">
+          נורמה ארצית:{' '}
+          <span className="font-bold text-slate-300">{normEntry.value}</span>
+        </p>
+      )}
+      <p className="text-[11px] text-slate-400">
+        ממוצע הכיתה:{' '}
+        <span className="font-bold text-teal-300">{avgEntry.value}</span>
+      </p>
+    </div>
+  );
+}
+
+interface ClassProgressChartProps {
+  progressData: ProgressPoint[];
+  testName:     string;
+  testUnit:     string | null;
+}
+
+function ClassProgressChart({ progressData, testName, testUnit }: ClassProgressChartProps): React.JSX.Element {
+  const gradientId = useId().replace(/:/g, '');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Merge API points into the full school-year template — gaps stay null (shown as breaks)
+  const chartData = SCHOOL_YEAR_MONTHS.map((month) => {
+    const point = progressData.find((p) => p.month === month);
+    return { month, avg: point?.classAvg ?? null, norm: NATIONAL_NORM };
+  });
+
+  // Find the October point for the ReferenceDot
+  const octPoint = chartData[OCT_INDEX];
+  const octAvg   = octPoint?.avg ?? null;
+
+  return (
+    <div className="relative">
+      {/* ── Shimmer + pulse keyframes ─────────────────────────────── */}
+      <style>{`
+        @keyframes chartShimmer {
+          0%   { transform: translateX(-120%); opacity: 0; }
+          20%  { opacity: 1; }
+          80%  { opacity: 0.8; }
+          100% { transform: translateX(220%); opacity: 0; }
+        }
+        @keyframes chartPulse {
+          0%, 100% { opacity: 1; }
+          50%      { opacity: 0.90; }
+        }
+        @keyframes areaLineFlow {
+          0%   { stroke-dashoffset: 200; }
+          100% { stroke-dashoffset: 0; }
+        }
+        .chart-pulse-wrap { animation: chartPulse 3.2s ease-in-out infinite; }
+        .shimmer-bar       { animation: chartShimmer 3.6s ease-in-out infinite; }
+        .shimmer-bar-delay { animation: chartShimmer 3.6s ease-in-out 1.8s infinite; }
+      `}</style>
+
+      {/* ── Chart container with shimmer overlay ──────────────────── */}
+      <div className="chart-pulse-wrap relative overflow-hidden rounded-xl" style={{ height: 220 }} ref={containerRef}>
+        {/* Primary shimmer sweep */}
+        <div
+          className="shimmer-bar pointer-events-none absolute inset-y-0 z-10"
+          style={{
+            width:      '45%',
+            background: 'linear-gradient(90deg, transparent, rgba(45,212,191,0.10), rgba(16,185,129,0.06), transparent)',
+          }}
+        />
+        {/* Secondary shimmer sweep (offset) */}
+        <div
+          className="shimmer-bar-delay pointer-events-none absolute inset-y-0 z-10"
+          style={{
+            width:      '30%',
+            background: 'linear-gradient(90deg, transparent, rgba(45,212,191,0.07), transparent)',
+          }}
+        />
+
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 20, right: 20, bottom: 10, left: 35 }}>
+            <defs>
+              {/* Main turquoise-emerald gradient */}
+              <linearGradient id={`grad-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#2dd4bf" stopOpacity={0.55} />
+                <stop offset="40%"  stopColor="#14b8a6" stopOpacity={0.30} />
+                <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
+              </linearGradient>
+              {/* Inner "flow line" gradient — slightly lighter, for depth */}
+              <linearGradient id={`flow-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#99f6e4" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.0} />
+              </linearGradient>
+            </defs>
+
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="rgba(148,163,184,0.12)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="month"
+              tick={{ fill: 'rgba(100,116,139,0.75)', fontSize: 11, fontWeight: 500 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              domain={[50, 100]}
+              ticks={[50, 60, 70, 80, 90, 100]}
+              tick={{ fill: 'rgba(100,116,139,0.65)', fontSize: 10 }}
+              axisLine={false}
+              tickLine={false}
+              width={32}
+            />
+            <Tooltip
+              content={<ClassProgressTooltip />}
+              cursor={{ stroke: 'rgba(45,212,191,0.25)', strokeWidth: 1.5, strokeDasharray: '4 3' }}
+            />
+
+            {/* Norm dashed baseline line */}
+            <Line
+              type="monotone"
+              dataKey="norm"
+              stroke="rgba(148,163,184,0.55)"
+              strokeWidth={1.5}
+              strokeDasharray="7 4"
+              dot={false}
+              isAnimationActive={false}
+            />
+
+            {/* Inner "glow" area — creates depth/shimmer inside the fill */}
+            <Area
+              type="monotone"
+              dataKey="avg"
+              stroke="none"
+              fill={`url(#flow-${gradientId})`}
+              connectNulls={false}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+            />
+
+            {/* Primary class-average area */}
+            <Area
+              type="monotone"
+              dataKey="avg"
+              stroke="#2dd4bf"
+              strokeWidth={2.5}
+              fill={`url(#grad-${gradientId})`}
+              connectNulls={false}
+              dot={{ fill: '#2dd4bf', r: 3, strokeWidth: 0 }}
+              activeDot={{ fill: 'white', stroke: '#2dd4bf', strokeWidth: 2.5, r: 7 }}
+              isAnimationActive={true}
+              animationDuration={2200}
+              animationEasing="ease-out"
+            />
+
+            {/* Permanent highlighted dot on אוק' (Oct) point */}
+            {octAvg !== null && (
+              <ReferenceDot
+                x={"אוק'"}
+                y={octAvg}
+                r={7}
+                fill="white"
+                stroke="#2dd4bf"
+                strokeWidth={2.5}
+              />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Legend ────────────────────────────────────────────────── */}
+      <div className="mt-3 flex items-center justify-center gap-5 text-[11px] text-slate-500" dir="rtl">
+        <div className="flex items-center gap-1.5">
+          <div className="h-2.5 w-5 rounded-sm" style={{ background: 'linear-gradient(90deg, #2dd4bf, #10b981)' }} />
+          <span className="font-medium">הכיתה</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div
+            className="h-0 w-5"
+            style={{ borderTop: '2px dashed rgba(148,163,184,0.7)' }}
+          />
+          <span className="font-medium">נורמה ארצית ---</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -405,8 +564,7 @@ const AVATAR_TINTS = [
   { bg: 'bg-cyan-100',   text: 'text-cyan-700',   ring: 'ring-cyan-300'   },
 ] as const;
 
-// ─── Semantic tinted glassmorphic bento card shells ───────────────────────────
-// Each bento card gets a distinct colour tint matching its data domain.
+// ─── Glassmorphic bento card shells ──────────────────────────────────────────
 
 const BENTO_IDENTITY_STYLE: React.CSSProperties = {
   background:           'rgba(238,242,255,0.82)',
@@ -432,78 +590,90 @@ const BENTO_FITNESS_STYLE: React.CSSProperties = {
   boxShadow:            '0 8px 32px rgba(15,23,42,0.10)',
 };
 
+const BENTO_CHART_STYLE: React.CSSProperties = {
+  background:           'rgba(14,30,54,0.72)',
+  backdropFilter:       'blur(24px)',
+  WebkitBackdropFilter: 'blur(24px)',
+  border:               '1px solid rgba(45,212,191,0.18)',
+  boxShadow:            '0 8px 40px rgba(45,212,191,0.10)',
+};
+
+// ─── Skeleton loader ──────────────────────────────────────────────────────────
+
+function StudentProfileSkeleton(): React.JSX.Element {
+  return (
+    <div className="space-y-4">
+      <div className="h-5 w-52 animate-pulse rounded-lg bg-white/70" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="h-32 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {[1, 2, 3, 4].map((n) => (
+          <div key={n} className="h-52 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
+        ))}
+      </div>
+      <div className="h-80 animate-pulse rounded-2xl bg-white/30 shadow-sm" />
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StudentProfilePage(): React.JSX.Element {
   const { classId, studentId } = useParams<{ classId: string; studentId: string }>();
 
-  const { data: cls } = useClass(classId);
-  const { data: students, isLoading, error } = useStudents(classId);
+  const { data: cls }                       = useClass(classId);
+  const { data: profile, isLoading, error } = useStudentProfile(classId, studentId);
+  const { data: classDetails }              = useClassDetails(classId);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="h-5 w-40 animate-pulse rounded-lg bg-white/70" />
-        <div className="grid grid-cols-3 gap-4">
-          {[1, 2, 3].map((n) => (
-            <div key={n} className="h-32 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="h-52 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  // Which test type's class progress to display in the chart
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
 
-  if (error || !students) {
+  // Initialise the chart tab to the first test type once details load
+  useEffect(() => {
+    if (classDetails?.testSummaries[0] && !selectedTestId) {
+      setSelectedTestId(classDetails.testSummaries[0].testTypeId);
+    }
+  }, [classDetails, selectedTestId]);
+
+  if (isLoading) return <StudentProfileSkeleton />;
+
+  if (error || !profile) {
     return (
       <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
-        לא ניתן לטעון את נתוני התלמידים — נסה לרענן את הדף.
+        לא ניתן לטעון את נתוני התלמיד — נסה לרענן את הדף.
       </div>
     );
   }
 
-  const studentIndex = students.findIndex((s) => s.id === studentId);
-  const student      = students[studentIndex];
+  // ── Derived display values ─────────────────────────────────────────────────
+  const initials = `${profile.firstName[0] ?? ''}${profile.lastName[0] ?? ''}`;
+  const charCode  = profile.firstName.charCodeAt(0) + profile.lastName.charCodeAt(0);
+  const tint      = AVATAR_TINTS[charCode % AVATAR_TINTS.length]!;
+  const dob       = new Date(profile.dateOfBirth).toLocaleDateString('he-IL');
 
-  if (!student) {
-    return (
-      <div className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-700 max-w-lg">
-        התלמיד לא נמצא. ייתכן שהקישור שגוי.
-      </div>
-    );
-  }
-
-  const idx             = studentIndex === -1 ? 0 : studentIndex;
-  const attendance      = getAttendance(idx);
-  const attendanceTrend = getAttendanceTrend(idx);
-  const initials        = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
-  const tint            = AVATAR_TINTS[idx % AVATAR_TINTS.length]!;
-  const dob             = new Date(student.dateOfBirth).toLocaleDateString('he-IL');
-
-  const testScores = TEST_TYPES.map((t) => ({
-    ...t,
-    score:   getLatestScore(t.id, idx),
-    history: getStudentHistory(t.id, idx),
-  }));
-
-  const overallAvg   = Math.round(testScores.reduce((s, t) => s + t.score, 0) / testScores.length);
-  const overallLevel = fitnessLevel(overallAvg);
+  const overallLevel = fitnessLevel(profile.overallAvg);
   const ovLv         = LEVEL[overallLevel];
 
-  const attendanceColor = attendance >= 90 ? '#10b981' : attendance >= 75 ? '#f59e0b' : '#ef4444';
+  const attendanceColor =
+    profile.attendancePct >= 90 ? '#10b981'
+    : profile.attendancePct >= 75 ? '#f59e0b'
+    : '#ef4444';
+
+  // Attendance sparkline data
+  const attendanceTrendData = profile.attendanceTrend.map((v, i) => ({ i, v }));
+
+  // ── Class progress chart data ──────────────────────────────────────────────
+  const selectedSummary = classDetails?.testSummaries.find(
+    (s) => s.testTypeId === selectedTestId,
+  );
 
   return (
-    <motion.div
-      variants={PAGE_ENTER}
-      initial="hidden"
-      animate="show"
-      className="space-y-6"
-    >
-      {/* ── Breadcrumb ───────────────────────────────────────────────── */}
+    <motion.div variants={PAGE_ENTER} initial="hidden" animate="show" className="space-y-6">
+
+      {/* ── Breadcrumb ──────────────────────────────────────────────── */}
       <motion.nav variants={ITEM} aria-label="ניווט עמודים" className="flex items-center gap-1.5 text-sm flex-wrap">
         <Link href="/classes" className="font-medium text-slate-400 hover:text-indigo-600 transition-colors">
           הכיתות שלי
@@ -513,7 +683,7 @@ export default function StudentProfilePage(): React.JSX.Element {
           {cls?.name ?? '...'}
         </Link>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
-        <span className="font-semibold text-slate-700">{student.firstName} {student.lastName}</span>
+        <span className="font-semibold text-slate-700">{profile.firstName} {profile.lastName}</span>
       </motion.nav>
 
       {/* ── 3-card bento header ──────────────────────────────────────── */}
@@ -526,7 +696,6 @@ export default function StudentProfilePage(): React.JSX.Element {
           className="relative overflow-hidden rounded-2xl p-5"
           style={BENTO_IDENTITY_STYLE}
         >
-          {/* Decorative gradient blob */}
           <div
             className={`pointer-events-none absolute -end-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br ${ovLv.avatarGrad} opacity-20 blur-2xl`}
           />
@@ -538,12 +707,11 @@ export default function StudentProfilePage(): React.JSX.Element {
               className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold ring-2 ${tint.ring} ${tint.bg} ${tint.text}`}
             >
               {initials}
-              {/* Fitness status dot */}
               <span className={`absolute -bottom-1 -end-1 h-4 w-4 rounded-full border-2 border-white ${ovLv.bg}`} />
             </motion.div>
             <div className="min-w-0">
               <h1 className="text-lg font-extrabold text-slate-900 leading-tight truncate">
-                {student.firstName} {student.lastName}
+                {profile.firstName} {profile.lastName}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">תלמיד • {dob}</p>
               <span className={`mt-2 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${ovLv.badge}`}>
@@ -568,26 +736,37 @@ export default function StudentProfilePage(): React.JSX.Element {
           <div className="relative">
             <p className="text-xs font-semibold text-slate-500 mb-1">נוכחות בשיעורים</p>
             <AnimatedNumber
-              to={attendance}
+              to={profile.attendancePct}
               suffix="%"
               duration={1.6}
               className="text-4xl font-extrabold tabular-nums"
             />
-            <div className="mt-3" style={{ height: 42 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attendanceTrend} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
-                  <Line
-                    type="monotone"
-                    dataKey="v"
-                    stroke={attendanceColor}
-                    strokeWidth={2.5}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1">מגמה — 6 שיעורים אחרונים</p>
+            {attendanceTrendData.length > 1 && (
+              <div className="mt-3" style={{ height: 42 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={attendanceTrendData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+                    <defs>
+                      <linearGradient id="att-gradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={attendanceColor} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={attendanceColor} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="v"
+                      stroke={attendanceColor}
+                      strokeWidth={2.5}
+                      fill="url(#att-gradient)"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <p className="text-[10px] text-slate-400 mt-1">
+              מגמה — {profile.attendanceTrend.length} שיעורים אחרונים
+            </p>
           </div>
         </motion.div>
 
@@ -605,7 +784,7 @@ export default function StudentProfilePage(): React.JSX.Element {
           <div className="relative">
             <p className="text-xs font-semibold text-slate-500 mb-1">ממוצע כושר כולל</p>
             <AnimatedNumber
-              to={overallAvg}
+              to={profile.overallAvg}
               duration={1.4}
               className="text-4xl font-extrabold tabular-nums text-slate-900"
             />
@@ -613,40 +792,113 @@ export default function StudentProfilePage(): React.JSX.Element {
               <span className={`inline-flex items-center gap-1.5 self-start rounded-full border px-2.5 py-1 text-xs font-bold ${ovLv.badge}`}>
                 {ovLv.label}
               </span>
-              {/* Mini progress bar */}
               <div className="relative h-2 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.06)' }}>
                 <motion.div
                   className="absolute inset-y-0 start-0 rounded-full"
                   style={{ backgroundColor: ovLv.color }}
                   initial={{ width: 0 }}
-                  animate={{ width: `${overallAvg}%` }}
+                  animate={{ width: `${profile.overallAvg}%` }}
                   transition={{ ease: EASE, duration: 1.2, delay: 0.4 }}
                 />
               </div>
-              <p className="text-[10px] text-slate-400">ממוצע מכל {testScores.length} המבחנים</p>
+              <p className="text-[10px] text-slate-400">
+                ממוצע מכל {profile.testHistories.length} המבחנים
+              </p>
             </div>
           </div>
         </motion.div>
       </motion.div>
 
-      {/* ── Ultimate test grid — one card per test, all data in one place ─ */}
-      <motion.div variants={ITEM}>
-        <h2 className="text-base font-bold text-slate-900 mb-4">ביצועים לפי מבחן — השוואה לנורמת משרד החינוך</h2>
-        <motion.div variants={STAGGER} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {testScores.map((t) => (
-            <UltimateTestCard
-              key={t.id}
-              testId={t.id}
-              label={t.label}
-              emoji={t.emoji}
-              unit={t.unit}
-              score={t.score}
-              norm={t.norm}
-              history={t.history}
-            />
-          ))}
+      {/* ── Per-test cards ───────────────────────────────────────────── */}
+      {profile.testHistories.length > 0 && (
+        <motion.div variants={ITEM}>
+          <h2 className="text-base font-bold text-slate-900 mb-4">
+            ביצועים לפי מבחן — השוואה לנורמת משרד החינוך
+          </h2>
+          <motion.div variants={STAGGER} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {profile.testHistories.map((th: StudentTestHistory, i: number) => (
+              <UltimateTestCard
+                key={th.testTypeId}
+                themeIndex={i}
+                label={th.nameHe}
+                unit={th.unit}
+                score={th.latestGrade}
+                history={th.history.map((h) => h.grade)}
+              />
+            ))}
+          </motion.div>
         </motion.div>
-      </motion.div>
+      )}
+
+      {/* ── Class Progress Chart ─────────────────────────────────────── */}
+      {classDetails && classDetails.testSummaries.length > 0 && (
+        <motion.div variants={ITEM}>
+          <motion.div
+            whileHover={{ y: -3, transition: { ease: EASE, duration: 0.3 } }}
+            className="rounded-2xl p-6"
+            style={BENTO_CHART_STYLE}
+          >
+            {/* Chart header */}
+            <div className="flex flex-col gap-3 mb-5" dir="rtl">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white">התקדמות הכיתה</h3>
+                  {selectedSummary && (
+                    <p className="text-xs text-teal-300/80 mt-0.5">
+                      {selectedSummary.nameHe}
+                      {selectedSummary.unit ? ` — ${selectedSummary.unit}` : ''}
+                    </p>
+                  )}
+                </div>
+                {/* Chart icon */}
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-xl"
+                  style={{ background: 'rgba(45,212,191,0.15)', border: '1px solid rgba(45,212,191,0.25)' }}
+                >
+                  <TrendingUp className="h-4 w-4 text-teal-400" aria-hidden="true" />
+                </div>
+              </div>
+
+              {/* Test-type tab pills */}
+              {classDetails.testSummaries.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {classDetails.testSummaries.map((s) => {
+                    const isActive = s.testTypeId === selectedTestId;
+                    return (
+                      <button
+                        key={s.testTypeId}
+                        type="button"
+                        onClick={() => setSelectedTestId(s.testTypeId)}
+                        className="rounded-full px-3 py-1 text-[11px] font-semibold transition-colors"
+                        style={{
+                          background: isActive ? 'rgba(45,212,191,0.20)' : 'rgba(255,255,255,0.06)',
+                          border:     `1px solid ${isActive ? 'rgba(45,212,191,0.40)' : 'rgba(255,255,255,0.10)'}`,
+                          color:      isActive ? '#2dd4bf' : 'rgba(148,163,184,0.8)',
+                        }}
+                      >
+                        {s.nameHe}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Chart */}
+            {selectedSummary ? (
+              <ClassProgressChart
+                progressData={selectedSummary.progressData}
+                testName={selectedSummary.nameHe}
+                testUnit={selectedSummary.unit}
+              />
+            ) : (
+              <div className="flex h-44 items-center justify-center text-sm text-slate-500">
+                אין נתוני התקדמות עדיין
+              </div>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

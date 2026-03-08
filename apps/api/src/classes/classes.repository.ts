@@ -4,9 +4,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { Semester } from '../common/prisma-enums';
+import type { Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ClassResponseDto } from './dto/class-response.dto';
+
+export interface RawTestResult {
+  studentId: string;
+  calculatedGrade: number | null;
+  gradeOverride: number | null;
+  session: {
+    testTypeId: string;
+    conductedAt: Date;
+    testType: { nameHe: string; unit: string | null };
+  };
+}
+
+export interface RawClassDetails {
+  results: RawTestResult[];
+  attendanceTotal: number;
+  attendancePresent: number;
+}
 
 /** Input shape for creating a new class (all server-side fields included). */
 export interface CreateClassInput {
@@ -76,6 +93,34 @@ export class ClassesRepository {
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
     }
     return toClassResponse(row);
+  }
+
+  /**
+   * Loads all test results and attendance counts for a class in parallel.
+   * Used to compute per-test summaries and attendance percentage for class details.
+   */
+  async findRawClassDetails(classId: string): Promise<RawClassDetails> {
+    const [results, attendanceTotal, attendancePresent] = await Promise.all([
+      this.prisma.testResult.findMany({
+        where: { session: { classId } },
+        select: {
+          studentId: true,
+          calculatedGrade: true,
+          gradeOverride: true,
+          session: {
+            select: {
+              testTypeId: true,
+              conductedAt: true,
+              testType: { select: { nameHe: true, unit: true } },
+            },
+          },
+        },
+        orderBy: { session: { conductedAt: 'asc' } },
+      }),
+      this.prisma.attendanceRecord.count({ where: { classId } }),
+      this.prisma.attendanceRecord.count({ where: { classId, status: 'PRESENT' } }),
+    ]);
+    return { results, attendanceTotal, attendancePresent };
   }
 
   /**

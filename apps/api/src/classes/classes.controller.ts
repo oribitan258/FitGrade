@@ -16,6 +16,7 @@ import {
 import { ClassesService } from './classes.service';
 import { CreateClassDto } from './dto/create-class.dto';
 import { ClassResponseDto } from './dto/class-response.dto';
+import { ClassDetailsResponseDto } from './dto/class-details-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
@@ -53,6 +54,23 @@ export class ClassesController {
     @CurrentUser() user: JwtPayload,
   ): Promise<ClassResponseDto> {
     return this.classesService.getClassById(classId, user.sub);
+  }
+
+  /**
+   * Returns aggregated class details: per-test summaries (progress chart data,
+   * grade distribution, per-student grades) and overall attendance percentage.
+   * Used exclusively by the class detail page.
+   */
+  @Get(':id/details')
+  @ApiOperation({ summary: 'Get aggregated class details for the class detail page' })
+  @ApiResponse({ status: 200, type: ClassDetailsResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Class not found' })
+  async getClassDetails(
+    @Param('id') classId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<ClassDetailsResponseDto> {
+    return this.classesService.getClassDetails(classId, user.sub);
   }
 
   /**

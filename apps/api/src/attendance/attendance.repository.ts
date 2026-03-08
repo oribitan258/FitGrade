@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AttendanceStatus } from '../common/prisma-enums';
+import type { AttendanceStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AttendanceResponseDto } from './dto/attendance-response.dto';
 

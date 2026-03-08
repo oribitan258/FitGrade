@@ -2,15 +2,16 @@
 
 import { useEffect } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
-import type { ClassData } from '@fitgrade/types';
+import type { ClassData, DashboardClassStat, RecentSession } from '@fitgrade/types';
 import { useClasses } from '@/hooks/use-classes';
+import { useDashboardStats } from '@/hooks/use-dashboard-stats';
 import {
   AlertTriangle,
   BookOpen,
-  CalendarClock,
   ChevronRight,
   ClipboardX,
   Dumbbell,
+  History,
   TrendingDown,
   TrendingUp,
   Users,
@@ -56,34 +57,37 @@ function AnimatedNumber({ to, suffix = '', className, duration = 1.4 }: Animated
   return <motion.span className={className}>{display}</motion.span>;
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Glassmorphic skeleton loader ─────────────────────────────────────────────
 
-/** Upcoming planned test sessions */
-const UPCOMING_TESTS = [
-  { date: "08/03", dayLabel: "ראשון", className: "כיתה ז'1",  testName: "ריצת 2000 מטר"   },
-  { date: "10/03", dayLabel: "שלישי", className: "כיתה ח'2",  testName: "מתח מעקה"        },
-  { date: "12/03", dayLabel: "חמישי", className: "כיתה ט'1",  testName: "שכיבות סמיכה"    },
-  { date: "15/03", dayLabel: "ראשון", className: "כיתה י'3",  testName: "גמישות – מכופף"  },
-  { date: "17/03", dayLabel: "שלישי", className: "כיתה יא'1", testName: "קפיצה לגובה"     },
-] as const;
-
-/** Per-class supplementary mock data (index cycles). */
-const CLASS_MOCK_DATA = [
-  { fitnessAvg: 82, attendancePct: 91, belowNormCount: 1 },
-  { fitnessAvg: 74, attendancePct: 85, belowNormCount: 4 },
-  { fitnessAvg: 88, attendancePct: 94, belowNormCount: 0 },
-  { fitnessAvg: 71, attendancePct: 80, belowNormCount: 6 },
-  { fitnessAvg: 79, attendancePct: 88, belowNormCount: 2 },
-  { fitnessAvg: 85, attendancePct: 92, belowNormCount: 0 },
-] as const;
-
-function getClassMock(index: number): (typeof CLASS_MOCK_DATA)[number] {
-  return CLASS_MOCK_DATA[index % CLASS_MOCK_DATA.length]!;
+function DashboardSkeleton(): React.JSX.Element {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="h-7 w-64 animate-pulse rounded-xl bg-white/60" />
+        <div className="h-4 w-48 animate-pulse rounded-lg bg-white/40" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((n) => (
+          <div key={n} className="h-32 animate-pulse rounded-2xl bg-white/60 shadow-[0_8px_28px_rgba(15,23,42,0.06)]" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="h-72 animate-pulse rounded-2xl bg-white/60 lg:col-span-2 shadow-[0_8px_28px_rgba(15,23,42,0.06)]" />
+        <div className="h-72 animate-pulse rounded-2xl bg-white/60 shadow-[0_8px_28px_rgba(15,23,42,0.06)]" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((n) => (
+          <div key={n} className="h-52 animate-pulse rounded-2xl bg-white/60 shadow-[0_2px_16px_rgba(15,23,42,0.06)]" />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-const MINISTRY_NORM = 74;
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Ministry of Education national fitness norm average. */
+const MINISTRY_NORM = 74;
 
 type FitnessLevel = 'above' | 'average' | 'below';
 
@@ -99,7 +103,7 @@ const LEVEL_CONFIG: Record<FitnessLevel, { label: string; bg: string; text: stri
   below:   { label: 'מתחת לנורמה', bg: 'bg-red-50',      text: 'text-red-700',     dot: 'bg-red-500'     },
 };
 
-/** Alternating vivid badge colors for the upcoming-test date pill */
+/** Alternating vivid badge colors for the session date pill. */
 const BADGE_STYLES = [
   { bg: 'bg-indigo-600',  text: 'text-white', pill: 'bg-indigo-50 text-indigo-700'   },
   { bg: 'bg-teal-600',    text: 'text-white', pill: 'bg-teal-50   text-teal-700'     },
@@ -107,6 +111,17 @@ const BADGE_STYLES = [
   { bg: 'bg-emerald-600', text: 'text-white', pill: 'bg-emerald-50 text-emerald-700' },
   { bg: 'bg-amber-500',   text: 'text-white', pill: 'bg-amber-50  text-amber-700'    },
 ] as const;
+
+const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'] as const;
+
+function formatSession(isoString: string): { day: string; month: string; dayLabel: string } {
+  const date = new Date(isoString);
+  return {
+    day:      date.getDate().toString().padStart(2, '0'),
+    month:    (date.getMonth() + 1).toString().padStart(2, '0'),
+    dayLabel: DAY_NAMES[date.getDay()] ?? '',
+  };
+}
 
 // ─── KPI card ─────────────────────────────────────────────────────────────────
 
@@ -189,12 +204,17 @@ const CLASS_STRIPES = [
 
 const SEMESTER_LABELS: Record<'A' | 'B', string> = { A: "סמסטר א'", B: "סמסטר ב'" };
 
-function ClassSummaryCard({ cls, index }: { cls: ClassData; index: number }): React.JSX.Element {
-  const mock      = getClassMock(index);
+interface ClassSummaryCardProps {
+  cls: ClassData;
+  stats: DashboardClassStat;
+  index: number;
+}
+
+function ClassSummaryCard({ cls, stats, index }: ClassSummaryCardProps): React.JSX.Element {
   const stripe    = CLASS_STRIPES[index % CLASS_STRIPES.length]!;
-  const level     = fitnessLevel(mock.fitnessAvg);
+  const level     = fitnessLevel(stats.fitnessAvg);
   const levelCfg  = LEVEL_CONFIG[level];
-  const normDelta = mock.fitnessAvg - MINISTRY_NORM;
+  const normDelta = stats.fitnessAvg - MINISTRY_NORM;
 
   return (
     <motion.div
@@ -231,7 +251,7 @@ function ClassSummaryCard({ cls, index }: { cls: ClassData; index: number }): Re
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">ממוצע כושר</p>
                 <div className="flex items-center gap-1.5">
                   <span className={`text-2xl font-extrabold tabular-nums ${level === 'above' ? 'text-emerald-700' : level === 'below' ? 'text-red-600' : 'text-amber-600'}`}>
-                    {mock.fitnessAvg}
+                    {stats.fitnessAvg}
                   </span>
                   <span className={`text-xs font-bold ${normDelta >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                     {normDelta >= 0 ? '+' : ''}{normDelta}
@@ -241,11 +261,11 @@ function ClassSummaryCard({ cls, index }: { cls: ClassData; index: number }): Re
               </div>
               <div className="rounded-xl bg-white/50 backdrop-blur-sm px-3 py-2.5">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">נוכחות</p>
-                <div className="text-2xl font-extrabold text-slate-800 tabular-nums">{mock.attendancePct}%</div>
+                <div className="text-2xl font-extrabold text-slate-800 tabular-nums">{stats.attendancePct}%</div>
                 <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${mock.attendancePct >= 90 ? 'bg-emerald-500' : mock.attendancePct >= 75 ? 'bg-amber-400' : 'bg-red-500'}`}
-                    style={{ width: `${mock.attendancePct}%` }}
+                    className={`h-full rounded-full ${stats.attendancePct >= 90 ? 'bg-emerald-500' : stats.attendancePct >= 75 ? 'bg-amber-400' : 'bg-red-500'}`}
+                    style={{ width: `${stats.attendancePct}%` }}
                   />
                 </div>
               </div>
@@ -260,10 +280,10 @@ function ClassSummaryCard({ cls, index }: { cls: ClassData; index: number }): Re
                 <span className="text-xs text-slate-600">{cls.studentCount} תלמידים</span>
               </div>
               <div className="flex items-center gap-2">
-                {mock.belowNormCount > 0 && (
+                {stats.belowNormCount > 0 && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                    {mock.belowNormCount} מתחת לנורמה
+                    {stats.belowNormCount} מתחת לנורמה
                   </span>
                 )}
                 <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500 transition-colors" aria-hidden="true" />
@@ -279,10 +299,31 @@ function ClassSummaryCard({ cls, index }: { cls: ClassData; index: number }): Re
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage(): React.JSX.Element {
-  const { data: classes, isLoading, error } = useClasses();
+  const { data: classes, isLoading: classesLoading, error: classesError } = useClasses();
+  const { data: stats,   isLoading: statsLoading,   error: statsError   } = useDashboardStats();
 
-  const totalStudents  = classes?.reduce((s, c) => s + c.studentCount, 0) ?? 0;
-  const totalBelowNorm = classes?.reduce((s, _, i) => s + getClassMock(i).belowNormCount, 0) ?? 13;
+  const isLoading = classesLoading || statsLoading;
+  const hasError  = classesError   || statsError;
+
+  // Build a lookup map for per-class stats keyed by classId
+  const statsByClassId = new Map<string, DashboardClassStat>(
+    (stats?.classStats ?? []).map((s) => [s.classId, s]),
+  );
+
+  const fitnessAvg     = stats?.overallFitnessAvg    ?? 0;
+  const attendancePct  = stats?.overallAttendancePct ?? 0;
+  const belowNormCount = stats?.totalBelowNormCount  ?? 0;
+  const totalStudents  = stats?.totalStudents        ?? 0;
+  const pendingResults = stats?.pendingResultsCount  ?? 0;
+  const recentSessions: RecentSession[] = stats?.recentSessions ?? [];
+
+  const normDeltaLabel = fitnessAvg > 0
+    ? `${fitnessAvg >= MINISTRY_NORM ? '+' : ''}${fitnessAvg - MINISTRY_NORM} מנורמת משרד החינוך (${MINISTRY_NORM})`
+    : 'אין נתונים עדיין';
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <AnimatePresence mode="wait">
@@ -303,19 +344,19 @@ export default function DashboardPage(): React.JSX.Element {
         <motion.div variants={STAGGER} className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
           <KpiCard
             label="ממוצע כושר כללי"
-            value={81}
-            sub={`+7 מעל נורמת משרד החינוך (${MINISTRY_NORM})`}
+            value={fitnessAvg}
+            sub={normDeltaLabel}
             icon={Dumbbell}
             iconCapsule="bg-emerald-100"
             iconColor="text-emerald-600"
             valueColor="text-emerald-700"
             accentBar="bg-gradient-to-r from-emerald-400 to-teal-500"
-            trend="up"
+            trend={fitnessAvg >= MINISTRY_NORM ? 'up' : 'down'}
             cardGlass="bg-emerald-50/82 border-white/80"
           />
           <KpiCard
             label="נוכחות ממוצעת"
-            value={89}
+            value={attendancePct}
             valueSuffix="%"
             sub="יציב לאורך הסמסטר"
             icon={Users}
@@ -328,7 +369,7 @@ export default function DashboardPage(): React.JSX.Element {
           />
           <KpiCard
             label="תלמידים לטיפול"
-            value={totalBelowNorm}
+            value={belowNormCount}
             sub="מתחת לנורמה — נדרשת התייחסות"
             icon={AlertTriangle}
             iconCapsule="bg-red-100"
@@ -339,8 +380,8 @@ export default function DashboardPage(): React.JSX.Element {
             cardGlass="bg-red-50/82 border-white/80"
           />
           <KpiCard
-            label="מבחנים ממתינים"
-            value={5}
+            label="תוצאות חסרות"
+            value={pendingResults}
             sub="תלמידים שלא ניגשו למבחן"
             icon={ClipboardX}
             iconCapsule="bg-amber-100"
@@ -352,9 +393,9 @@ export default function DashboardPage(): React.JSX.Element {
           />
         </motion.div>
 
-        {/* ── Upcoming tests + quick stats ────────────────────────────── */}
+        {/* ── Recent sessions + quick stats ────────────────────────────── */}
         <motion.div variants={STAGGER} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* Upcoming tests — 2 cols */}
+          {/* Recent sessions — 2 cols */}
           <motion.div
             variants={ITEM}
             whileHover={{ y: -2, boxShadow: '0 8px 32px rgba(15,23,42,0.10)', transition: { ease: [0.22, 1, 0.36, 1], duration: 0.35 } }}
@@ -366,44 +407,50 @@ export default function DashboardPage(): React.JSX.Element {
                 whileHover={{ rotate: 10 }}
                 transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
               >
-                <CalendarClock className="h-4 w-4 text-indigo-600" aria-hidden="true" />
+                <History className="h-4 w-4 text-indigo-600" aria-hidden="true" />
               </motion.div>
               <div>
-                <h2 className="text-sm font-bold text-slate-900">מבחנים מתוכננים</h2>
-                <p className="text-xs text-slate-500">בשבועיים הקרובים</p>
+                <h2 className="text-sm font-bold text-slate-900">מפגשי מבחן אחרונים</h2>
+                <p className="text-xs text-slate-500">5 המפגשים האחרונים שנערכו</p>
               </div>
             </div>
 
-            <ol className="space-y-2.5">
-              {UPCOMING_TESTS.map((t, i) => {
-                const badge = BADGE_STYLES[i % BADGE_STYLES.length]!;
-                return (
-                  <motion.li
-                    key={i}
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ ease: EASE, duration: 0.45, delay: i * 0.07 }}
-                    whileHover={{ x: -2, backgroundColor: 'rgba(248,250,252,1)', transition: { duration: 0.2 } }}
-                    className="flex items-center gap-2 md:gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3 md:px-4 py-2.5 md:py-3 cursor-default"
-                  >
-                    {/* Vivid date badge */}
-                    <div className={`shrink-0 flex flex-col items-center justify-center rounded-xl ${badge.bg} w-12 h-12`}>
-                      <span className={`text-sm font-extrabold leading-none ${badge.text}`}>{t.date.split('/')[0]}</span>
-                      <span className={`text-[10px] font-medium leading-none opacity-80 mt-0.5 ${badge.text}`}>
-                        {t.date.split('/')[1]}/
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-800 truncate">{t.testName}</div>
-                      <div className="text-xs text-slate-500">{t.className} · {t.dayLabel}</div>
-                    </div>
-                    <div className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.pill}`}>
-                      מתוכנן
-                    </div>
-                  </motion.li>
-                );
-              })}
-            </ol>
+            {recentSessions.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <History className="h-8 w-8 text-slate-300" aria-hidden="true" />
+                <p className="text-sm text-slate-400">אין מפגשי מבחן עדיין</p>
+              </div>
+            ) : (
+              <ol className="space-y-2.5">
+                {recentSessions.map((session, i) => {
+                  const badge = BADGE_STYLES[i % BADGE_STYLES.length]!;
+                  const { day, month, dayLabel } = formatSession(session.conductedAt);
+                  return (
+                    <motion.li
+                      key={session.sessionId}
+                      initial={{ opacity: 0, x: 8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ ease: EASE, duration: 0.45, delay: i * 0.07 }}
+                      whileHover={{ x: -2, backgroundColor: 'rgba(248,250,252,1)', transition: { duration: 0.2 } }}
+                      className="flex items-center gap-2 md:gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3 md:px-4 py-2.5 md:py-3 cursor-default"
+                    >
+                      {/* Vivid date badge */}
+                      <div className={`shrink-0 flex flex-col items-center justify-center rounded-xl ${badge.bg} w-12 h-12`}>
+                        <span className={`text-sm font-extrabold leading-none ${badge.text}`}>{day}</span>
+                        <span className={`text-[10px] font-medium leading-none opacity-80 mt-0.5 ${badge.text}`}>{month}/</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-slate-800 truncate">{session.testNameHe}</div>
+                        <div className="text-xs text-slate-500">{session.className} · {dayLabel}</div>
+                      </div>
+                      <div className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.pill}`}>
+                        הושלם
+                      </div>
+                    </motion.li>
+                  );
+                })}
+              </ol>
+            )}
           </motion.div>
 
           {/* Right column — quick stats */}
@@ -425,7 +472,7 @@ export default function DashboardPage(): React.JSX.Element {
             <div className="flex-1 space-y-3">
               <div className="rounded-xl bg-red-50/70 backdrop-blur-sm border border-red-100/50 p-4 text-center">
                 <AnimatedNumber
-                  to={totalBelowNorm}
+                  to={belowNormCount}
                   className="text-3xl md:text-4xl font-extrabold text-red-600 tabular-nums"
                   duration={1.6}
                 />
@@ -433,11 +480,11 @@ export default function DashboardPage(): React.JSX.Element {
               </div>
               <div className="rounded-xl bg-amber-50/70 backdrop-blur-sm border border-amber-100/50 p-4 text-center">
                 <AnimatedNumber
-                  to={5}
+                  to={pendingResults}
                   className="text-3xl md:text-4xl font-extrabold text-amber-600 tabular-nums"
                   duration={1.2}
                 />
-                <p className="mt-1 text-xs font-semibold text-amber-600">מבחנים שלא הושלמו</p>
+                <p className="mt-1 text-xs font-semibold text-amber-600">תוצאות שלא הוזנו</p>
               </div>
               <div className="rounded-xl bg-emerald-50/70 backdrop-blur-sm border border-emerald-100/50 p-4 text-center">
                 <AnimatedNumber
@@ -469,21 +516,13 @@ export default function DashboardPage(): React.JSX.Element {
             </motion.div>
           </div>
 
-          {error && (
+          {hasError && (
             <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
-              לא ניתן לטעון את הכיתות — נסה לרענן את הדף.
+              לא ניתן לטעון את הנתונים — נסה לרענן את הדף.
             </div>
           )}
 
-          {isLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((n) => (
-                <div key={n} className="h-52 animate-pulse rounded-2xl bg-white/60 shadow-[0_2px_16px_rgba(15,23,42,0.06)]" />
-              ))}
-            </div>
-          )}
-
-          {!isLoading && !error && classes?.length === 0 && (
+          {!hasError && classes?.length === 0 && (
             <motion.div
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -506,11 +545,19 @@ export default function DashboardPage(): React.JSX.Element {
             </motion.div>
           )}
 
-          {!isLoading && !error && classes && classes.length > 0 && (
+          {!hasError && classes && classes.length > 0 && (
             <motion.div variants={STAGGER} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {classes.slice(0, 6).map((cls, i) => (
-                <ClassSummaryCard key={cls.id} cls={cls} index={i} />
-              ))}
+              {classes.slice(0, 6).map((cls, i) => {
+                const classStat = statsByClassId.get(cls.id) ?? {
+                  classId: cls.id,
+                  fitnessAvg: 0,
+                  attendancePct: 0,
+                  belowNormCount: 0,
+                };
+                return (
+                  <ClassSummaryCard key={cls.id} cls={cls} stats={classStat} index={i} />
+                );
+              })}
             </motion.div>
           )}
         </motion.div>

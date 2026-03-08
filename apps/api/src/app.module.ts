@@ -10,6 +10,7 @@ import { ClassesModule } from './classes/classes.module';
 import { StudentsModule } from './students/students.module';
 import { TestsModule } from './tests/tests.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -25,6 +26,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     StudentsModule,
     TestsModule,
     AttendanceModule,
+    DashboardModule,
     // Remaining feature modules added in subsequent phases:
     // ExportsModule
   ],

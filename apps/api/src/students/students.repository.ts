@@ -3,15 +3,47 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AttendanceStatus, Gender, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StudentResponseDto } from './dto/student-response.dto';
+
+/** Raw test result row used by findRawStudentProfile. */
+export interface RawStudentResult {
+  calculatedGrade: number | null;
+  gradeOverride: number | null;
+  session: {
+    testTypeId: string;
+    conductedAt: Date;
+    testType: { nameHe: string; unit: string | null };
+  };
+}
+
+/** Raw attendance row used by findRawStudentProfile. */
+export interface RawAttendanceRow {
+  status: AttendanceStatus;
+}
+
+/** All raw data needed to build StudentProfileResponseDto. */
+export interface RawStudentProfile {
+  student: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth: Date;
+    gender: Gender;
+    studentCode: string;
+  };
+  results: RawStudentResult[];
+  attendanceTotal: number;
+  attendancePresent: number;
+  recentAttendance: RawAttendanceRow[];
+}
 
 export interface CreateStudentInput {
   firstName: string;
   lastName: string;
   dateOfBirth: Date;
-  gender: string;
+  gender: Gender;
   studentCode: string;
   passwordHash: string; // pre-hashed by StudentsService
 }
@@ -58,6 +90,78 @@ export class StudentsRepository {
       orderBy: { student: { lastName: 'asc' } },
     });
     return enrollments.map((e) => e.student);
+  }
+
+  /**
+   * Verifies that a student is enrolled in the given class.
+   * Throws NotFoundException if the enrollment doesn't exist.
+   */
+  async verifyStudentInClass(
+    studentId: string,
+    classId: string,
+  ): Promise<void> {
+    const enrollment = await this.prisma.classEnrollment.findFirst({
+      where: { studentId, classId },
+      select: { id: true },
+    });
+    if (enrollment === null) {
+      throw new NotFoundException(`תלמיד ${studentId} אינו רשום לכיתה זו`);
+    }
+  }
+
+  /**
+   * Loads all raw data needed to build a student profile in a single round-trip.
+   * Throws NotFoundException if the student doesn't exist.
+   */
+  async findRawStudentProfile(
+    studentId: string,
+    classId: string,
+  ): Promise<RawStudentProfile> {
+    const [student, results, attendanceTotal, attendancePresent, recentAttendance] =
+      await Promise.all([
+        this.prisma.student.findUnique({
+          where: { id: studentId },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            studentCode: true,
+          },
+        }),
+        this.prisma.testResult.findMany({
+          where: { studentId, session: { classId } },
+          select: {
+            calculatedGrade: true,
+            gradeOverride: true,
+            session: {
+              select: {
+                testTypeId: true,
+                conductedAt: true,
+                testType: { select: { nameHe: true, unit: true } },
+              },
+            },
+          },
+          orderBy: { session: { conductedAt: 'asc' } },
+        }),
+        this.prisma.attendanceRecord.count({ where: { studentId, classId } }),
+        this.prisma.attendanceRecord.count({
+          where: { studentId, classId, status: 'PRESENT' },
+        }),
+        this.prisma.attendanceRecord.findMany({
+          where: { studentId, classId },
+          orderBy: { date: 'asc' },
+          take: 6,
+          select: { status: true },
+        }),
+      ]);
+
+    if (student === null) {
+      throw new NotFoundException(`תלמיד ${studentId} לא נמצא`);
+    }
+
+    return { student, results, attendanceTotal, attendancePresent, recentAttendance };
   }
 
   /**

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class CreateSessionDto {
   @ApiProperty({ description: 'ID of the FitnessTestType to use for this session' })
@@ -18,4 +18,11 @@ export class CreateSessionDto {
   @IsOptional()
   @IsBoolean()
   isStopwatch?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'ISO 8601 date for past-dated sessions (e.g. "2025-11-14"); defaults to now',
+  })
+  @IsOptional()
+  @IsDateString()
+  conductedAt?: string;
 }

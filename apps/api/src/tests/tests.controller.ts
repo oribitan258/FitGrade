@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -18,6 +21,7 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { SubmitResultDto } from './dto/submit-result.dto';
 import { TestTypeResponseDto } from './dto/test-type-response.dto';
 import { SessionResponseDto } from './dto/session-response.dto';
+import { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import { ResultResponseDto } from './dto/result-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -70,6 +74,24 @@ export class TestsController {
   }
 
   /**
+   * Returns full session details: test metadata, enrolled students, and all
+   * results recorded so far. Powers the live-session page on initial load.
+   */
+  @Get('sessions/:sessionId')
+  @ApiTags('sessions')
+  @ApiOperation({ summary: 'Get live session details (students + results)' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 200, type: SessionDetailResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session not found or not accessible' })
+  async getSession(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<SessionDetailResponseDto> {
+    return this.testsService.getSessionWithStudents(sessionId, user.sub);
+  }
+
+  /**
    * Submits a student test result for a session.
    * GradingService automatically calculates calculatedGrade from rawValue and norm tables.
    */
@@ -88,5 +110,64 @@ export class TestsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<ResultResponseDto> {
     return this.testsService.submitResult(sessionId, dto, user.sub);
+  }
+
+  /**
+   * Starts the server-side stopwatch for a session (sets startedAt to now).
+   * Idempotent — safe to call multiple times; only the first call is meaningful.
+   */
+  @Post('sessions/:sessionId/start')
+  @HttpCode(HttpStatus.OK)
+  @ApiTags('sessions')
+  @ApiOperation({ summary: 'Start the server-side stopwatch for a session' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 200, type: SessionResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async startSession(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<SessionResponseDto> {
+    return this.testsService.startSession(sessionId, user.sub);
+  }
+
+  /**
+   * Marks a session as completed (sets completedAt to now).
+   * Called when the teacher taps "End Session".
+   */
+  @Patch('sessions/:sessionId/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiTags('sessions')
+  @ApiOperation({ summary: 'Mark a session as completed' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 200, type: SessionResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async completeSession(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<SessionResponseDto> {
+    return this.testsService.completeSession(sessionId, user.sub);
+  }
+
+  /**
+   * Deletes a student's result from a session (undo / correction).
+   * The student immediately becomes eligible for re-tapping.
+   */
+  @Delete('sessions/:sessionId/results/:studentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiTags('results')
+  @ApiOperation({ summary: 'Delete a student result (undo)' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'studentId', description: 'Student ID' })
+  @ApiResponse({ status: 204, description: 'Result deleted' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Result not found' })
+  async deleteResult(
+    @Param('sessionId') sessionId: string,
+    @Param('studentId') studentId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    return this.testsService.deleteResult(sessionId, studentId, user.sub);
   }
 }

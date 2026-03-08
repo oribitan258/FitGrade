@@ -1,6 +1,6 @@
 import { IsEnum, IsNotEmpty, IsString, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Semester } from '../../common/prisma-enums';
+import { Semester } from '@prisma/client';
 
 export class CreateClassDto {
   @ApiProperty({ example: "כיתה י' 1" })

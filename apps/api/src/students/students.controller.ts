@@ -17,6 +17,7 @@ import {
 import { StudentsService } from './students.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { StudentResponseDto } from './dto/student-response.dto';
+import { StudentProfileResponseDto } from './dto/student-profile-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
@@ -41,6 +42,26 @@ export class StudentsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<StudentResponseDto[]> {
     return this.studentsService.getStudentsByClass(classId, user.sub);
+  }
+
+  /**
+   * Returns the full profile for a single student within a class,
+   * including per-test score history and attendance metrics.
+   * Only accessible by the teacher who owns the class.
+   */
+  @Get(':studentId/profile')
+  @ApiOperation({ summary: 'Get full profile for a student in a class' })
+  @ApiParam({ name: 'classId', description: 'Class ID' })
+  @ApiParam({ name: 'studentId', description: 'Student ID' })
+  @ApiResponse({ status: 200, type: StudentProfileResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Class or student not found' })
+  async getStudentProfile(
+    @Param('classId') classId: string,
+    @Param('studentId') studentId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<StudentProfileResponseDto> {
+    return this.studentsService.getStudentProfile(studentId, classId, user.sub);
   }
 
   /**

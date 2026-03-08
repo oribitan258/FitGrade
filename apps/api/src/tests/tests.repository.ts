@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
+import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 
 const TEST_TYPE_SELECT = {
   id: true,
@@ -23,6 +24,7 @@ const SESSION_SELECT = {
   notes: true,
   isStopwatch: true,
   startedAt: true,
+  completedAt: true,
 } as const;
 
 const RESULT_SELECT = {
@@ -81,9 +83,16 @@ export class TestsRepository {
     testTypeId: string,
     notes: string | undefined,
     isStopwatch: boolean,
+    conductedAt?: Date,
   ): Promise<SessionResponseDto> {
     return this.prisma.testSession.create({
-      data: { classId, testTypeId, notes, isStopwatch },
+      data: {
+        classId,
+        testTypeId,
+        notes,
+        isStopwatch,
+        ...(conductedAt !== undefined ? { conductedAt } : {}),
+      },
       select: SESSION_SELECT,
     });
   }
@@ -105,6 +114,127 @@ export class TestsRepository {
       throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
     }
     return session;
+  }
+
+  /**
+   * Returns full session details — including test-type metadata, enrolled students,
+   * and all results recorded so far — for the live-session UI.
+   * Throws NotFoundException if session doesn't exist or isn't accessible by this teacher.
+   */
+  async findSessionWithStudents(
+    sessionId: string,
+    teacherId: string,
+  ): Promise<SessionDetailResponseDto> {
+    const session = await this.prisma.testSession.findFirst({
+      where: { id: sessionId, class: { teacherId } },
+      select: {
+        id: true,
+        classId: true,
+        testTypeId: true,
+        conductedAt: true,
+        notes: true,
+        isStopwatch: true,
+        startedAt: true,
+        completedAt: true,
+        testType: {
+          select: { nameHe: true, unit: true, inputType: true },
+        },
+        class: {
+          select: {
+            enrollments: {
+              select: {
+                student: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    studentCode: true,
+                  },
+                },
+              },
+              orderBy: { student: { lastName: 'asc' } },
+            },
+          },
+        },
+        results: {
+          select: {
+            id: true,
+            studentId: true,
+            rawValue: true,
+            calculatedGrade: true,
+            gradeOverride: true,
+            recordedAt: true,
+          },
+          orderBy: { recordedAt: 'asc' },
+        },
+      },
+    });
+
+    if (session === null) {
+      throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
+    }
+
+    return {
+      id: session.id,
+      classId: session.classId,
+      testTypeId: session.testTypeId,
+      testNameHe: session.testType.nameHe,
+      testUnit: session.testType.unit,
+      testInputType: session.testType.inputType,
+      conductedAt: session.conductedAt,
+      isStopwatch: session.isStopwatch,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      students: session.class.enrollments.map((e) => e.student),
+      results: session.results.map((r) => ({
+        resultId: r.id,
+        studentId: r.studentId,
+        rawValue: Number(r.rawValue ?? 0),
+        calculatedGrade: r.calculatedGrade ?? 0,
+        gradeOverride: r.gradeOverride,
+        recordedAt: r.recordedAt,
+      })),
+    };
+  }
+
+  /**
+   * Sets startedAt to the current server time, enabling accurate elapsed-time
+   * calculation for stopwatch sessions.
+   */
+  async startSession(sessionId: string): Promise<SessionResponseDto> {
+    return this.prisma.testSession.update({
+      where: { id: sessionId },
+      data: { startedAt: new Date() },
+      select: SESSION_SELECT,
+    });
+  }
+
+  /**
+   * Sets completedAt to the current server time, marking the session as closed.
+   */
+  async completeSession(sessionId: string): Promise<SessionResponseDto> {
+    return this.prisma.testSession.update({
+      where: { id: sessionId },
+      data: { completedAt: new Date() },
+      select: SESSION_SELECT,
+    });
+  }
+
+  /**
+   * Deletes a test result identified by (sessionId, studentId).
+   * Throws NotFoundException if no such result exists.
+   */
+  async deleteResult(sessionId: string, studentId: string): Promise<void> {
+    const result = await this.prisma.testResult.findFirst({
+      where: { sessionId, studentId },
+      select: { id: true },
+    });
+    if (result === null) {
+      throw new NotFoundException(
+        `תוצאה לתלמיד ${studentId} בסשן ${sessionId} לא נמצאה`,
+      );
+    }
+    await this.prisma.testResult.delete({ where: { id: result.id } });
   }
 
   /**

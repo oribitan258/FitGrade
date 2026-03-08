@@ -51,37 +51,42 @@ const SELECT_STYLES =
   'ring-offset-background focus-visible:outline-none focus-visible:ring-2 ' +
   'focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 
-/** Cycling accents — cool professional family only (no rainbow) */
+/** Cycling dark-glass accents for class cards */
 const CLASS_ACCENTS = [
   {
-    icon: 'bg-indigo-50', iconText: 'text-indigo-600',
-    stripe: 'from-indigo-600 to-indigo-700',
-    code: 'bg-indigo-50 text-indigo-700',
-    tag: 'bg-indigo-50 text-indigo-600',
+    bg: 'bg-indigo-950/55', border: 'border-indigo-500/20',
+    stripe: 'from-indigo-400 to-violet-400', glow: 'bg-indigo-500',
+    icon: 'bg-indigo-500/20',   iconText: 'text-indigo-300',
+    code: 'bg-indigo-500/20 text-indigo-200',
+    tag:  'bg-indigo-500/15 text-indigo-300',
   },
   {
-    icon: 'bg-blue-50',   iconText: 'text-blue-600',
-    stripe: 'from-blue-600 to-blue-700',
-    code: 'bg-blue-50 text-blue-700',
-    tag: 'bg-blue-50 text-blue-600',
+    bg: 'bg-blue-950/55',   border: 'border-blue-500/20',
+    stripe: 'from-blue-400 to-cyan-400',    glow: 'bg-blue-500',
+    icon: 'bg-blue-500/20',     iconText: 'text-blue-300',
+    code: 'bg-blue-500/20 text-blue-200',
+    tag:  'bg-blue-500/15 text-blue-300',
   },
   {
-    icon: 'bg-violet-50', iconText: 'text-violet-600',
-    stripe: 'from-violet-600 to-violet-700',
-    code: 'bg-violet-50 text-violet-700',
-    tag: 'bg-violet-50 text-violet-600',
+    bg: 'bg-violet-950/55', border: 'border-violet-500/20',
+    stripe: 'from-violet-400 to-purple-400', glow: 'bg-violet-500',
+    icon: 'bg-violet-500/20',   iconText: 'text-violet-300',
+    code: 'bg-violet-500/20 text-violet-200',
+    tag:  'bg-violet-500/15 text-violet-300',
   },
   {
-    icon: 'bg-slate-100', iconText: 'text-slate-600',
-    stripe: 'from-slate-600 to-slate-700',
-    code: 'bg-slate-100 text-slate-700',
-    tag: 'bg-slate-100 text-slate-600',
+    bg: 'bg-slate-800/65',  border: 'border-slate-500/20',
+    stripe: 'from-slate-400 to-slate-500',  glow: 'bg-slate-500',
+    icon: 'bg-slate-500/20',    iconText: 'text-slate-300',
+    code: 'bg-slate-500/20 text-slate-200',
+    tag:  'bg-slate-500/15 text-slate-300',
   },
   {
-    icon: 'bg-cyan-50',   iconText: 'text-cyan-700',
-    stripe: 'from-cyan-700 to-cyan-800',
-    code: 'bg-cyan-50 text-cyan-800',
-    tag: 'bg-cyan-50 text-cyan-700',
+    bg: 'bg-cyan-950/55',   border: 'border-cyan-500/20',
+    stripe: 'from-cyan-400 to-teal-400',    glow: 'bg-cyan-500',
+    icon: 'bg-cyan-500/20',     iconText: 'text-cyan-300',
+    code: 'bg-cyan-500/20 text-cyan-200',
+    tag:  'bg-cyan-500/15 text-cyan-300',
   },
 ] as const;
 
@@ -220,18 +225,29 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
   return (
     <motion.div
       variants={fadeUp}
-      whileHover={{ y: -3, transition: { ease: [0.22, 1, 0.36, 1], duration: 0.35 } }}
+      whileHover={{ y: -4, transition: { ease: [0.22, 1, 0.36, 1], duration: 0.35 } }}
       whileTap={{ scale: 0.98 }}
     >
       <Link
         href={`/classes/${cls.id}`}
-        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-3xl"
+        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-2xl"
       >
-        <div className="group relative overflow-hidden rounded-2xl bg-white shadow-[0_2px_16px_rgba(15,23,42,0.07)] hover:shadow-[0_8px_32px_rgba(15,23,42,0.12)] transition-shadow duration-300 cursor-pointer">
+        <div
+          className={cn(
+            'group relative overflow-hidden rounded-2xl cursor-pointer transition-shadow duration-300',
+            'backdrop-blur-xl border',
+            accent.bg, accent.border,
+            'shadow-[0_4px_24px_rgba(15,23,42,0.40)] hover:shadow-[0_12px_40px_rgba(15,23,42,0.55)]',
+          )}
+        >
+          {/* Ambient glow orb */}
+          <div
+            className={cn('pointer-events-none absolute -end-8 -top-8 h-32 w-32 rounded-full blur-2xl opacity-20', accent.glow)}
+          />
           {/* Coloured top stripe */}
-          <div className={`h-1.5 w-full bg-gradient-to-r ${accent.stripe}`} />
+          <div className={`h-1 w-full bg-gradient-to-r ${accent.stripe}`} />
 
-          <div className="p-5">
+          <div className="relative p-5">
             {/* Header row */}
             <div className="flex items-start justify-between mb-4">
               <div className={`p-2.5 rounded-xl ${accent.icon}`}>
@@ -243,12 +259,12 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             </div>
 
             {/* Title */}
-            <h3 className="font-bold text-slate-800 text-base mb-0.5">{cls.name}</h3>
+            <h3 className="font-bold text-white text-base mb-0.5">{cls.name}</h3>
             <p className="text-xs text-slate-400 mb-4">{cls.academicYear}</p>
 
             {/* Join code capsule */}
             <div className="flex items-center gap-2 mb-4">
-              <div className="p-1 rounded-md bg-slate-100">
+              <div className="p-1 rounded-md bg-white/10">
                 <Hash className="w-3 h-3 text-slate-400" aria-hidden="true" />
               </div>
               <code className={`rounded-lg px-2 py-0.5 font-mono text-xs font-bold tracking-widest ${accent.code}`}>
@@ -259,13 +275,13 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             {/* Footer */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <div className="p-1 rounded-md bg-slate-100">
+                <div className="p-1 rounded-md bg-white/10">
                   <Users className="w-3 h-3 text-slate-400" aria-hidden="true" />
                 </div>
-                <span className="text-xs text-slate-500 font-medium">{cls.studentCount} תלמידים</span>
+                <span className="text-xs text-slate-300 font-medium">{cls.studentCount} תלמידים</span>
               </div>
               <ChevronLeft
-                className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 transition-colors"
+                className="w-4 h-4 text-slate-500 group-hover:text-white/70 transition-colors"
                 aria-hidden="true"
               />
             </div>
