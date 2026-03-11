@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import useSWR from 'swr';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -9,15 +10,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Activity,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   ClipboardCopy,
   Dumbbell,
   Hash,
   Loader2,
   Plus,
+  ShieldAlert,
+  ShieldCheck,
   Target,
   Timer,
   TrendingUp,
+  UserMinus,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -51,7 +56,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn, formatRawValue } from '@/lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -82,18 +94,27 @@ const AVATAR_TINTS = [
 /** Ministry of Education national fitness norm. */
 const NATIONAL_NORM = 74;
 
-// ─── Visual config cycle for test type tabs ───────────────────────────────────
+// ─── Visual config cycle for test type colors ─────────────────────────────────
 
 const TAB_VISUAL_CONFIGS = [
-  { icon: Timer,      tabBg: 'bg-teal-600',    tabShadow: 'rgba(13,148,136,0.50)',  chartColor: '#0d9488' },
-  { icon: Dumbbell,   tabBg: 'bg-orange-600',  tabShadow: 'rgba(234,88,12,0.50)',   chartColor: '#ea580c' },
-  { icon: TrendingUp, tabBg: 'bg-violet-600',  tabShadow: 'rgba(124,58,237,0.50)',  chartColor: '#7c3aed' },
-  { icon: Target,     tabBg: 'bg-emerald-600', tabShadow: 'rgba(5,150,105,0.50)',   chartColor: '#059669' },
+  { icon: Timer,      chartColor: '#0d9488' },
+  { icon: Dumbbell,   chartColor: '#ea580c' },
+  { icon: TrendingUp, chartColor: '#7c3aed' },
+  { icon: Target,     chartColor: '#059669' },
 ] as const;
 
 function getTabVisual(index: number): (typeof TAB_VISUAL_CONFIGS)[number] {
   return TAB_VISUAL_CONFIGS[index % TAB_VISUAL_CONFIGS.length]!;
 }
+
+// ─── Test type input-type labels ──────────────────────────────────────────────
+
+const INPUT_TYPE_ICONS: Record<string, React.ElementType> = {
+  TIME:      Timer,
+  REPS:      Dumbbell,
+  GENERAL:   Target,
+  PASS_FAIL: Activity,
+};
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -158,6 +179,343 @@ function ClassDetailSkeleton(): React.JSX.Element {
       </div>
       <div className="h-36 animate-pulse rounded-2xl bg-white/60" />
       <div className="h-64 animate-pulse rounded-2xl bg-white/60" />
+    </div>
+  );
+}
+
+// ─── Attendance record type (local) ──────────────────────────────────────────
+
+interface AttendanceRecord {
+  studentId: string;
+  status: 'PRESENT' | 'ABSENT' | 'EXCUSED';
+  exemptionReason: string | null;
+  exemptionExpiresAt: string | null;
+}
+
+function apiFetcher<T>(path: string): Promise<T> {
+  return apiRequest<T>(path);
+}
+
+// ─── Exemption Dialog ─────────────────────────────────────────────────────────
+
+interface ExemptionDialogProps {
+  studentId: string;
+  studentName: string;
+  classId: string;
+  today: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}
+
+function ExemptionDialog({
+  studentId,
+  studentName,
+  classId,
+  today,
+  open,
+  onOpenChange,
+  onSuccess,
+}: ExemptionDialogProps): React.JSX.Element {
+  const [reason, setReason]     = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  function handleClose(next: boolean): void {
+    if (!next) { setReason(''); setExpiresAt(''); setError(null); }
+    onOpenChange(next);
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    if (loading || reason.trim().length < 2) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await apiRequest(`/classes/${classId}/attendance`, {
+        method: 'POST',
+        body: JSON.stringify({
+          date: today,
+          records: [{
+            studentId,
+            status: 'EXCUSED',
+            exemptionReason: reason.trim(),
+            ...(expiresAt ? { exemptionExpiresAt: expiresAt } : {}),
+          }],
+        }),
+      });
+      handleClose(false);
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'שגיאה בשמירת הפטור');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100">
+              <ShieldAlert className="h-5 w-5 text-orange-600" aria-hidden="true" />
+            </div>
+            <div>
+              <DialogTitle className="text-slate-800">סמן פטור</DialogTitle>
+              <DialogDescription className="text-slate-500 text-sm">{studentName}</DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <form onSubmit={(e) => { void handleSubmit(e); }} noValidate className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="ex-reason" className="text-slate-700 font-medium">סיבת פטור <span className="text-red-500">*</span></Label>
+            <Input
+              id="ex-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="לדוגמה: פציעה בברך"
+              disabled={loading}
+              minLength={2}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-orange-400"
+              aria-label="סיבת פטור"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ex-expiry" className="text-slate-700 font-medium">
+              תוקף הפטור
+              <span className="ms-1 text-xs font-normal text-slate-400">(אופציונלי)</span>
+            </Label>
+            <Input
+              id="ex-expiry"
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              min={today}
+              disabled={loading}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-orange-400"
+              aria-label="תוקף הפטור"
+            />
+            <p className="text-xs text-slate-400">ריק = ללא הגבלת זמן</p>
+          </div>
+          {error && (
+            <p className="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
+          )}
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="outline" disabled={loading} onClick={() => handleClose(false)} className="rounded-xl">ביטול</Button>
+            <motion.div whileTap={{ scale: 0.97 }}>
+              <Button
+                type="submit"
+                disabled={loading || reason.trim().length < 2}
+                className="gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 shadow-sm"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+                {loading ? 'שומר...' : 'אשר פטור'}
+              </Button>
+            </motion.div>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Absence Dialog ───────────────────────────────────────────────────────────
+
+interface AbsenceDialogProps {
+  studentId: string;
+  studentName: string;
+  classId: string;
+  today: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}
+
+function AbsenceDialog({
+  studentId,
+  studentName,
+  classId,
+  today,
+  open,
+  onOpenChange,
+  onSuccess,
+}: AbsenceDialogProps): React.JSX.Element {
+  const [date, setDate]       = useState(today);
+  const [reason, setReason]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  function handleClose(next: boolean): void {
+    if (!next) { setReason(''); setDate(today); setError(null); }
+    onOpenChange(next);
+  }
+
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await apiRequest(`/classes/${classId}/attendance`, {
+        method: 'POST',
+        body: JSON.stringify({
+          date,
+          records: [{
+            studentId,
+            status: 'ABSENT',
+            ...(reason.trim() ? { notes: reason.trim() } : {}),
+          }],
+        }),
+      });
+      handleClose(false);
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'שגיאה בשמירת החיסור');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100">
+              <UserMinus className="h-5 w-5 text-red-600" aria-hidden="true" />
+            </div>
+            <div>
+              <DialogTitle className="text-slate-800">רשום חיסור</DialogTitle>
+              <DialogDescription className="text-slate-500 text-sm">{studentName}</DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+        <form onSubmit={(e) => { void handleSubmit(e); }} noValidate className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="abs-date" className="flex items-center gap-1.5 text-slate-700 font-medium">
+              <CalendarDays className="h-4 w-4 text-slate-400" aria-hidden="true" />
+              תאריך
+            </Label>
+            <Input
+              id="abs-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              max={today}
+              disabled={loading}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-red-400"
+              aria-label="תאריך החיסור"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="abs-reason" className="text-slate-700 font-medium">
+              סיבה
+              <span className="ms-1 text-xs font-normal text-slate-400">(אופציונלי)</span>
+            </Label>
+            <Input
+              id="abs-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="לדוגמה: מחלה"
+              disabled={loading}
+              className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-red-400"
+              aria-label="סיבת החיסור"
+            />
+          </div>
+          {error && (
+            <p className="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">{error}</p>
+          )}
+          <div className="flex justify-end gap-3 pt-1">
+            <Button type="button" variant="outline" disabled={loading} onClick={() => handleClose(false)} className="rounded-xl">ביטול</Button>
+            <motion.div whileTap={{ scale: 0.97 }}>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="gap-2 rounded-xl bg-red-500 hover:bg-red-600 shadow-sm"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <UserMinus className="h-4 w-4" aria-hidden="true" />}
+                {loading ? 'שומר...' : 'אשר חיסור'}
+              </Button>
+            </motion.div>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Student row actions (absent + exempt buttons) ────────────────────────────
+
+interface StudentRowActionsProps {
+  studentId: string;
+  studentName: string;
+  classId: string;
+  today: string;
+  isAbsent: boolean;
+  isExempt: boolean;
+  onOpenExemptDialog: (studentId: string) => void;
+  onToggleAbsent: (studentId: string) => void;
+  absentLoading: boolean;
+}
+
+function StudentRowActions({
+  studentId,
+  studentName,
+  isAbsent,
+  isExempt,
+  onOpenExemptDialog,
+  onToggleAbsent,
+  absentLoading,
+}: StudentRowActionsProps): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1.5">
+      {/* Absent toggle */}
+      <motion.button
+        type="button"
+        onClick={(e) => { e.preventDefault(); onToggleAbsent(studentId); }}
+        disabled={absentLoading || isExempt}
+        whileHover={absentLoading || isExempt ? {} : { scale: 1.08 }}
+        whileTap={absentLoading || isExempt ? {} : { scale: 0.92 }}
+        title={isAbsent ? 'בטל חיסור' : 'סמן כחסר'}
+        aria-label={`${isAbsent ? 'בטל חיסור' : 'סמן כחסר'} עבור ${studentName}`}
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+          isAbsent
+            ? 'bg-red-500 text-white shadow-[0_2px_10px_rgba(239,68,68,0.40)]'
+            : 'border border-red-200/70 bg-red-50/60 text-red-400 hover:bg-red-100 hover:text-red-600 hover:border-red-300',
+          (absentLoading || isExempt) && 'opacity-40 cursor-not-allowed',
+        )}
+      >
+        {absentLoading
+          ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          : <UserMinus className="h-4 w-4" aria-hidden="true" />
+        }
+      </motion.button>
+
+      {/* Exempt button */}
+      <motion.button
+        type="button"
+        onClick={(e) => { e.preventDefault(); onOpenExemptDialog(studentId); }}
+        disabled={isAbsent}
+        whileHover={isAbsent ? {} : { scale: 1.08 }}
+        whileTap={isAbsent ? {} : { scale: 0.92 }}
+        title={isExempt ? 'פטור פעיל' : 'סמן פטור'}
+        aria-label={`${isExempt ? 'פטור פעיל' : 'סמן פטור'} עבור ${studentName}`}
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+          isExempt
+            ? 'bg-orange-500 text-white shadow-[0_2px_10px_rgba(249,115,22,0.40)]'
+            : 'border border-orange-200/70 bg-orange-50/60 text-orange-400 hover:bg-orange-100 hover:text-orange-600 hover:border-orange-300',
+          isAbsent && 'opacity-40 cursor-not-allowed',
+        )}
+      >
+        {isExempt
+          ? <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          : <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+        }
+      </motion.button>
     </div>
   );
 }
@@ -442,9 +800,175 @@ function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalP
   );
 }
 
+// ─── Test Type Dropdown ───────────────────────────────────────────────────────
+
+interface TestTypeDropdownProps {
+  testSummaries: TestSummary[];
+  selectedTestId: string | null;
+  onSelect: (id: string) => void;
+}
+
+function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeDropdownProps): React.JSX.Element {
+  const { data: allTypes, isLoading } = useTestTypes();
+
+  // All 28 test types from catalog; mark which ones have actual session data
+  const options = (allTypes ?? []).map((t) => {
+    const summary = testSummaries.find((s) => s.testTypeId === t.id);
+    return { ...t, hasSessions: !!summary, sessionCount: summary?.studentGrades.length ?? 0 };
+  });
+
+  const selectedOpt = options.find((o) => o.id === selectedTestId);
+  const TypeIcon = selectedOpt ? (INPUT_TYPE_ICONS[selectedOpt.inputType] ?? Target) : Dumbbell;
+
+  if (isLoading) {
+    return <div className="h-14 animate-pulse rounded-2xl bg-white/60 shadow-[0_2px_16px_rgba(15,23,42,0.06)]" />;
+  }
+
+  return (
+    <div className="rounded-2xl bg-indigo-50/80 backdrop-blur-xl border border-white/80 p-4 shadow-[0_8px_28px_rgba(15,23,42,0.10)]">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* Icon + label */}
+        <div className="flex items-center gap-2.5">
+          <motion.div
+            key={selectedTestId ?? 'none'}
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.35 }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 shadow-[0_4px_16px_rgba(99,102,241,0.40)]"
+          >
+            <TypeIcon className="h-5 w-5 text-white" aria-hidden="true" />
+          </motion.div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              מבחן מוצג
+            </p>
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={selectedOpt?.nameHe ?? '—'}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.28 }}
+                className="text-sm font-extrabold text-slate-900"
+              >
+                {selectedOpt ? `${selectedOpt.nameHe}${selectedOpt.unit ? ` (${selectedOpt.unit})` : ''}` : 'בחר מבחן'}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* shadcn Select */}
+        <Select
+          value={selectedTestId ?? ''}
+          onValueChange={(v) => {
+            const opt = options.find((o) => o.id === v);
+            if (opt) onSelect(opt.id);
+          }}
+          dir="rtl"
+        >
+          <SelectTrigger
+            className="h-11 w-[260px] rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm focus:ring-2 focus:ring-indigo-400"
+            aria-label="בחר מבחן"
+          >
+            <SelectValue placeholder="בחר מבחן…" />
+          </SelectTrigger>
+          <SelectContent
+            className="rounded-xl border-white/80 bg-white/95 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl"
+            dir="rtl"
+          >
+            {/* Tests with recorded sessions first */}
+            {options.some((o) => o.hasSessions) && (
+              <>
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  מבחנים שבוצעו בכיתה
+                </div>
+                {options.filter((o) => o.hasSessions).map((opt) => {
+                  const Icon = INPUT_TYPE_ICONS[opt.inputType] ?? Target;
+                  return (
+                    <SelectItem
+                      key={opt.id}
+                      value={opt.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg py-2.5 text-sm font-medium text-slate-800 focus:bg-indigo-50 focus:text-indigo-800"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" />
+                        {opt.nameHe}
+                        {opt.unit && <span className="text-xs text-slate-400">({opt.unit})</span>}
+                        <span className="ms-1 rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-bold text-emerald-700">
+                          {opt.sessionCount} תוצאות
+                        </span>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+                <div className="my-1 h-px bg-slate-100" />
+              </>
+            )}
+            {/* All other test types */}
+            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              כל סוגי המבחנים
+            </div>
+            {options.filter((o) => !o.hasSessions).map((opt) => {
+              const Icon = INPUT_TYPE_ICONS[opt.inputType] ?? Target;
+              return (
+                <SelectItem
+                  key={opt.id}
+                  value={opt.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg py-2 text-sm font-medium text-slate-500 focus:bg-slate-50 focus:text-slate-800"
+                >
+                  <span className="flex items-center gap-2">
+                    <Icon className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    {opt.nameHe}
+                    {opt.unit && <span className="text-xs text-slate-300">({opt.unit})</span>}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Session count badge strip for tests with data */}
+      {testSummaries.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {testSummaries.map((s, i) => {
+            const visual = getTabVisual(i);
+            const active = s.testTypeId === selectedTestId;
+            return (
+              <motion.button
+                key={s.testTypeId}
+                type="button"
+                onClick={() => onSelect(s.testTypeId)}
+                whileTap={{ scale: 0.95 }}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all',
+                  active
+                    ? 'bg-indigo-600 text-white shadow-[0_4px_14px_rgba(99,102,241,0.35)]'
+                    : 'bg-white/80 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700',
+                )}
+                style={active ? {} : {}}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: active ? 'white' : visual.chartColor }}
+                />
+                {s.nameHe}
+                {s.unit && <span className={active ? 'text-white/70' : 'text-slate-400'}>({s.unit})</span>}
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Gamified podium ──────────────────────────────────────────────────────────
 
-interface PodiumEntry { student: StudentData; score: number; rank: 1 | 2 | 3 }
+interface PodiumEntry { student: StudentData; score: number; rank: 1 | 2 | 3; rawValue: number | null; unit: string | null; inputType: string }
 
 const PODIUM_META = {
   1: { label: '1', h: 'h-36', gradFrom: 'from-amber-300', gradTo: 'to-amber-500', glow: '0 0 30px rgba(251,191,36,0.60)', ring: 'ring-amber-400', medal: '🥇', avatarBg: 'bg-amber-100 text-amber-800',  delay: 0.2  },
@@ -485,6 +1009,15 @@ function Podium({ entries }: { entries: PodiumEntry[] }): React.JSX.Element {
             <div className="text-center">
               <p className="text-xs font-bold text-slate-800 leading-tight max-w-[88px] truncate">{displayName}</p>
               <p className="text-xs font-semibold text-slate-500">{entry.score}</p>
+              {entry.rawValue !== null && entry.unit && (() => {
+                const fmtRaw = formatRawValue(entry.rawValue, entry.inputType);
+                return fmtRaw !== null ? (
+                  <p className="text-sm font-black text-slate-700 mt-0.5 tabular-nums">
+                    {fmtRaw}
+                    <span className="text-[11px] font-bold text-slate-500 ms-0.5">{entry.unit}</span>
+                  </p>
+                ) : null;
+              })()}
             </div>
             <motion.div
               className={`w-full rounded-t-2xl bg-gradient-to-t ${meta.gradFrom} ${meta.gradTo} ${meta.h} flex items-start justify-center pt-2.5`}
@@ -566,27 +1099,153 @@ function DistributionCard({ distribution, total }: DistributionCardProps): React
 
 export default function ClassDetailPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
-  const [isAddStudentOpen, setIsAddStudentOpen]     = useState(false);
-  const [isCreateSessionOpen, setIsCreateSessionOpen] = useState(false);
-  const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
-  const [copied, setCopied]                         = useState(false);
+  const [isAddStudentOpen, setIsAddStudentOpen]         = useState(false);
+  const [isCreateSessionOpen, setIsCreateSessionOpen]   = useState(false);
+  const [selectedTestId, setSelectedTestId]             = useState<string | null>(null);
+  const [copied, setCopied]                             = useState(false);
+
+  // Today's attendance state
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [absentLoadingIds, setAbsentLoadingIds] = useState<Set<string>>(new Set());
+  const [exemptDialogStudentId, setExemptDialogStudentId]   = useState<string | null>(null);
+  const [absenceDialogStudentId, setAbsenceDialogStudentId] = useState<string | null>(null);
 
   const { data: cls,      error: classError,    isLoading: classLoading    } = useClass(classId);
   const { data: students, error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
   const { data: details,  isLoading: detailsLoading } = useClassDetails(classId);
+  const { data: testTypes } = useTestTypes();
+
+  // Fetch today's attendance to drive absent/exempt button states
+  const { data: todayAttendance, mutate: mutateAttendance } = useSWR<AttendanceRecord[]>(
+    `/classes/${classId}/attendance?date=${today}`,
+    apiFetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const todayAttendanceMap = useMemo(
+    () => new Map((todayAttendance ?? []).map((r) => [r.studentId, r])),
+    [todayAttendance],
+  );
+
+  // Stable derived values — memoised so attendance toggles don't re-run these
+  const testSummaries = useMemo(
+    () => details?.testSummaries ?? [],
+    [details],
+  );
 
   // Initialise selectedTestId to the first test type once details load
   useEffect(() => {
-    if (selectedTestId === null && details?.testSummaries[0]) {
-      setSelectedTestId(details.testSummaries[0].testTypeId);
+    if (selectedTestId === null && testSummaries[0]) {
+      setSelectedTestId(testSummaries[0].testTypeId);
     }
-  }, [details, selectedTestId]);
+  }, [testSummaries, selectedTestId]);
+
+  const selectedSummary = useMemo(
+    () => testSummaries.find((s) => s.testTypeId === selectedTestId),
+    [testSummaries, selectedTestId],
+  );
+
+  const selectedInputType = useMemo(
+    () => testTypes?.find((t) => t.id === selectedSummary?.testTypeId)?.inputType ?? 'GENERAL',
+    [testTypes, selectedSummary?.testTypeId],
+  );
+
+  const studentGradesMap = useMemo(
+    () => new Map<string, number>(
+      (selectedSummary?.studentGrades ?? []).map((sg) => [sg.studentId, sg.effectiveGrade]),
+    ),
+    [selectedSummary],
+  );
+
+  const studentRawMap = useMemo(
+    () => new Map<string, number | null>(
+      (selectedSummary?.studentGrades ?? []).map((sg) => [sg.studentId, sg.rawValue]),
+    ),
+    [selectedSummary],
+  );
+
+  const ranked = useMemo<PodiumEntry[]>(
+    () => (students ?? [])
+      .map((s) => ({
+        student:   s,
+        score:     studentGradesMap.get(s.id) ?? 0,
+        rawValue:  studentRawMap.get(s.id) ?? null,
+        unit:      selectedSummary?.unit ?? null,
+        inputType: selectedInputType,
+      }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => {
+        const scoreDiff = b.score - a.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        if (a.rawValue === null && b.rawValue === null) return 0;
+        if (a.rawValue === null) return 1;
+        if (b.rawValue === null) return -1;
+        return selectedInputType === 'TIME'
+          ? a.rawValue - b.rawValue
+          : b.rawValue - a.rawValue;
+      })
+      .slice(0, 3)
+      .map((entry, pos) => ({ ...entry, rank: (pos + 1) as 1 | 2 | 3 })),
+    [students, studentGradesMap, studentRawMap, selectedSummary?.unit, selectedInputType],
+  );
+
+  const chartData = useMemo(
+    () => (selectedSummary?.progressData ?? []).map((p) => ({
+      month: p.month,
+      avg:   p.classAvg,
+      norm:  NATIONAL_NORM,
+    })),
+    [selectedSummary],
+  );
+
+  const distributionTotal = useMemo(
+    () =>
+      (selectedSummary?.distribution.excellent ?? 0) +
+      (selectedSummary?.distribution.good      ?? 0) +
+      (selectedSummary?.distribution.pass      ?? 0) +
+      (selectedSummary?.distribution.fail      ?? 0),
+    [selectedSummary],
+  );
 
   async function copyJoinCode(): Promise<void> {
     if (!cls) return;
     await navigator.clipboard.writeText(cls.joinCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleToggleAbsent(studentId: string): Promise<void> {
+    const current  = todayAttendanceMap.get(studentId);
+    const isAbsent = current?.status === 'ABSENT';
+
+    // Not absent → open dialog to record absence with optional date + reason
+    if (!isAbsent) {
+      setAbsenceDialogStudentId(studentId);
+      return;
+    }
+
+    // Already absent → remove absence directly (no dialog needed)
+    if (absentLoadingIds.has(studentId)) return;
+    setAbsentLoadingIds((prev) => new Set([...prev, studentId]));
+    try {
+      await apiRequest(`/classes/${classId}/attendance`, {
+        method: 'POST',
+        body: JSON.stringify({ date: today, records: [{ studentId, status: 'PRESENT' }] }),
+      });
+      await mutateAttendance();
+    } catch {
+      // noop
+    } finally {
+      setAbsentLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(studentId);
+        return next;
+      });
+    }
+  }
+
+  function openExemptDialog(studentId: string): void {
+    setExemptDialogStudentId(studentId);
   }
 
   if (classLoading || detailsLoading) return <ClassDetailSkeleton />;
@@ -599,41 +1258,10 @@ export default function ClassDetailPage(): React.JSX.Element {
     );
   }
 
-  const testSummaries: TestSummary[] = details?.testSummaries ?? [];
   const attendancePct = details?.attendancePct ?? 0;
-
-  // Selected summary (falls back to first)
-  const selectedSummary: TestSummary | undefined =
-    testSummaries.find((s) => s.testTypeId === selectedTestId) ?? testSummaries[0];
 
   const selectedTestIndex = testSummaries.findIndex((s) => s.testTypeId === selectedSummary?.testTypeId);
   const selectedVisual    = getTabVisual(selectedTestIndex >= 0 ? selectedTestIndex : 0);
-
-  // Build lookup: studentId → effectiveGrade for the selected test
-  const studentGradesMap = new Map<string, number>(
-    (selectedSummary?.studentGrades ?? []).map((sg) => [sg.studentId, sg.effectiveGrade]),
-  );
-
-  // Top 3 for the podium (only students who actually have a grade)
-  const ranked: PodiumEntry[] = (students ?? [])
-    .map((s) => ({ student: s, score: studentGradesMap.get(s.id) ?? 0 }))
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((entry, pos) => ({ ...entry, rank: (pos + 1) as 1 | 2 | 3 }));
-
-  // Chart data: merge API progressData with constant norm line
-  const chartData = (selectedSummary?.progressData ?? []).map((p) => ({
-    month: p.month,
-    avg:   p.classAvg,
-    norm:  NATIONAL_NORM,
-  }));
-
-  const distributionTotal =
-    (selectedSummary?.distribution.excellent ?? 0) +
-    (selectedSummary?.distribution.good      ?? 0) +
-    (selectedSummary?.distribution.pass      ?? 0) +
-    (selectedSummary?.distribution.fail      ?? 0);
 
   return (
     <AnimatePresence mode="wait">
@@ -729,53 +1357,34 @@ export default function ClassDetailPage(): React.JSX.Element {
 
         </motion.div>
 
-        {/* ── Test type selector tabs ─────────────────────────────────── */}
-        {testSummaries.length > 0 && (
-          <motion.div variants={ITEM}>
-            <div
-              className="flex items-center gap-2 rounded-2xl bg-indigo-50/78 backdrop-blur-xl border border-white/80 p-1.5 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
-              role="tablist"
-              aria-label="בחר סוג מבחן"
-            >
-              {testSummaries.map((summary, i) => {
-                const active = summary.testTypeId === selectedSummary?.testTypeId;
-                const visual = getTabVisual(i);
-                const Icon   = visual.icon;
-                return (
-                  <motion.button
-                    key={summary.testTypeId}
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setSelectedTestId(summary.testTypeId)}
-                    whileTap={{ scale: 0.95 }}
-                    className="relative flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-                  >
-                    {active && (
-                      <motion.div
-                        layoutId="activeTestTab"
-                        className={`absolute inset-0 rounded-xl ${visual.tabBg}`}
-                        style={{ boxShadow: `0 4px 20px ${visual.tabShadow}` }}
-                        transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.35 }}
-                      />
-                    )}
-                    <motion.div
-                      animate={active ? { scale: [1, 1.15, 1] } : {}}
-                      transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                      className="relative z-10"
-                    >
-                      <Icon className={cn('h-4 w-4', active ? 'text-white' : 'text-slate-500')} aria-hidden="true" />
-                    </motion.div>
-                    <span className={cn('relative z-10 hidden sm:block', active ? 'text-white' : 'text-slate-700')}>
-                      {summary.nameHe}
-                    </span>
-                  </motion.button>
-                );
-              })}
+        {/* ── Test type selector — premium dropdown ──────────────────── */}
+        <motion.div variants={ITEM}>
+          <TestTypeDropdown
+            testSummaries={testSummaries}
+            selectedTestId={selectedTestId}
+            onSelect={setSelectedTestId}
+          />
+        </motion.div>
+
+        {/* ── Tab content (animated on test switch) ──────────────────── */}
+        {selectedTestId && !selectedSummary && (
+          <motion.div
+            key={`no-sessions-${selectedTestId}`}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.45 }}
+            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 py-14 text-center"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
+              <Dumbbell className="h-6 w-6 text-indigo-400" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">טרם בוצע מבחן זה בכיתה</p>
+              <p className="mt-1 text-sm text-slate-400">לחץ &ldquo;הוסף שיעור / מבחן&rdquo; כדי להתחיל מבחן ולרשום תוצאות</p>
             </div>
           </motion.div>
         )}
 
-        {/* ── Tab content (animated on test switch) ──────────────────── */}
         {selectedSummary && (
           <AnimatePresence mode="wait">
             <motion.div
@@ -940,12 +1549,13 @@ export default function ClassDetailPage(): React.JSX.Element {
           {!studentsLoading && students && students.length > 0 && (
             <div className="overflow-hidden rounded-2xl bg-indigo-50/72 backdrop-blur-xl border border-white/78 shadow-[0_8px_28px_rgba(15,23,42,0.10)]">
               {/* Header */}
-              <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 grid grid-cols-[2fr_1fr_1fr_1.5fr_0.5fr] gap-4">
+              <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] gap-4">
                 {[
                   'שם תלמיד',
                   selectedSummary ? `ציון — ${selectedSummary.nameHe}` : 'ציון',
                   'מגדר',
                   'רמת כושר',
+                  'נוכחות',
                   '',
                 ].map((h) => (
                   <span key={h} className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{h}</span>
@@ -959,45 +1569,72 @@ export default function ClassDetailPage(): React.JSX.Element {
                   const tint     = AVATAR_TINTS[index % AVATAR_TINTS.length]!;
                   const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
 
+                  const record   = todayAttendanceMap.get(student.id);
+                  const isAbsent = record?.status === 'ABSENT';
+                  const isExempt = record?.status === 'EXCUSED';
+
                   return (
                     <motion.li key={student.id} variants={ROW_ITEM}>
-                      <Link
-                        href={`/classes/${classId}/student/${student.id}`}
-                        className="grid grid-cols-[2fr_1fr_1fr_1.5fr_0.5fr] items-center gap-4 border-b border-slate-50 px-5 py-3.5 last:border-0 hover:bg-indigo-50/40 transition-colors group"
-                      >
-                        {/* Name + avatar */}
-                        <div className="flex items-center gap-3">
-                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}>{initials}</div>
-                          <div>
-                            <div className="text-sm font-semibold text-slate-800 group-hover:text-indigo-700 transition-colors">
-                              {student.firstName} {student.lastName}
+                      <div className={cn(
+                        'grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] items-center gap-4 border-b border-slate-50 px-5 py-3.5 last:border-0 transition-colors group',
+                        isExempt ? 'bg-orange-50/40' : 'hover:bg-indigo-50/40',
+                      )}>
+                        {/* Name + avatar + score + gender + level — all wrapped in a link */}
+                        <Link href={`/classes/${classId}/student/${student.id}`} className="contents">
+                          {/* Name + avatar */}
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}>{initials}</div>
+                            <div>
+                              <div className={cn(
+                                'text-sm font-semibold transition-colors',
+                                isExempt  ? 'text-orange-600' :
+                                'text-slate-800 group-hover:text-indigo-700',
+                              )}>
+                                {student.firstName} {student.lastName}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
+                                {isAbsent && <span className="rounded-full bg-red-100 px-1.5 py-px text-[10px] font-bold text-red-600">חסר/ה</span>}
+                                {isExempt && <span className="rounded-full bg-orange-100 px-1.5 py-px text-[10px] font-bold text-orange-600">פטור/ה</span>}
+                              </div>
                             </div>
-                            <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
                           </div>
-                        </div>
-                        {/* Score */}
-                        <span className={`text-lg font-extrabold ${
-                          score === 0          ? 'text-slate-300'   :
-                          level === 'excellent' ? 'text-emerald-600' :
-                          level === 'good'      ? 'text-blue-600'    :
-                          level === 'pass'      ? 'text-amber-600'   : 'text-red-600'
-                        }`}>
-                          {score > 0 ? score : '—'}
-                        </span>
-                        {/* Gender */}
-                        <span className="text-xs text-slate-500">{GENDER_LABELS[student.gender]}</span>
-                        {/* Level badge */}
-                        {score > 0 ? (
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ls.bg} ${ls.text} ${ls.border}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${ls.dot}`} />
-                            {ls.label}
+                          {/* Score */}
+                          <span className={`text-lg font-extrabold ${
+                            score === 0          ? 'text-slate-300'   :
+                            level === 'excellent' ? 'text-emerald-600' :
+                            level === 'good'      ? 'text-blue-600'    :
+                            level === 'pass'      ? 'text-amber-600'   : 'text-red-600'
+                          }`}>
+                            {score > 0 ? score : '—'}
                           </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">אין ציון</span>
-                        )}
+                          {/* Gender */}
+                          <span className="text-xs text-slate-500">{GENDER_LABELS[student.gender]}</span>
+                          {/* Level badge */}
+                          {score > 0 ? (
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ls.bg} ${ls.text} ${ls.border}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${ls.dot}`} />
+                              {ls.label}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">אין ציון</span>
+                          )}
+                        </Link>
+                        {/* Absent + Exempt action buttons */}
+                        <StudentRowActions
+                          studentId={student.id}
+                          studentName={`${student.firstName} ${student.lastName}`}
+                          classId={classId}
+                          today={today}
+                          isAbsent={isAbsent}
+                          isExempt={isExempt}
+                          onOpenExemptDialog={openExemptDialog}
+                          onToggleAbsent={(id) => { void handleToggleAbsent(id); }}
+                          absentLoading={absentLoadingIds.has(student.id)}
+                        />
                         {/* Arrow */}
                         <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
-                      </Link>
+                      </div>
                     </motion.li>
                   );
                 })}
@@ -1018,6 +1655,38 @@ export default function ClassDetailPage(): React.JSX.Element {
         open={isCreateSessionOpen}
         onOpenChange={setIsCreateSessionOpen}
       />
+      {exemptDialogStudentId && (() => {
+        const s = (students ?? []).find((st) => st.id === exemptDialogStudentId);
+        if (!s) return null;
+        return (
+          <ExemptionDialog
+            key={exemptDialogStudentId}
+            studentId={s.id}
+            studentName={`${s.firstName} ${s.lastName}`}
+            classId={classId}
+            today={today}
+            open={!!exemptDialogStudentId}
+            onOpenChange={(open) => { if (!open) setExemptDialogStudentId(null); }}
+            onSuccess={() => { void mutateAttendance(); }}
+          />
+        );
+      })()}
+      {absenceDialogStudentId && (() => {
+        const s = (students ?? []).find((st) => st.id === absenceDialogStudentId);
+        if (!s) return null;
+        return (
+          <AbsenceDialog
+            key={absenceDialogStudentId}
+            studentId={s.id}
+            studentName={`${s.firstName} ${s.lastName}`}
+            classId={classId}
+            today={today}
+            open={!!absenceDialogStudentId}
+            onOpenChange={(open) => { if (!open) setAbsenceDialogStudentId(null); }}
+            onSuccess={() => { void mutateAttendance(); }}
+          />
+        );
+      })()}
     </AnimatePresence>
   );
 }

@@ -23,6 +23,7 @@ export { ApiError } from './api-error';
 export {
   createClassSchema,
   createStudentSchema,
+  createEventSchema,
 } from './schemas';
 export type {
   Semester,
@@ -38,6 +39,8 @@ export type {
   StudentGrade,
   StudentHistoryPoint,
   StudentTestHistory,
+  TalmidautRecord,
+  FinalGrade,
   StudentProfile,
   LiveStudentResult,
   SessionStudent,
@@ -45,4 +48,11 @@ export type {
   DashboardStats,
   DashboardClassStat,
   RecentSession,
+  MissingResultItem,
+  BelowNormItem,
+  TopStudentItem,
+  EventData,
+  CreateEventInput,
+  ReportRow,
+  ReportTestBreakdown,
 } from './schemas';

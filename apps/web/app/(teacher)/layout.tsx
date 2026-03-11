@@ -190,7 +190,8 @@ export default function TeacherLayout({
   return (
     <div className="relative flex h-screen overflow-hidden overflow-x-hidden">
       {/* ── Fixed full-screen background ─────────────────────────────── */}
-      <div className="fixed inset-0 z-0 overflow-hidden">
+      {/* pointer-events-none: this layer is purely decorative — must NEVER intercept clicks */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
 
         {/* Base gradient — purplish-emerald mesh */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#C7D2FE] via-[#E9D5FF] to-[#A7F3D0]" />

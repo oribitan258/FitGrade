@@ -81,6 +81,8 @@ export class ClassesService {
       sessions: Map<string, { conductedAt: Date; grades: number[] }>;
       // key: studentId → { sum, count }
       studentTotals: Map<string, { sum: number; count: number }>;
+      // key: studentId → rawValue from the most recent session (overwritten as results are asc-sorted)
+      studentLatestRaw: Map<string, number | null>;
     }
 
     const testMap = new Map<string, TestAccumulator>();
@@ -95,6 +97,7 @@ export class ClassesService {
           unit: testType.unit,
           sessions: new Map(),
           studentTotals: new Map(),
+          studentLatestRaw: new Map(),
         });
       }
 
@@ -110,6 +113,12 @@ export class ClassesService {
       studentData.sum += effectiveGrade;
       studentData.count++;
       acc.studentTotals.set(result.studentId, studentData);
+
+      // Results are ordered asc by conductedAt, so the last write wins = most recent rawValue
+      acc.studentLatestRaw.set(
+        result.studentId,
+        result.rawValue !== null ? result.rawValue.toNumber() : null,
+      );
     }
 
     // ── Build TestSummaryDto[] ──────────────────────────────────────────────────
@@ -130,6 +139,7 @@ export class ClassesService {
         ].map(([studentId, { sum, count }]) => ({
           studentId,
           effectiveGrade: count > 0 ? Math.round(sum / count) : 0,
+          rawValue: acc.studentLatestRaw.get(studentId) ?? null,
         }));
 
         const distribution: GradeDistributionDto = { excellent: 0, good: 0, pass: 0, fail: 0 };

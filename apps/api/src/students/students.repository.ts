@@ -9,18 +9,35 @@ import type { StudentResponseDto } from './dto/student-response.dto';
 
 /** Raw test result row used by findRawStudentProfile. */
 export interface RawStudentResult {
+  rawValue: Prisma.Decimal | null;
   calculatedGrade: number | null;
   gradeOverride: number | null;
   session: {
     testTypeId: string;
     conductedAt: Date;
-    testType: { nameHe: string; unit: string | null };
+    testType: { nameHe: string; unit: string | null; inputType: string };
   };
 }
 
 /** Raw attendance row used by findRawStudentProfile. */
 export interface RawAttendanceRow {
   status: AttendanceStatus;
+}
+
+/** Raw talmidaut row used by findRawStudentProfile. */
+export interface RawTalmidautRow {
+  id: string;
+  participation: number;
+  uniform: number;
+  behavior: number;
+  notes: string | null;
+  recordedAt: Date;
+}
+
+/** Class weight fields returned alongside profile data. */
+export interface ClassWeights {
+  testWeight: number;
+  talmidautWeight: number;
 }
 
 /** All raw data needed to build StudentProfileResponseDto. */
@@ -37,6 +54,8 @@ export interface RawStudentProfile {
   attendanceTotal: number;
   attendancePresent: number;
   recentAttendance: RawAttendanceRow[];
+  talmidautRecords: RawTalmidautRow[];
+  classWeights: ClassWeights;
 }
 
 export interface CreateStudentInput {
@@ -46,6 +65,21 @@ export interface CreateStudentInput {
   gender: Gender;
   studentCode: string;
   passwordHash: string; // pre-hashed by StudentsService
+}
+
+export interface CreateTalmidautInput {
+  participation: number;
+  uniform: number;
+  behavior: number;
+  notes?: string;
+}
+
+export interface FinalGradeResult {
+  fitnessAvg: number;
+  talmidautAvg: number;
+  recommendedGrade: number;
+  testWeight: number;
+  talmidautWeight: number;
 }
 
 /** Explicit select for all student queries — passwordHash is always excluded. */
@@ -117,7 +151,7 @@ export class StudentsRepository {
     studentId: string,
     classId: string,
   ): Promise<RawStudentProfile> {
-    const [student, results, attendanceTotal, attendancePresent, recentAttendance] =
+    const [student, results, attendanceTotal, attendancePresent, recentAttendance, talmidautRecords, classData] =
       await Promise.all([
         this.prisma.student.findUnique({
           where: { id: studentId },
@@ -133,13 +167,14 @@ export class StudentsRepository {
         this.prisma.testResult.findMany({
           where: { studentId, session: { classId } },
           select: {
+            rawValue: true,
             calculatedGrade: true,
             gradeOverride: true,
             session: {
               select: {
                 testTypeId: true,
                 conductedAt: true,
-                testType: { select: { nameHe: true, unit: true } },
+                testType: { select: { nameHe: true, unit: true, inputType: true } },
               },
             },
           },
@@ -155,13 +190,118 @@ export class StudentsRepository {
           take: 6,
           select: { status: true },
         }),
+        this.prisma.talmidautRecord.findMany({
+          where: { studentId, classId },
+          orderBy: { recordedAt: 'desc' },
+          select: {
+            id: true,
+            participation: true,
+            uniform: true,
+            behavior: true,
+            notes: true,
+            recordedAt: true,
+          },
+        }),
+        this.prisma.class.findUniqueOrThrow({
+          where: { id: classId },
+          select: { testWeight: true, talmidautWeight: true },
+        }),
       ]);
 
     if (student === null) {
       throw new NotFoundException(`תלמיד ${studentId} לא נמצא`);
     }
 
-    return { student, results, attendanceTotal, attendancePresent, recentAttendance };
+    return {
+      student,
+      results,
+      attendanceTotal,
+      attendancePresent,
+      recentAttendance,
+      talmidautRecords,
+      classWeights: { testWeight: classData.testWeight, talmidautWeight: classData.talmidautWeight },
+    };
+  }
+
+  /**
+   * Creates a new TalmidautRecord and recomputes the StudentFinalGrade.
+   * Returns the updated final grade breakdown.
+   */
+  async createTalmidautRecord(
+    studentId: string,
+    classId: string,
+    input: CreateTalmidautInput,
+  ): Promise<FinalGradeResult> {
+    await this.prisma.talmidautRecord.create({
+      data: {
+        studentId,
+        classId,
+        participation: input.participation,
+        uniform: input.uniform,
+        behavior: input.behavior,
+        notes: input.notes,
+      },
+    });
+
+    return this.recalculateFinalGrade(studentId, classId);
+  }
+
+  /**
+   * Recomputes the recommended final grade from all talmidaut records and test results,
+   * then upserts the StudentFinalGrade row.
+   */
+  async recalculateFinalGrade(
+    studentId: string,
+    classId: string,
+  ): Promise<FinalGradeResult> {
+    const [cls, testResults, talmidautRecords] = await Promise.all([
+      this.prisma.class.findUniqueOrThrow({
+        where: { id: classId },
+        select: { testWeight: true, talmidautWeight: true },
+      }),
+      this.prisma.testResult.findMany({
+        where: { studentId, session: { classId } },
+        select: { calculatedGrade: true, gradeOverride: true },
+      }),
+      this.prisma.talmidautRecord.findMany({
+        where: { studentId, classId },
+        select: { participation: true, uniform: true, behavior: true },
+      }),
+    ]);
+
+    const fitnessAvg =
+      testResults.length > 0
+        ? Math.round(
+            testResults.reduce((s, r) => s + (r.gradeOverride ?? r.calculatedGrade ?? 0), 0) /
+              testResults.length,
+          )
+        : 0;
+
+    const talmidautAvg =
+      talmidautRecords.length > 0
+        ? Math.round(
+            talmidautRecords.reduce((s, r) => s + (r.participation + r.uniform + r.behavior) / 3, 0) /
+              talmidautRecords.length,
+          )
+        : 0;
+
+    const recommendedGrade = Math.round(
+      fitnessAvg * (cls.testWeight / 100) + talmidautAvg * (cls.talmidautWeight / 100),
+    );
+
+    await this.prisma.studentFinalGrade.upsert({
+      where: { classId_studentId: { classId, studentId } },
+      create: { classId, studentId, fitnessAvg, talmidautAvg, recommendedGrade },
+      update: { fitnessAvg, talmidautAvg, recommendedGrade },
+    });
+
+    return {
+      fitnessAvg,
+      talmidautAvg,
+      recommendedGrade,
+      testWeight: cls.testWeight,
+      talmidautWeight: cls.talmidautWeight,
+    };
   }
 
   /**

@@ -2,8 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { StudentsRepository } from './students.repository';
 import type { CreateStudentDto } from './dto/create-student.dto';
+import type { CreateTalmidautDto } from './dto/create-talmidaut.dto';
 import type { StudentResponseDto } from './dto/student-response.dto';
-import type { StudentProfileResponseDto, StudentTestHistoryDto } from './dto/student-profile-response.dto';
+import type {
+  FinalGradeDto,
+  StudentProfileResponseDto,
+  StudentTestHistoryDto,
+  TalmidautRecordDto,
+} from './dto/student-profile-response.dto';
+import type { FinalGradeResult } from './students.repository';
 
 /** Hebrew month labels for building per-student history points. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -35,7 +42,8 @@ export class StudentsService {
 
   /**
    * Returns the full profile for a single student within a class.
-   * Includes per-test history (scores over time) and attendance metrics.
+   * Includes per-test history (scores over time), attendance metrics,
+   * talmidaut records, and calculated final grade.
    *
    * - Verifies the class belongs to the teacher (ownership check).
    * - Verifies the student is enrolled in that class.
@@ -49,7 +57,7 @@ export class StudentsService {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
     await this.studentsRepository.verifyStudentInClass(studentId, classId);
 
-    const { student, results, attendanceTotal, attendancePresent, recentAttendance } =
+    const { student, results, attendanceTotal, attendancePresent, recentAttendance, talmidautRecords, classWeights } =
       await this.studentsRepository.findRawStudentProfile(studentId, classId);
 
     const attendancePct =
@@ -66,6 +74,8 @@ export class StudentsService {
     interface TestAcc {
       nameHe: string;
       unit: string | null;
+      inputType: string;
+      latestRawValue: number | null;
       history: { month: string; grade: number }[];
     }
 
@@ -80,10 +90,15 @@ export class StudentsService {
         testMap.set(testTypeId, {
           nameHe: testType.nameHe,
           unit: testType.unit,
+          inputType: testType.inputType,
+          latestRawValue: null,
           history: [],
         });
       }
-      testMap.get(testTypeId)!.history.push({ month, grade });
+      const acc = testMap.get(testTypeId)!;
+      acc.history.push({ month, grade });
+      // Always overwrite: results are ordered oldest→newest, so the last wins
+      acc.latestRawValue = result.rawValue !== null ? Number(result.rawValue) : null;
     }
 
     // ── Build testHistories ────────────────────────────────────────────────────
@@ -93,7 +108,15 @@ export class StudentsService {
           acc.history.length > 0
             ? acc.history[acc.history.length - 1]!.grade
             : 0;
-        return { testTypeId, nameHe: acc.nameHe, unit: acc.unit, latestGrade, history: acc.history };
+        return {
+          testTypeId,
+          nameHe: acc.nameHe,
+          unit: acc.unit,
+          inputType: acc.inputType,
+          latestGrade,
+          latestRawValue: acc.latestRawValue,
+          history: acc.history,
+        };
       },
     );
 
@@ -104,6 +127,41 @@ export class StudentsService {
               testHistories.length,
           )
         : 0;
+
+    // ── Build talmidaut records DTO ────────────────────────────────────────────
+    const talmidautDtos: TalmidautRecordDto[] = talmidautRecords.map((r) => ({
+      id: r.id,
+      participation: r.participation,
+      uniform: r.uniform,
+      behavior: r.behavior,
+      compositeScore: Math.round((r.participation + r.uniform + r.behavior) / 3),
+      notes: r.notes,
+      recordedAt: r.recordedAt.toISOString(),
+    }));
+
+    // ── Compute recommended final grade ───────────────────────────────────────
+    const talmidautAvg =
+      talmidautRecords.length > 0
+        ? Math.round(
+            talmidautRecords.reduce(
+              (s, r) => s + (r.participation + r.uniform + r.behavior) / 3,
+              0,
+            ) / talmidautRecords.length,
+          )
+        : 0;
+
+    const recommendedGrade = Math.round(
+      overallAvg * (classWeights.testWeight / 100) +
+        talmidautAvg * (classWeights.talmidautWeight / 100),
+    );
+
+    const finalGrade: FinalGradeDto = {
+      fitnessAvg: overallAvg,
+      talmidautAvg,
+      recommendedGrade,
+      testWeight: classWeights.testWeight,
+      talmidautWeight: classWeights.talmidautWeight,
+    };
 
     return {
       id: student.id,
@@ -116,7 +174,40 @@ export class StudentsService {
       attendanceTrend,
       overallAvg,
       testHistories,
+      talmidautRecords: talmidautDtos,
+      finalGrade,
     };
+  }
+
+  /**
+   * Records a new talmidaut entry for a student in a class and recomputes
+   * the recommended final grade.
+   *
+   * - Verifies the class belongs to the teacher.
+   * - Verifies the student is enrolled in the class.
+   * - Creates the TalmidautRecord and upserts StudentFinalGrade.
+   */
+  async addTalmidautRecord(
+    studentId: string,
+    classId: string,
+    dto: CreateTalmidautDto,
+    teacherId: string,
+  ): Promise<FinalGradeResult> {
+    await this.studentsRepository.verifyClassOwnership(classId, teacherId);
+    await this.studentsRepository.verifyStudentInClass(studentId, classId);
+
+    const result = await this.studentsRepository.createTalmidautRecord(studentId, classId, {
+      participation: dto.participation,
+      uniform: dto.uniform,
+      behavior: dto.behavior,
+      notes: dto.notes,
+    });
+
+    this.logger.log(
+      `Talmidaut recorded: student=${studentId} class=${classId} composite=${Math.round((dto.participation + dto.uniform + dto.behavior) / 3)}`,
+    );
+
+    return result;
   }
 
   /**

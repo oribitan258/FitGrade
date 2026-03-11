@@ -44,6 +44,9 @@ export class StudentResultDto {
   @ApiProperty({ description: 'Raw performance value (e.g. seconds, reps)' })
   rawValue!: number;
 
+  @ApiProperty({ description: 'Input type of the test (TIME, REPS, GENERAL, PASS_FAIL)' })
+  inputType!: string;
+
   /**
    * Effective grade (0–100): gradeOverride when set by teacher, otherwise calculatedGrade.
    * Never render this directly — always pass through getHebrewGradeLabel() on the client.

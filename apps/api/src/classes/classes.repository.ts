@@ -12,6 +12,7 @@ export interface RawTestResult {
   studentId: string;
   calculatedGrade: number | null;
   gradeOverride: number | null;
+  rawValue: Prisma.Decimal | null;
   session: {
     testTypeId: string;
     conductedAt: Date;
@@ -107,6 +108,7 @@ export class ClassesRepository {
           studentId: true,
           calculatedGrade: true,
           gradeOverride: true,
+          rawValue: true,
           session: {
             select: {
               testTypeId: true,

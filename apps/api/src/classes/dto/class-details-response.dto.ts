@@ -28,6 +28,9 @@ export class StudentGradeDto {
 
   @ApiProperty({ description: 'gradeOverride ?? calculatedGrade, averaged across sessions of this test type' })
   effectiveGrade!: number;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Raw measurement value from the most recent session (seconds, reps, etc.)' })
+  rawValue!: number | null;
 }
 
 export class TestSummaryDto {

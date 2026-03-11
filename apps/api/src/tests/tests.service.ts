@@ -7,6 +7,7 @@ import type { SessionResponseDto } from './dto/session-response.dto';
 import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import type { SubmitResultDto } from './dto/submit-result.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
+import type { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 
 @Injectable()
 export class TestsService {
@@ -20,6 +21,14 @@ export class TestsService {
   /** Returns all available FitnessTestTypes (system catalog). */
   async getTestTypes(): Promise<TestTypeResponseDto[]> {
     return this.testsRepository.findAllTestTypes();
+  }
+
+  /**
+   * Returns all NormTable bands for the given test type.
+   * Frontend filters by gender + age group for a specific view.
+   */
+  async getNormBands(testTypeId: string): Promise<TestTypeNormsResponseDto> {
+    return this.testsRepository.findNormBandsForTestType(testTypeId);
   }
 
   /**

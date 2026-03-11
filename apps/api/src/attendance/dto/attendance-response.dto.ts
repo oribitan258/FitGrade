@@ -20,6 +20,12 @@ export class AttendanceResponseDto {
   @ApiPropertyOptional({ nullable: true })
   notes!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Reason for exemption (when status = EXCUSED)' })
+  exemptionReason!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Exemption expiry as ISO string; null = no expiry' })
+  exemptionExpiresAt!: string | null;
+
   @ApiProperty()
   createdAt!: Date;
 

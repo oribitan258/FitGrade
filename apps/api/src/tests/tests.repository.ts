@@ -5,6 +5,7 @@ import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
 import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
+import type { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 
 const TEST_TYPE_SELECT = {
   id: true,
@@ -13,6 +14,7 @@ const TEST_TYPE_SELECT = {
   inputType: true,
   unit: true,
   isGlobal: true,
+  higherIsBetter: true,
   createdAt: true,
 } as const;
 
@@ -235,6 +237,56 @@ export class TestsRepository {
       );
     }
     await this.prisma.testResult.delete({ where: { id: result.id } });
+  }
+
+  /**
+   * Returns all NormTable bands for the given test type, ordered by
+   * minAge → gender → score descending. The caller filters client-side
+   * by gender + age group as needed.
+   * Throws NotFoundException if the test type doesn't exist.
+   */
+  async findNormBandsForTestType(testTypeId: string): Promise<TestTypeNormsResponseDto> {
+    const testType = await this.prisma.fitnessTestType.findUniqueOrThrow({
+      where: { id: testTypeId },
+      select: {
+        id: true,
+        nameHe: true,
+        unit: true,
+        inputType: true,
+        higherIsBetter: true,
+        normTables: {
+          select: {
+            gender: true,
+            minAge: true,
+            maxAge: true,
+            score: true,
+            minValue: true,
+            maxValue: true,
+          },
+          orderBy: [
+            { minAge: 'asc' },
+            { gender: 'asc' },
+            { score: 'desc' },
+          ],
+        },
+      },
+    });
+
+    return {
+      testTypeId: testType.id,
+      nameHe: testType.nameHe,
+      unit: testType.unit,
+      inputType: testType.inputType,
+      higherIsBetter: testType.higherIsBetter,
+      bands: testType.normTables.map((b) => ({
+        gender: b.gender,
+        minAge: b.minAge,
+        maxAge: b.maxAge,
+        score: b.score,
+        minValue: Number(b.minValue),
+        maxValue: Number(b.maxValue),
+      })),
+    };
   }
 
   /**

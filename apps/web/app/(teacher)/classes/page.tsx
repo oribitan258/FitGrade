@@ -51,42 +51,57 @@ const SELECT_STYLES =
   'ring-offset-background focus-visible:outline-none focus-visible:ring-2 ' +
   'focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 
-/** Cycling dark-glass accents for class cards */
+/** Cycling light-glass accents for class cards — vibrant tints on frosted glass */
 const CLASS_ACCENTS = [
   {
-    bg: 'bg-indigo-950/55', border: 'border-indigo-500/20',
-    stripe: 'from-indigo-400 to-violet-400', glow: 'bg-indigo-500',
-    icon: 'bg-indigo-500/20',   iconText: 'text-indigo-300',
-    code: 'bg-indigo-500/20 text-indigo-200',
-    tag:  'bg-indigo-500/15 text-indigo-300',
+    bg: 'bg-indigo-100/80',   border: 'border-indigo-400/50',
+    stripe: 'from-indigo-500 to-violet-500', glow: 'bg-indigo-400',
+    icon: 'bg-indigo-500/15',  iconText: 'text-indigo-600',
+    code: 'bg-indigo-500/12 text-indigo-800',
+    tag:  'bg-indigo-500/15 text-indigo-700',
+    title: 'text-indigo-950',  sub: 'text-indigo-700/70',
+    student: 'text-slate-600', arrow: 'text-indigo-300 group-hover:text-indigo-500',
+    shadow: 'shadow-[0_8px_28px_rgba(99,102,241,0.18)] hover:shadow-[0_16px_40px_rgba(99,102,241,0.30)]',
   },
   {
-    bg: 'bg-blue-950/55',   border: 'border-blue-500/20',
-    stripe: 'from-blue-400 to-cyan-400',    glow: 'bg-blue-500',
-    icon: 'bg-blue-500/20',     iconText: 'text-blue-300',
-    code: 'bg-blue-500/20 text-blue-200',
-    tag:  'bg-blue-500/15 text-blue-300',
+    bg: 'bg-teal-100/80',     border: 'border-teal-400/50',
+    stripe: 'from-teal-500 to-cyan-500',    glow: 'bg-teal-400',
+    icon: 'bg-teal-500/15',    iconText: 'text-teal-600',
+    code: 'bg-teal-500/12 text-teal-800',
+    tag:  'bg-teal-500/15 text-teal-700',
+    title: 'text-teal-950',    sub: 'text-teal-700/70',
+    student: 'text-slate-600', arrow: 'text-teal-300 group-hover:text-teal-500',
+    shadow: 'shadow-[0_8px_28px_rgba(20,184,166,0.18)] hover:shadow-[0_16px_40px_rgba(20,184,166,0.30)]',
   },
   {
-    bg: 'bg-violet-950/55', border: 'border-violet-500/20',
-    stripe: 'from-violet-400 to-purple-400', glow: 'bg-violet-500',
-    icon: 'bg-violet-500/20',   iconText: 'text-violet-300',
-    code: 'bg-violet-500/20 text-violet-200',
-    tag:  'bg-violet-500/15 text-violet-300',
+    bg: 'bg-violet-100/80',   border: 'border-violet-400/50',
+    stripe: 'from-violet-500 to-purple-500', glow: 'bg-violet-400',
+    icon: 'bg-violet-500/15',  iconText: 'text-violet-600',
+    code: 'bg-violet-500/12 text-violet-800',
+    tag:  'bg-violet-500/15 text-violet-700',
+    title: 'text-violet-950',  sub: 'text-violet-700/70',
+    student: 'text-slate-600', arrow: 'text-violet-300 group-hover:text-violet-500',
+    shadow: 'shadow-[0_8px_28px_rgba(139,92,246,0.18)] hover:shadow-[0_16px_40px_rgba(139,92,246,0.30)]',
   },
   {
-    bg: 'bg-slate-800/65',  border: 'border-slate-500/20',
-    stripe: 'from-slate-400 to-slate-500',  glow: 'bg-slate-500',
-    icon: 'bg-slate-500/20',    iconText: 'text-slate-300',
-    code: 'bg-slate-500/20 text-slate-200',
-    tag:  'bg-slate-500/15 text-slate-300',
+    bg: 'bg-emerald-100/80',  border: 'border-emerald-400/50',
+    stripe: 'from-emerald-500 to-teal-500', glow: 'bg-emerald-400',
+    icon: 'bg-emerald-500/15', iconText: 'text-emerald-600',
+    code: 'bg-emerald-500/12 text-emerald-800',
+    tag:  'bg-emerald-500/15 text-emerald-700',
+    title: 'text-emerald-950', sub: 'text-emerald-700/70',
+    student: 'text-slate-600', arrow: 'text-emerald-300 group-hover:text-emerald-500',
+    shadow: 'shadow-[0_8px_28px_rgba(16,185,129,0.18)] hover:shadow-[0_16px_40px_rgba(16,185,129,0.30)]',
   },
   {
-    bg: 'bg-cyan-950/55',   border: 'border-cyan-500/20',
-    stripe: 'from-cyan-400 to-teal-400',    glow: 'bg-cyan-500',
-    icon: 'bg-cyan-500/20',     iconText: 'text-cyan-300',
-    code: 'bg-cyan-500/20 text-cyan-200',
-    tag:  'bg-cyan-500/15 text-cyan-300',
+    bg: 'bg-sky-100/80',      border: 'border-sky-400/50',
+    stripe: 'from-sky-500 to-blue-500',     glow: 'bg-sky-400',
+    icon: 'bg-sky-500/15',     iconText: 'text-sky-600',
+    code: 'bg-sky-500/12 text-sky-800',
+    tag:  'bg-sky-500/15 text-sky-700',
+    title: 'text-sky-950',     sub: 'text-sky-700/70',
+    student: 'text-slate-600', arrow: 'text-sky-300 group-hover:text-sky-500',
+    shadow: 'shadow-[0_8px_28px_rgba(14,165,233,0.18)] hover:shadow-[0_16px_40px_rgba(14,165,233,0.30)]',
   },
 ] as const;
 
@@ -236,15 +251,14 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
           className={cn(
             'group relative overflow-hidden rounded-2xl cursor-pointer transition-shadow duration-300',
             'backdrop-blur-xl border',
-            accent.bg, accent.border,
-            'shadow-[0_4px_24px_rgba(15,23,42,0.40)] hover:shadow-[0_12px_40px_rgba(15,23,42,0.55)]',
+            accent.bg, accent.border, accent.shadow,
           )}
         >
           {/* Ambient glow orb */}
           <div
-            className={cn('pointer-events-none absolute -end-8 -top-8 h-32 w-32 rounded-full blur-2xl opacity-20', accent.glow)}
+            className={cn('pointer-events-none absolute -end-8 -top-8 h-32 w-32 rounded-full blur-2xl opacity-25', accent.glow)}
           />
-          {/* Coloured top stripe */}
+          {/* Vivid top stripe */}
           <div className={`h-1 w-full bg-gradient-to-r ${accent.stripe}`} />
 
           <div className="relative p-5">
@@ -259,13 +273,13 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             </div>
 
             {/* Title */}
-            <h3 className="font-bold text-white text-base mb-0.5">{cls.name}</h3>
-            <p className="text-xs text-slate-400 mb-4">{cls.academicYear}</p>
+            <h3 className={`font-bold text-base mb-0.5 ${accent.title}`}>{cls.name}</h3>
+            <p className={`text-xs mb-4 ${accent.sub}`}>{cls.academicYear}</p>
 
             {/* Join code capsule */}
             <div className="flex items-center gap-2 mb-4">
-              <div className="p-1 rounded-md bg-white/10">
-                <Hash className="w-3 h-3 text-slate-400" aria-hidden="true" />
+              <div className="p-1 rounded-md bg-black/5">
+                <Hash className="w-3 h-3 text-slate-500" aria-hidden="true" />
               </div>
               <code className={`rounded-lg px-2 py-0.5 font-mono text-xs font-bold tracking-widest ${accent.code}`}>
                 {cls.joinCode}
@@ -275,13 +289,13 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             {/* Footer */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <div className="p-1 rounded-md bg-white/10">
-                  <Users className="w-3 h-3 text-slate-400" aria-hidden="true" />
+                <div className="p-1 rounded-md bg-black/5">
+                  <Users className="w-3 h-3 text-slate-500" aria-hidden="true" />
                 </div>
-                <span className="text-xs text-slate-300 font-medium">{cls.studentCount} תלמידים</span>
+                <span className={`text-xs font-medium ${accent.student}`}>{cls.studentCount} תלמידים</span>
               </div>
               <ChevronLeft
-                className="w-4 h-4 text-slate-500 group-hover:text-white/70 transition-colors"
+                className={`w-4 h-4 transition-colors ${accent.arrow}`}
                 aria-hidden="true"
               />
             </div>

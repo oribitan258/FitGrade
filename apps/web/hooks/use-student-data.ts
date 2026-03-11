@@ -29,6 +29,7 @@ export interface StudentResult {
   sessionDate: string;
   testNameHe: string;
   rawValue: number;
+  inputType: string;
   /** gradeOverride ?? calculatedGrade — pass through getHebrewGradeLabel() before rendering. */
   effectiveGrade: number;
 }

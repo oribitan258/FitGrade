@@ -18,11 +18,57 @@ export class StudentTestHistoryDto {
   @ApiPropertyOptional({ nullable: true, description: 'Hebrew unit label, e.g. "שניות"' })
   unit!: string | null;
 
+  @ApiProperty({ description: 'Input type for the test: TIME | REPS | PASS_FAIL | GENERAL' })
+  inputType!: string;
+
   @ApiProperty({ description: 'Effective grade of the most recent session (0–100)' })
   latestGrade!: number;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Raw measurement value of the most recent session (seconds, reps, etc.)' })
+  latestRawValue!: number | null;
+
   @ApiProperty({ type: [StudentHistoryPointDto], description: 'All sessions ordered by date (oldest first)' })
   history!: StudentHistoryPointDto[];
+}
+
+export class TalmidautRecordDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ description: 'ציון השתתפות (0–100)' })
+  participation!: number;
+
+  @ApiProperty({ description: 'ציון לבוש (0–100)' })
+  uniform!: number;
+
+  @ApiProperty({ description: 'ציון התנהגות (0–100)' })
+  behavior!: number;
+
+  @ApiProperty({ description: 'ממוצע שלושת הרכיבים: (השתתפות + לבוש + התנהגות) / 3' })
+  compositeScore!: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  notes!: string | null;
+
+  @ApiProperty({ description: 'ISO 8601 timestamp' })
+  recordedAt!: string;
+}
+
+export class FinalGradeDto {
+  @ApiProperty({ description: 'ממוצע ציוני מבחני הכושר (0–100)' })
+  fitnessAvg!: number;
+
+  @ApiProperty({ description: 'ממוצע ציוני התלמידאות (0–100)' })
+  talmidautAvg!: number;
+
+  @ApiProperty({ description: 'הציון הסופי המומלץ (0–100)' })
+  recommendedGrade!: number;
+
+  @ApiProperty({ description: 'משקל מבחני הכושר בכיתה (0–100)' })
+  testWeight!: number;
+
+  @ApiProperty({ description: 'משקל התלמידאות בכיתה (0–100)' })
+  talmidautWeight!: number;
 }
 
 export class StudentProfileResponseDto {
@@ -58,4 +104,10 @@ export class StudentProfileResponseDto {
 
   @ApiProperty({ type: [StudentTestHistoryDto] })
   testHistories!: StudentTestHistoryDto[];
+
+  @ApiProperty({ type: [TalmidautRecordDto], description: 'All talmidaut records for this student in this class, newest first' })
+  talmidautRecords!: TalmidautRecordDto[];
+
+  @ApiProperty({ type: FinalGradeDto, description: 'Recommended final grade breakdown' })
+  finalGrade!: FinalGradeDto;
 }

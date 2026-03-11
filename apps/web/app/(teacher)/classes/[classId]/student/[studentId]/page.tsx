@@ -1,14 +1,19 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
-import { AlertTriangle, ChevronRight, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Award, ChevronRight, ClipboardList, TrendingUp } from 'lucide-react';
 import { getHebrewGradeLabel } from '@fitgrade/types';
-import type { ProgressPoint, StudentTestHistory } from '@fitgrade/types';
+import type { FinalGrade, ProgressPoint, StudentTestHistory, TalmidautRecord } from '@fitgrade/types';
 import { useClass, useClassDetails } from '@/hooks/use-classes';
 import { useStudentProfile } from '@/hooks/use-student-profile';
+import { apiRequest } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Area,
   AreaChart,
@@ -20,6 +25,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { formatRawValue } from '@/lib/utils';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -218,24 +224,27 @@ function NormRing({ score, norm, theme, size = 120, stroke = 9 }: NormRingProps)
   );
 }
 
-// ─── Ultimate Test Card (real data — no raw-value mock) ───────────────────────
+// ─── Ultimate Test Card ────────────────────────────────────────────────────────
 
 interface UltimateTestCardProps {
-  themeIndex: number;
-  label:      string;
-  unit:       string | null;
-  score:      number;
-  history:    number[];
+  themeIndex:   number;
+  label:        string;
+  unit:         string | null;
+  inputType:    string;
+  score:        number;
+  rawValue:     number | null;
+  history:      number[];
 }
 
-function UltimateTestCard({ themeIndex, label, unit, score, history }: UltimateTestCardProps): React.JSX.Element {
-  const theme      = NORM_THEME_CYCLE[themeIndex % NORM_THEME_CYCLE.length]!;
-  const level      = fitnessLevel(score);
-  const lv         = LEVEL[level];
-  const delta      = score - NATIONAL_NORM;
-  const gradeLabel = getHebrewGradeLabel(score);
-  const areaData   = history.map((v, i) => ({ i, v }));
-  const ringColor  = interpolateRGB(score, theme.lowRGB, theme.highRGB);
+function UltimateTestCard({ themeIndex, label, unit, inputType, score, rawValue, history }: UltimateTestCardProps): React.JSX.Element {
+  const theme            = NORM_THEME_CYCLE[themeIndex % NORM_THEME_CYCLE.length]!;
+  const level            = fitnessLevel(score);
+  const lv               = LEVEL[level];
+  const delta            = score - NATIONAL_NORM;
+  const gradeLabel       = getHebrewGradeLabel(score);
+  const areaData         = history.map((v, i) => ({ i, v }));
+  const ringColor        = interpolateRGB(score, theme.lowRGB, theme.highRGB);
+  const formattedRaw     = rawValue !== null ? formatRawValue(rawValue, inputType) : null;
 
   return (
     <motion.div
@@ -274,9 +283,16 @@ function UltimateTestCard({ themeIndex, label, unit, score, history }: UltimateT
             {gradeLabel}
           </motion.span>
 
-          {/* Unit badge (if available) */}
-          {unit && (
-            <span className="text-xs font-medium text-slate-400">{unit}</span>
+          {/* Raw measurement + unit */}
+          {formattedRaw !== null && (
+            <div className="flex items-baseline gap-1">
+              <span className="text-xl font-extrabold tabular-nums" style={{ color: ringColor }}>
+                {formattedRaw}
+              </span>
+              {unit && (
+                <span className="text-xs font-medium text-slate-400">{unit}</span>
+              )}
+            </div>
           )}
 
           {/* Delta chip */}
@@ -332,6 +348,334 @@ function UltimateTestCard({ themeIndex, label, unit, score, history }: UltimateT
         </div>
       )}
     </motion.div>
+  );
+}
+
+// ─── Final Grade Hero Card ─────────────────────────────────────────────────────
+
+interface FinalGradeHeroCardProps {
+  finalGrade: FinalGrade;
+}
+
+function FinalGradeHeroCard({ finalGrade }: FinalGradeHeroCardProps): React.JSX.Element {
+  const { recommendedGrade, fitnessAvg, talmidautAvg, testWeight, talmidautWeight } = finalGrade;
+  const gradeLabel = getHebrewGradeLabel(recommendedGrade);
+  const level = fitnessLevel(recommendedGrade);
+  const lv = LEVEL[level];
+
+  return (
+    <motion.div
+      variants={ITEM}
+      whileHover={{ y: -4, transition: { ease: EASE, duration: 0.3 } }}
+      className="relative overflow-hidden rounded-2xl p-6"
+      style={{
+        background:           'linear-gradient(135deg, rgba(30,27,75,0.90) 0%, rgba(49,46,129,0.88) 50%, rgba(76,29,149,0.85) 100%)',
+        backdropFilter:       'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border:               '1px solid rgba(167,139,250,0.25)',
+        boxShadow:            '0 12px 48px rgba(76,29,149,0.30), 0 4px 16px rgba(0,0,0,0.20)',
+      }}
+    >
+      {/* Decorative blobs */}
+      <div className="pointer-events-none absolute -end-12 -top-12 h-40 w-40 rounded-full bg-violet-500/20 blur-3xl" />
+      <div className="pointer-events-none absolute -start-8 -bottom-8 h-32 w-32 rounded-full bg-indigo-400/15 blur-2xl" />
+
+      <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8" dir="rtl">
+
+        {/* ── Big grade number ────────────────────────────────────── */}
+        <div className="flex flex-col items-center gap-1 sm:items-start">
+          <div className="flex items-center gap-2 mb-1">
+            <Award className="h-4 w-4 text-violet-300" aria-hidden="true" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-violet-300/80">
+              ציון סופי מומלץ
+            </span>
+          </div>
+          <div className="flex items-end gap-2">
+            <AnimatedNumber
+              to={recommendedGrade}
+              duration={1.6}
+              className="text-6xl font-black tabular-nums text-white leading-none"
+            />
+            <span className="mb-1 text-lg font-semibold text-violet-300/70">/ 100</span>
+          </div>
+          <span
+            className="inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-bold"
+            style={{
+              background: `${lv.color}22`,
+              borderColor: `${lv.color}55`,
+              color: lv.color,
+            }}
+          >
+            {gradeLabel}
+          </span>
+        </div>
+
+        {/* ── Divider ─────────────────────────────────────────────── */}
+        <div
+          className="hidden sm:block h-20 w-px flex-shrink-0"
+          style={{ background: 'rgba(167,139,250,0.20)' }}
+        />
+        <div className="sm:hidden h-px w-full" style={{ background: 'rgba(167,139,250,0.20)' }} />
+
+        {/* ── Breakdown ───────────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col gap-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-violet-300/60">
+            פירוט החישוב
+          </p>
+
+          {/* Fitness tests component */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold text-white/80">מבחני כושר</span>
+              <span className="text-violet-200 font-bold tabular-nums">{fitnessAvg}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.10)' }}>
+                <motion.div
+                  className="absolute inset-y-0 start-0 rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #818cf8, #6366f1)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${fitnessAvg}%` }}
+                  transition={{ ease: EASE, duration: 1.2, delay: 0.4 }}
+                />
+              </div>
+              <span className="text-[11px] font-semibold text-violet-300/70 w-10 text-end">
+                {testWeight}%
+              </span>
+            </div>
+          </div>
+
+          {/* Talmidaut component */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold text-white/80">תלמידאות</span>
+              <span className="text-violet-200 font-bold tabular-nums">{talmidautAvg}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.10)' }}>
+                <motion.div
+                  className="absolute inset-y-0 start-0 rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #a78bfa, #7c3aed)' }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${talmidautAvg}%` }}
+                  transition={{ ease: EASE, duration: 1.2, delay: 0.55 }}
+                />
+              </div>
+              <span className="text-[11px] font-semibold text-violet-300/70 w-10 text-end">
+                {talmidautWeight}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Talmidaut Record Card ────────────────────────────────────────────────────
+
+interface TalmidautRecordCardProps {
+  record: TalmidautRecord;
+}
+
+function TalmidautRecordCard({ record }: TalmidautRecordCardProps): React.JSX.Element {
+  const date = new Date(record.recordedAt).toLocaleDateString('he-IL');
+  const level = fitnessLevel(record.compositeScore);
+  const lv = LEVEL[level];
+
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-2xl p-4"
+      style={{
+        background:           'rgba(238,242,255,0.70)',
+        border:               '1px solid rgba(255,255,255,0.90)',
+        backdropFilter:       'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        boxShadow:            '0 4px 16px rgba(15,23,42,0.06)',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between" dir="rtl">
+        <span className="text-xs font-medium text-slate-400">{date}</span>
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${lv.badge}`}>
+          {record.compositeScore}
+        </span>
+      </div>
+
+      {/* Three sub-scores */}
+      <div className="grid grid-cols-3 gap-2 text-center" dir="rtl">
+        {[
+          { label: 'השתתפות', value: record.participation },
+          { label: 'לבוש', value: record.uniform },
+          { label: 'התנהגות', value: record.behavior },
+        ].map(({ label, value }) => (
+          <div key={label} className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium text-slate-400">{label}</span>
+            <span className="text-sm font-extrabold text-slate-700 tabular-nums">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Notes */}
+      {record.notes && (
+        <p className="text-[11px] text-slate-500 border-t border-slate-100 pt-2" dir="rtl">
+          {record.notes}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Talmidaut Dialog ─────────────────────────────────────────────────────────
+
+interface TalmidautDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: (msg: string) => void;
+  classId: string;
+  studentId: string;
+}
+
+function TalmidautDialog({ open, onClose, onSuccess, classId, studentId }: TalmidautDialogProps): React.JSX.Element {
+  const [participation, setParticipation] = useState('');
+  const [uniform, setUniform] = useState('');
+  const [behavior, setBehavior] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+
+  const reset = useCallback(() => {
+    setParticipation('');
+    setUniform('');
+    setBehavior('');
+    setNotes('');
+    setFieldError(null);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    reset();
+    onClose();
+  }, [reset, onClose]);
+
+  const validate = (val: string, label: string): number | null => {
+    const n = parseInt(val, 10);
+    if (isNaN(n) || n < 0 || n > 100) {
+      setFieldError(`${label} חייב להיות מספר בין 0 ל-100`);
+      return null;
+    }
+    return n;
+  };
+
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    setFieldError(null);
+
+    const p = validate(participation, 'השתתפות');
+    const u = validate(uniform, 'לבוש');
+    const b = validate(behavior, 'התנהגות');
+    if (p === null || u === null || b === null) return;
+
+    setSubmitting(true);
+    try {
+      await apiRequest(
+        `/classes/${classId}/students/${studentId}/talmidaut`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ participation: p, uniform: u, behavior: b, notes: notes.trim() || undefined }),
+        },
+      );
+      onSuccess('ציון התלמידאות נשמר בהצלחה ✓');
+      handleClose();
+    } catch {
+      setFieldError('שגיאה בשמירת הנתונים — נסה שוב');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent
+        className="sm:max-w-md"
+        style={{
+          background:           'rgba(255,255,255,0.96)',
+          backdropFilter:       'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border:               '1px solid rgba(99,102,241,0.15)',
+          boxShadow:            '0 24px 64px rgba(76,29,149,0.18)',
+        }}
+      >
+        <DialogHeader dir="rtl">
+          <DialogTitle className="text-base font-bold text-slate-900">
+            עדכון ציון תלמידאות
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={(e) => { void handleSubmit(e); }} className="flex flex-col gap-4 mt-2" dir="rtl">
+          {/* Three score fields */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'השתתפות', value: participation, setter: setParticipation },
+              { label: 'לבוש', value: uniform, setter: setUniform },
+              { label: 'התנהגות', value: behavior, setter: setBehavior },
+            ].map(({ label, value, setter }) => (
+              <div key={label} className="flex flex-col gap-1.5">
+                <Label className="text-xs font-semibold text-slate-600">{label} (0–100)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  placeholder="0–100"
+                  value={value}
+                  onChange={(e) => setter(e.target.value)}
+                  required
+                  className="text-center tabular-nums font-bold text-slate-800"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Notes textarea */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600">הערות (אופציונלי)</Label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="הערות על ביצועי התלמיד..."
+              rows={3}
+              className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+          </div>
+
+          {/* Validation error */}
+          {fieldError && (
+            <p className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-600">
+              {fieldError}
+            </p>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center justify-start gap-3 pt-1">
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            >
+              {submitting ? 'שומר...' : 'שמור'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleClose}
+              disabled={submitting}
+              className="text-slate-600"
+            >
+              ביטול
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -397,7 +741,7 @@ function ClassProgressChart({ progressData, testName, testUnit }: ClassProgressC
     return { month, avg: point?.classAvg ?? null, norm: NATIONAL_NORM };
   });
 
-  // Find the October point for the ReferenceDot
+  // Find the October point for the permanent reference dot
   const octPoint = chartData[OCT_INDEX];
   const octAvg   = octPoint?.avg ?? null;
 
@@ -598,12 +942,35 @@ const BENTO_CHART_STYLE: React.CSSProperties = {
   boxShadow:            '0 8px 40px rgba(45,212,191,0.10)',
 };
 
+// ─── Inline success toast ─────────────────────────────────────────────────────
+
+interface ToastProps { message: string; onDismiss: () => void }
+function SuccessToast({ message, onDismiss }: ToastProps): React.JSX.Element {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      className="fixed bottom-6 start-6 z-50 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-xl"
+      dir="rtl"
+    >
+      {message}
+    </motion.div>
+  );
+}
+
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 
 function StudentProfileSkeleton(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <div className="h-5 w-52 animate-pulse rounded-lg bg-white/70" />
+      <div className="h-32 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[1, 2, 3].map((n) => (
           <div key={n} className="h-32 animate-pulse rounded-2xl bg-white/40 shadow-sm" />
@@ -624,9 +991,14 @@ function StudentProfileSkeleton(): React.JSX.Element {
 export default function StudentProfilePage(): React.JSX.Element {
   const { classId, studentId } = useParams<{ classId: string; studentId: string }>();
 
-  const { data: cls }                       = useClass(classId);
-  const { data: profile, isLoading, error } = useStudentProfile(classId, studentId);
-  const { data: classDetails }              = useClassDetails(classId);
+  const { data: cls }                                     = useClass(classId);
+  const { data: profile, isLoading, error, mutate }       = useStudentProfile(classId, studentId);
+  const { data: classDetails }                            = useClassDetails(classId);
+
+  // Dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  // Success toast
+  const [toast, setToast] = useState<string | null>(null);
 
   // Which test type's class progress to display in the chart
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
@@ -637,6 +1009,11 @@ export default function StudentProfilePage(): React.JSX.Element {
       setSelectedTestId(classDetails.testSummaries[0].testTypeId);
     }
   }, [classDetails, selectedTestId]);
+
+  const handleTalmidautSuccess = useCallback((msg: string) => {
+    setToast(msg);
+    void mutate();
+  }, [mutate]);
 
   if (isLoading) return <StudentProfileSkeleton />;
 
@@ -685,6 +1062,9 @@ export default function StudentProfilePage(): React.JSX.Element {
         <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
         <span className="font-semibold text-slate-700">{profile.firstName} {profile.lastName}</span>
       </motion.nav>
+
+      {/* ── Final Grade Hero Card ────────────────────────────────────── */}
+      <FinalGradeHeroCard finalGrade={profile.finalGrade} />
 
       {/* ── 3-card bento header ──────────────────────────────────────── */}
       <motion.div variants={STAGGER} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -822,13 +1202,63 @@ export default function StudentProfilePage(): React.JSX.Element {
                 themeIndex={i}
                 label={th.nameHe}
                 unit={th.unit}
+                inputType={th.inputType}
                 score={th.latestGrade}
+                rawValue={th.latestRawValue}
                 history={th.history.map((h) => h.grade)}
               />
             ))}
           </motion.div>
         </motion.div>
       )}
+
+      {/* ── Talmidaut Section ────────────────────────────────────────── */}
+      <motion.div variants={ITEM}>
+        <div className="flex items-center justify-between mb-4" dir="rtl">
+          <div className="flex items-center gap-2">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-xl"
+              style={{ background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.20)' }}
+            >
+              <ClipboardList className="h-4 w-4 text-indigo-500" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">תלמידאות</h2>
+              <p className="text-xs text-slate-400">השתתפות · לבוש · התנהגות</p>
+            </div>
+          </div>
+          <Button
+            onClick={() => setDialogOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold h-10 px-4"
+          >
+            + עדכן ציון תלמידאות
+          </Button>
+        </div>
+
+        {profile.talmidautRecords.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {profile.talmidautRecords.map((record) => (
+              <TalmidautRecordCard key={record.id} record={record} />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/60 py-12 text-center"
+            dir="rtl"
+          >
+            <div
+              className="flex h-12 w-12 items-center justify-center rounded-2xl"
+              style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)' }}
+            >
+              <ClipboardList className="h-6 w-6 text-indigo-400" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">טרם נרשם ציון תלמידאות</p>
+              <p className="mt-1 text-sm text-slate-400">לחץ &ldquo;עדכן ציון תלמידאות&rdquo; כדי להוסיף הערכה ראשונה</p>
+            </div>
+          </div>
+        )}
+      </motion.div>
 
       {/* ── Class Progress Chart ─────────────────────────────────────── */}
       {classDetails && classDetails.testSummaries.length > 0 && (
@@ -898,6 +1328,20 @@ export default function StudentProfilePage(): React.JSX.Element {
             )}
           </motion.div>
         </motion.div>
+      )}
+
+      {/* ── Talmidaut Dialog ──────────────────────────────────────────── */}
+      <TalmidautDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSuccess={handleTalmidautSuccess}
+        classId={classId}
+        studentId={studentId}
+      />
+
+      {/* ── Success Toast ──────────────────────────────────────────────── */}
+      {toast && (
+        <SuccessToast message={toast} onDismiss={() => setToast(null)} />
       )}
     </motion.div>
   );

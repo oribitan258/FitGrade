@@ -3,17 +3,17 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Award,
   BookOpen,
   CalendarDays,
+  Crown,
   Dumbbell,
   FileDown,
   GraduationCap,
   LayoutDashboard,
   LogOut,
   ShieldAlert,
+  Swords,
   Target,
-  Trophy,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -29,17 +29,17 @@ const MAIN_NAV = [
 
 const TOOLS_NAV = [
   { href: '/norms',   label: 'טבלאות הישגים', icon: Target   },
-  { href: '/exports', label: 'הפקת דוחות',    icon: FileDown },
+  { href: '/reports', label: 'הפקת דוחות',    icon: FileDown },
 ] as const;
 
 const PE_NAV = [
-  { href: '/injuries',    label: 'מעקב פציעות', icon: ShieldAlert, soon: false },
-  { href: '/badges',      label: 'אות הכושר',   icon: Award,       soon: true  },
-  { href: '/drills',      label: 'בנק תרגילים', icon: Dumbbell,    soon: true  },
-  { href: '/tournaments', label: 'טורנירים',     icon: Trophy,      soon: true  },
+  { href: '/exemptions',           label: 'פטורים',           icon: ShieldAlert },
+  { href: '/outstanding-students', label: 'תלמידים מצטיינים', icon: Crown       },
+  { href: '/events',               label: 'אירועים וטורנירים', icon: Swords      },
+  { href: '/exercise-bank',        label: 'מתכנן שיעור',      icon: Dumbbell    },
 ] as const;
 
-type NavEntry = { href: string; label: string; icon: typeof LayoutDashboard; soon?: boolean };
+type NavEntry = { href: string; label: string; icon: typeof LayoutDashboard };
 
 /**
  * Glassmorphic sidebar — sits above the animated background so the
@@ -61,54 +61,37 @@ export function Sidebar(): React.JSX.Element {
     return href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href);
   }
 
-  function NavItem({ href, label, icon: Icon, soon }: NavEntry): React.JSX.Element {
+  function NavItem({ href, label, icon: Icon }: NavEntry): React.JSX.Element {
     const active = isActive(href);
     return (
       <motion.div
-        whileHover={active || soon ? {} : { x: -2 }}
-        transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
+        whileHover={active ? {} : { x: -2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
       >
         <Link
-          href={soon ? '#' : href}
+          href={href}
           aria-current={active ? 'page' : undefined}
-          aria-disabled={soon}
-          tabIndex={soon ? -1 : undefined}
           className={cn(
             'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150',
             active
               ? 'bg-indigo-600 text-white shadow-[0_2px_16px_rgba(99,102,241,0.40)]'
-              : soon
-                ? 'cursor-default text-slate-300'
-                : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700',
+              : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700',
           )}
         >
           {/* Icon capsule — glowing when active, breathing animation */}
           <motion.div
             className={cn(
               'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-300',
-              active
-                ? 'bg-white/20 shadow-[0_0_14px_rgba(255,255,255,0.30)]'
-                : 'bg-transparent',
+              active ? 'bg-white/20 shadow-[0_0_14px_rgba(255,255,255,0.30)]' : 'bg-transparent',
             )}
             animate={active ? { scale: [1, 1.09, 1] } : {}}
             transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
           >
             <Icon
-              className={cn(
-                'h-4 w-4',
-                active ? 'text-white' : soon ? 'text-slate-300' : 'text-slate-500',
-              )}
+              className={cn('h-4 w-4', active ? 'text-white' : 'text-slate-500')}
               aria-hidden="true"
             />
           </motion.div>
-
           <span className="flex-1 truncate">{label}</span>
-
-          {soon && (
-            <span className="shrink-0 rounded-full bg-slate-100/80 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-              בקרוב
-            </span>
-          )}
         </Link>
       </motion.div>
     );
@@ -119,14 +102,14 @@ export function Sidebar(): React.JSX.Element {
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 border-b border-slate-200/50 px-5">
         <motion.div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 shadow-[0_0_16px_rgba(99,102,241,0.35)]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_24px_rgba(99,102,241,0.50)]"
           animate={{ scale: [1, 1.06, 1] }}
           transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
         >
-          <GraduationCap className="h-5 w-5 text-indigo-600" aria-hidden="true" />
+          <GraduationCap className="h-5 w-5 text-white" aria-hidden="true" />
         </motion.div>
         <div>
-          <span className="text-base font-bold tracking-tight text-slate-800">FitGrade</span>
+          <span className="text-base font-bold tracking-tight bg-gradient-to-l from-indigo-600 to-violet-600 bg-clip-text text-transparent">FitGrade</span>
           <p className="text-[10px] text-slate-400 leading-none mt-0.5">מערכת חינוך גופני</p>
         </div>
       </div>
@@ -165,9 +148,8 @@ export function Sidebar(): React.JSX.Element {
         <motion.button
           type="button"
           onClick={() => { void handleLogout(); }}
-          whileHover={{ x: -2 }}
-          whileTap={{ scale: 0.98 }}
-          transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
+          whileHover={{ x: -2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
+          whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
           aria-label="התנתק מהמערכת"
         >

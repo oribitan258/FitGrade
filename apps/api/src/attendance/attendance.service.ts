@@ -18,10 +18,11 @@ export class AttendanceService {
     classId: string,
     dateStr: string,
     teacherId: string,
+    activeOnly = false,
   ): Promise<AttendanceResponseDto[]> {
     const date = this.parseDate(dateStr);
     await this.attendanceRepository.verifyClassOwnership(classId, teacherId);
-    return this.attendanceRepository.findByClassAndDate(classId, date);
+    return this.attendanceRepository.findByClassAndDate(classId, date, activeOnly);
   }
 
   /**
@@ -41,6 +42,8 @@ export class AttendanceService {
       studentId: r.studentId,
       status: r.status as AttendanceStatus,
       notes: r.notes,
+      exemptionReason: r.exemptionReason,
+      exemptionExpiresAt: r.exemptionExpiresAt ? new Date(r.exemptionExpiresAt) : undefined,
     }));
 
     const result = await this.attendanceRepository.upsertMany(classId, date, records);

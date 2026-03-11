@@ -12,12 +12,16 @@ function apiFetcher<T>(path: string): Promise<T> {
 
 /** Fetches the authenticated teacher's class list. */
 export function useClasses(): ReturnType<typeof useSWR<ClassData[]>> {
-  return useSWR<ClassData[]>('/classes', apiFetcher);
+  return useSWR<ClassData[]>('/classes', apiFetcher, {
+    revalidateOnFocus: false,
+  });
 }
 
 /** Fetches a single class by ID. Pauses when classId is falsy. */
 export function useClass(classId: string): ReturnType<typeof useSWR<ClassData>> {
-  return useSWR<ClassData>(classId ? `/classes/${classId}` : null, apiFetcher);
+  return useSWR<ClassData>(classId ? `/classes/${classId}` : null, apiFetcher, {
+    revalidateOnFocus: false,
+  });
 }
 
 /** Fetches all students enrolled in a class. Pauses when classId is falsy. */
@@ -25,6 +29,7 @@ export function useStudents(classId: string): ReturnType<typeof useSWR<StudentDa
   return useSWR<StudentData[]>(
     classId ? `/classes/${classId}/students` : null,
     apiFetcher,
+    { revalidateOnFocus: false },
   );
 }
 
@@ -33,5 +38,6 @@ export function useClassDetails(classId: string): ReturnType<typeof useSWR<Class
   return useSWR<ClassDetails>(
     classId ? `/classes/${classId}/details` : null,
     apiFetcher,
+    { revalidateOnFocus: false },
   );
 }

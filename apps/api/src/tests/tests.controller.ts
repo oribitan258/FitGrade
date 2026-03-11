@@ -8,11 +8,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -23,6 +25,7 @@ import { TestTypeResponseDto } from './dto/test-type-response.dto';
 import { SessionResponseDto } from './dto/session-response.dto';
 import { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import { ResultResponseDto } from './dto/result-response.dto';
+import { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
@@ -51,6 +54,23 @@ export class TestsController {
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   async getTestTypes(): Promise<TestTypeResponseDto[]> {
     return this.testsService.getTestTypes();
+  }
+
+  /**
+   * Returns all NormTable bands for a specific test type.
+   * Frontend filters by gender + (minAge, maxAge) for a specific table view.
+   */
+  @Get('tests/types/norms')
+  @ApiTags('tests')
+  @ApiOperation({ summary: 'Get all norm bands for a specific test type' })
+  @ApiQuery({ name: 'testTypeId', required: true, description: 'FitnessTestType ID' })
+  @ApiResponse({ status: 200, type: TestTypeNormsResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Test type not found' })
+  async getTestTypeNorms(
+    @Query('testTypeId') testTypeId: string,
+  ): Promise<TestTypeNormsResponseDto> {
+    return this.testsService.getNormBands(testTypeId);
   }
 
   /**

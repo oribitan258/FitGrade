@@ -20,6 +20,13 @@ export class TestTypeResponseDto {
   @ApiProperty()
   isGlobal!: boolean;
 
+  @ApiProperty({
+    description:
+      'True for distance/reps tests (higher value = better); ' +
+      'false for time tests (lower value = better).',
+  })
+  higherIsBetter!: boolean;
+
   @ApiProperty()
   createdAt!: Date;
 }

@@ -10,6 +10,8 @@ const ATTENDANCE_SELECT = {
   date: true,
   status: true,
   notes: true,
+  exemptionReason: true,
+  exemptionExpiresAt: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -34,18 +36,38 @@ export class AttendanceRepository {
 
   /**
    * Returns all attendance records for a class on a specific date.
+   * When activeOnly=true, returns only EXCUSED records that have not expired
+   * (exemptionExpiresAt is null OR exemptionExpiresAt >= now).
    * Results are ordered alphabetically by student last name.
    */
   async findByClassAndDate(
     classId: string,
     date: Date,
+    activeOnly = false,
   ): Promise<AttendanceResponseDto[]> {
+    const now = new Date();
     const records = await this.prisma.attendanceRecord.findMany({
-      where: { classId, date },
+      where: {
+        classId,
+        date,
+        ...(activeOnly
+          ? {
+              status: 'EXCUSED',
+              OR: [
+                { exemptionExpiresAt: null },
+                { exemptionExpiresAt: { gte: now } },
+              ],
+            }
+          : {}),
+      },
       select: ATTENDANCE_SELECT,
       orderBy: { student: { lastName: 'asc' } },
     });
-    return records.map((r) => ({ ...r, date: r.date.toISOString() }));
+    return records.map((r) => ({
+      ...r,
+      date: r.date.toISOString(),
+      exemptionExpiresAt: r.exemptionExpiresAt?.toISOString() ?? null,
+    }));
   }
 
   /**
@@ -56,7 +78,13 @@ export class AttendanceRepository {
   async upsertMany(
     classId: string,
     date: Date,
-    records: Array<{ studentId: string; status: AttendanceStatus; notes?: string }>,
+    records: Array<{
+      studentId: string;
+      status: AttendanceStatus;
+      notes?: string;
+      exemptionReason?: string;
+      exemptionExpiresAt?: Date;
+    }>,
   ): Promise<AttendanceResponseDto[]> {
     await this.prisma.$transaction(
       records.map((r) =>
@@ -70,8 +98,15 @@ export class AttendanceRepository {
             date,
             status: r.status,
             notes: r.notes,
+            exemptionReason: r.exemptionReason,
+            exemptionExpiresAt: r.exemptionExpiresAt,
           },
-          update: { status: r.status, notes: r.notes },
+          update: {
+            status: r.status,
+            notes: r.notes,
+            exemptionReason: r.exemptionReason ?? null,
+            exemptionExpiresAt: r.exemptionExpiresAt ?? null,
+          },
         }),
       ),
     );

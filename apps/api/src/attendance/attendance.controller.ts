@@ -42,7 +42,7 @@ export class AttendanceController {
     @Query() query: GetAttendanceQueryDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<AttendanceResponseDto[]> {
-    return this.attendanceService.getAttendance(classId, query.date, user.sub);
+    return this.attendanceService.getAttendance(classId, query.date, user.sub, query.activeOnly);
   }
 
   /**

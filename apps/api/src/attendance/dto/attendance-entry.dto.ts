@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
 import { AttendanceStatus } from '@prisma/client';
 
 export class AttendanceEntryDto {
@@ -15,4 +15,15 @@ export class AttendanceEntryDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Required when status is EXCUSED. Reason for the exemption.' })
+  @ValidateIf((o: AttendanceEntryDto) => o.status === AttendanceStatus.EXCUSED)
+  @IsString()
+  @MinLength(2)
+  exemptionReason?: string;
+
+  @ApiPropertyOptional({ description: 'Optional expiry date in YYYY-MM-DD format. null = no automatic expiry.' })
+  @IsOptional()
+  @IsDateString()
+  exemptionExpiresAt?: string;
 }

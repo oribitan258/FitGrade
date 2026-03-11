@@ -16,10 +16,12 @@ import {
 } from '@nestjs/swagger';
 import { StudentsService } from './students.service';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { CreateTalmidautDto } from './dto/create-talmidaut.dto';
 import { StudentResponseDto } from './dto/student-response.dto';
 import { StudentProfileResponseDto } from './dto/student-profile-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import type { FinalGradeResult } from './students.repository';
 
 @ApiTags('students')
 @ApiBearerAuth()
@@ -46,7 +48,8 @@ export class StudentsController {
 
   /**
    * Returns the full profile for a single student within a class,
-   * including per-test score history and attendance metrics.
+   * including per-test score history, attendance metrics, talmidaut records,
+   * and the recommended final grade.
    * Only accessible by the teacher who owns the class.
    */
   @Get(':studentId/profile')
@@ -62,6 +65,29 @@ export class StudentsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<StudentProfileResponseDto> {
     return this.studentsService.getStudentProfile(studentId, classId, user.sub);
+  }
+
+  /**
+   * Records a new talmidaut assessment (השתתפות + לבוש + התנהגות) for a student
+   * and recomputes the recommended final grade.
+   * Only accessible by the teacher who owns the class.
+   */
+  @Post(':studentId/talmidaut')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Add a talmidaut record and recalculate final grade' })
+  @ApiParam({ name: 'classId', description: 'Class ID' })
+  @ApiParam({ name: 'studentId', description: 'Student ID' })
+  @ApiResponse({ status: 201, description: 'Record saved and final grade recalculated' })
+  @ApiResponse({ status: 400, description: 'Invalid input — scores must be 0–100' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Class or student not found' })
+  async addTalmidautRecord(
+    @Param('classId') classId: string,
+    @Param('studentId') studentId: string,
+    @Body() dto: CreateTalmidautDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<FinalGradeResult> {
+    return this.studentsService.addTalmidautRecord(studentId, classId, dto, user.sub);
   }
 
   /**

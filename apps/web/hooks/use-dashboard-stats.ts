@@ -8,5 +8,8 @@ function apiFetcher<T>(path: string): Promise<T> {
 
 /** Fetches aggregated dashboard stats for the authenticated teacher. */
 export function useDashboardStats(): ReturnType<typeof useSWR<DashboardStats>> {
-  return useSWR<DashboardStats>('/dashboard/stats', apiFetcher);
+  return useSWR<DashboardStats>('/dashboard/stats', apiFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30_000, // 30s — stat aggregation is expensive; data is not real-time
+  });
 }

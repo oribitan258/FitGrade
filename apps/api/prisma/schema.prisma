@@ -43,6 +43,7 @@ enum AuditAction {
   ATTENDANCE_CHANGE
   STUDENT_ENROLLED
   STUDENT_REMOVED
+  TALMIDAUT_ENTRY
 }
 
 // ─────────────────────────────────────────────
@@ -60,6 +61,7 @@ model User {
 
   classes   Class[]
   auditLogs AuditLog[]
+  events    Event[]
 
   @@map("users")
 }
@@ -70,13 +72,19 @@ model User {
 
 model Class {
   id                String    @id @default(cuid())
-  name              String // e.g., "כיתה י' 1"
-  academicYear      String // e.g., "2024-2025"
+  name              String    // e.g., "כיתה י' 1"
+  academicYear      String    // e.g., "2024-2025"
   semester          Semester
   joinCode          String    @unique // 6-char alphanumeric
   joinCodeExpiresAt DateTime? // null = never expires
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  // ── Final-grade weights (must sum to 100) ─────────────────────────────
+  // testWeight: percentage of the grade derived from physical fitness tests (0–100)
+  // talmidautWeight: percentage from Talmida'ut (behaviour + participation + uniform)
+  testWeight        Int @default(55)
+  talmidautWeight   Int @default(45)
 
   teacherId String
   teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -84,6 +92,8 @@ model Class {
   enrollments       ClassEnrollment[]
   testSessions      TestSession[]
   attendanceRecords AttendanceRecord[]
+  talmidautRecords  TalmidautRecord[]
+  finalGrades       StudentFinalGrade[]
 
   @@index([teacherId])
   @@map("classes")
@@ -99,14 +109,16 @@ model Student {
   lastName     String
   dateOfBirth  DateTime // Used for age-based norm table lookup
   gender       Gender
-  studentCode  String // Teacher-assigned code (unique per class, enforced in service layer)
-  passwordHash String // bcrypt hash
+  studentCode  String   // Teacher-assigned code (unique per class, enforced in service layer)
+  passwordHash String   // bcrypt hash
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   enrollments       ClassEnrollment[]
   testResults       TestResult[]
   attendanceRecords AttendanceRecord[]
+  talmidautRecords  TalmidautRecord[]
+  finalGrades       StudentFinalGrade[]
 
   @@map("students")
 }
@@ -137,12 +149,18 @@ model ClassEnrollment {
 
 model FitnessTestType {
   id            String           @id @default(cuid())
-  nameHe        String // Hebrew name, e.g., "ריצה 1 ק\"מ"
-  descriptionHe String? // Optional Hebrew description
+  nameHe        String           // Hebrew name, e.g., "ריצת 100 מטר"
+  descriptionHe String?          // Optional Hebrew description
   inputType     FitnessInputType
-  unit          String? // e.g., "שניות", "חזרות", "ס\"מ"
-  isGlobal      Boolean          @default(true) // true = system-seeded
-  createdAt     DateTime         @default(now())
+  unit          String?          // e.g., "שניות", "מטר"
+  isGlobal      Boolean          @default(true) // true = system-seeded Ministry data
+
+  // higherIsBetter: true for distance/reps tests (jumps, throws);
+  // false for TIME tests (sprints, runs) where a lower value = better performance.
+  // The GradingService uses this to correctly interpret NormTable minValue/maxValue bands.
+  higherIsBetter Boolean         @default(false)
+
+  createdAt DateTime @default(now())
 
   normTables NormTable[]
   sessions   TestSession[]
@@ -152,16 +170,20 @@ model FitnessTestType {
 
 // ─────────────────────────────────────────────
 // NORM TABLES (System-seeded, read-only)
+// Each row maps a raw-value band → score for a specific gender + age range.
+// Age groups mirror Ministry of Education categories:
+//   ה–ו: minAge=10 maxAge=12 | ז–ח: minAge=12 maxAge=14
+//   ט:   minAge=14 maxAge=15 | י–יב: minAge=15 maxAge=18
 // ─────────────────────────────────────────────
 
 model NormTable {
   id       String  @id @default(cuid())
   gender   Gender
-  minAge   Int // Minimum age in years (inclusive)
-  maxAge   Int // Maximum age in years (inclusive)
+  minAge   Int     // Minimum student age in years (inclusive)
+  maxAge   Int     // Maximum student age in years (inclusive)
   minValue Decimal // Raw value lower bound (inclusive)
   maxValue Decimal // Raw value upper bound (exclusive)
-  score    Int // Grade awarded: 0–100
+  score    Int     // Grade awarded: 1–100
 
   testTypeId String
   testType   FitnessTestType @relation(fields: [testTypeId], references: [id], onDelete: Cascade)
@@ -202,9 +224,9 @@ model TestSession {
 model TestResult {
   id              String   @id @default(cuid())
   rawValue        Decimal? // null = not yet entered
-  calculatedGrade Int? // 0–100, set by GradingService
-  gradeOverride   Int? // 0–100, set manually by teacher
-  overrideReason  String? // Required when gradeOverride is set
+  calculatedGrade Int?     // 1–100, set by GradingService
+  gradeOverride   Int?     // 1–100, set manually by teacher
+  overrideReason  String?  // Required when gradeOverride is set
   recordedAt      DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -224,12 +246,14 @@ model TestResult {
 // ─────────────────────────────────────────────
 
 model AttendanceRecord {
-  id        String           @id @default(cuid())
-  date      DateTime
-  status    AttendanceStatus @default(PRESENT)
-  notes     String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id                 String           @id @default(cuid())
+  date               DateTime
+  status             AttendanceStatus @default(PRESENT)
+  notes              String?
+  exemptionReason    String?          // Free-text reason; populated when status = EXCUSED
+  exemptionExpiresAt DateTime?        // null = no automatic expiry
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   classId String
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
@@ -237,12 +261,99 @@ model AttendanceRecord {
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  sessionId String? // Optional: link to the test session this attendance was taken for
+  sessionId String?      // Optional: link to the test session this attendance was taken for
   session   TestSession? @relation(fields: [sessionId], references: [id])
 
   @@unique([classId, studentId, date])
   @@index([classId, date])
   @@map("attendance_records")
+}
+
+// ─────────────────────────────────────────────
+// TALMIDA'UT (תלמידאות) — Behaviour Assessment
+// Tracks the three components of Talmida'ut per student per class.
+// Can be recorded multiple times (e.g., monthly) to build a trend.
+// The average across all records for the semester forms the Talmida'ut score.
+// ─────────────────────────────────────────────
+
+model TalmidautRecord {
+  id String @id @default(cuid())
+
+  // Three sub-dimensions, each scored 0–100:
+  //   participation: active involvement in lessons and drills
+  //   uniform:       arriving dressed appropriately for PE
+  //   behavior:      conduct, respect for peers and teacher
+  participation Int // 0–100
+  uniform       Int // 0–100
+  behavior      Int // 0–100
+
+  notes      String?
+  recordedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  classId String
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([classId, studentId])
+  @@map("talmidaut_records")
+}
+
+// ─────────────────────────────────────────────
+// STUDENT FINAL GRADE (ציון סופי מומלץ)
+// Stores the recommended end-of-semester grade for one student in one class.
+// Recomputed whenever test results or Talmida'ut records change.
+// Formula: (fitnessAvg × class.testWeight + talmidautAvg × class.talmidautWeight) / 100
+// ─────────────────────────────────────────────
+
+model StudentFinalGrade {
+  id String @id @default(cuid())
+
+  // Component averages (0–100)
+  fitnessAvg   Int // Weighted avg of all test calculatedGrade/gradeOverride values
+  talmidautAvg Int // Average of all TalmidautRecord composite scores in this class
+
+  // The recommended grade (0–100) computed from the two components
+  recommendedGrade Int
+
+  // Teacher overrides — set via the Reports Center
+  teacherFinalGrade Int?    // null = use recommendedGrade as-is
+  verbalComment     String? // Ministry-standard or custom verbal comment
+
+  calculatedAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  classId String
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, studentId])
+  @@index([classId])
+  @@map("student_final_grades")
+}
+
+// ─────────────────────────────────────────────
+// EVENT (School sports calendar events)
+// ─────────────────────────────────────────────
+
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  eventDate   DateTime
+  location    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  teacherId String
+  teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId, eventDate])
+  @@map("events")
 }
 
 // ─────────────────────────────────────────────
@@ -252,10 +363,10 @@ model AttendanceRecord {
 model AuditLog {
   id         String      @id @default(cuid())
   action     AuditAction
-  entityType String // "TestResult" | "AttendanceRecord" | "ClassEnrollment"
-  entityId   String // ID of the affected record
-  oldValue   String? // JSON snapshot before change
-  newValue   String? // JSON snapshot after change
+  entityType String      // "TestResult" | "AttendanceRecord" | "ClassEnrollment" | "TalmidautRecord"
+  entityId   String      // ID of the affected record
+  oldValue   String?     // JSON snapshot before change
+  newValue   String?     // JSON snapshot after change
   createdAt  DateTime    @default(now())
 
   actorId String // userId (teacher) who performed the action

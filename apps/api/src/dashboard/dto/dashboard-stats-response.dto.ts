@@ -44,7 +44,7 @@ export class DashboardStatsResponseDto {
   @ApiProperty({ description: 'Total enrolled students across all classes' })
   totalStudents!: number;
 
-  @ApiProperty({ description: 'Results not yet submitted: expected (sessions × enrollments) minus actual results' })
+  @ApiProperty({ description: 'Students missing a result for at least one existing session' })
   pendingResultsCount!: number;
 
   @ApiProperty({ type: [DashboardClassStatDto] })
@@ -52,4 +52,76 @@ export class DashboardStatsResponseDto {
 
   @ApiProperty({ type: [RecentSessionDto], description: 'Up to 5 most recent test sessions' })
   recentSessions!: RecentSessionDto[];
+}
+
+export class MissingResultItemDto {
+  @ApiProperty()
+  studentId!: string;
+
+  @ApiProperty()
+  studentName!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty()
+  sessionId!: string;
+
+  @ApiProperty()
+  testNameHe!: string;
+
+  @ApiProperty({ description: 'ISO 8601 date string of the session' })
+  sessionDate!: string;
+}
+
+export class BelowNormItemDto {
+  @ApiProperty()
+  studentId!: string;
+
+  @ApiProperty()
+  studentName!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty()
+  testNameHe!: string;
+
+  @ApiProperty({ description: 'The student\'s calculatedGrade (0–100)' })
+  score!: number;
+
+  @ApiProperty({ description: 'The norm threshold the student fell below' })
+  normThreshold!: number;
+}
+
+export class TopStudentItemDto {
+  @ApiProperty({ description: 'Rank position starting at 1' })
+  rank!: number;
+
+  @ApiProperty()
+  studentId!: string;
+
+  @ApiProperty()
+  studentName!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty({ description: 'Average calculatedGrade across all recorded results (0–100)' })
+  avgGrade!: number;
+
+  @ApiProperty({ description: 'Number of test results recorded for this student' })
+  resultCount!: number;
+
+  @ApiProperty({ description: 'Student gender: MALE | FEMALE | OTHER' })
+  gender!: string;
 }

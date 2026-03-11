@@ -51,7 +51,7 @@ export class StudentPortalRepository {
         session: {
           select: {
             conductedAt: true,
-            testType: { select: { nameHe: true } },
+            testType: { select: { nameHe: true, inputType: true } },
           },
         },
       },
@@ -62,6 +62,7 @@ export class StudentPortalRepository {
       id: row.id,
       sessionDate: row.session.conductedAt.toISOString(),
       testNameHe: row.session.testType.nameHe,
+      inputType: row.session.testType.inputType,
       rawValue: Number(row.rawValue ?? 0),
       effectiveGrade: row.gradeOverride ?? row.calculatedGrade ?? 0,
     }));
