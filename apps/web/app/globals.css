@@ -2,6 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Prismatic Glass — reusable "fragile violet glass" card style ─────────────
+ * Apply class="prismatic-glass" to any card, modal, or container.
+ * Provides: translucent violet gradient · backdrop blur · violet border ·
+ *           deep violet shadow · hover light-sweep (::after animation).
+ * Requires: the element's overflow is hidden (position:relative is set here).
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+@keyframes prismatic-sweep {
+  from { transform: translateX(-130%) skewX(-12deg); }
+  to   { transform: translateX(130%)  skewX(-12deg); }
+}
+
+@layer components {
+  .prismatic-glass {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(
+      135deg,
+      rgba(23, 15, 55, 0.08) 0%,
+      rgba(23, 15, 55, 0.05) 50%,
+      rgba(23, 15, 55, 0.03) 100%
+    );
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(139, 92, 246, 0.20);
+    box-shadow:
+      0 10px 40px -10px rgba(76, 29, 149, 0.25),
+      inset 0 1px 1px rgba(255, 255, 255, 0.20);
+  }
+
+  /* Light-sweep pseudo-element — sits above card content (pointer-events: none) */
+  .prismatic-glass::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 25%,
+      rgba(255, 255, 255, 0.60) 50%,
+      transparent 75%
+    );
+    transform: translateX(-130%) skewX(-12deg);
+    pointer-events: none;
+    z-index: 10;
+    border-radius: inherit;
+  }
+
+  .prismatic-glass:hover::after {
+    animation: prismatic-sweep 0.70s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+}
+
 /*
  * RTL RULE — CRITICAL:
  * dir="rtl" is set on <html> in layout.tsx. Never remove it.

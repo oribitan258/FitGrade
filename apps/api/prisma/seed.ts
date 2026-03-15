@@ -4,6 +4,7 @@
  * Seeds:
  *  - 13 Israeli Ministry of Education FitnessTestTypes (self-contained, no XLSX needed)
  *  - Formula-based NormTable bands (linear interpolation between target_100 and target_55)
+ *    Per-grade resolution for sprint60, run2000, pushUps, situps, pullUps (grades ז'–י"ב)
  *  - 1 teacher, 2 classes (grade 10 and grade 7) for cross-age-group coverage
  *  - 15 students per class with authentic Israeli names and varied performance tiers
  *  - Test sessions with formula-consistent raw values and calculatedGrades
@@ -117,8 +118,8 @@ const TEST_TYPES: TestTypeDef[] = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NORM TABLE TARGETS (per test × gender × age group)
-// Age groups mirror Israeli Ministry categories:
-//   ה–ו: 10–12  |  ז–ח: 12–14  |  ט: 14–15  |  י–יב: 15–18
+// Age groups — elementary and per-grade secondary resolution:
+//   ה–ו: 10–12  |  ז': 12–13  |  ח': 13–14  |  ט': 14–15  |  י': 15–16  |  י"א: 16–17  |  י"ב: 17–18
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NORM_SPECS: NormSpec[] = [
@@ -126,14 +127,20 @@ const NORM_SPECS: NormSpec[] = [
   {
     testKey: 'sprint60', isTime: true,
     targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  9.0, target55: 12.0 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100:  8.2, target55: 11.0 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100:  7.8, target55: 10.5 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100:  7.5, target55: 10.0 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 10.0, target55: 13.5 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100:  9.2, target55: 12.5 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  8.8, target55: 12.0 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100:  9.0, target55: 12.5 },
+      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  9.0, target55: 12.0 },  // ה'–ו'
+      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100:  8.6, target55: 11.5 },  // ז'
+      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100:  8.2, target55: 11.0 },  // ח'
+      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100:  7.8, target55: 10.5 },  // ט'
+      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100:  7.6, target55: 10.2 },  // י'
+      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100:  7.5, target55: 10.0 },  // י"א
+      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100:  7.4, target55:  9.8 },  // י"ב
+      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 10.0, target55: 13.5 },  // ה'–ו'
+      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100:  9.6, target55: 13.2 },  // ז'
+      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100:  9.2, target55: 12.5 },  // ח'
+      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  8.8, target55: 12.0 },  // ט'
+      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100:  9.0, target55: 12.4 },  // י'
+      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100:  9.0, target55: 12.5 },  // י"א
+      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100:  9.1, target55: 12.7 },  // י"ב
     ],
   },
   // ── ריצת הלוך ושוב 4×10 מטר (TIME: seconds, lower = better) ──────────────
@@ -154,12 +161,18 @@ const NORM_SPECS: NormSpec[] = [
   {
     testKey: 'run2000', isTime: true,
     targets: [
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 495, target55: 720 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 460, target55: 680 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 420, target55: 660 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 600, target55: 840 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 540, target55: 780 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 510, target55: 750 },
+      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 530, target55: 760 },  // ז'
+      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 495, target55: 720 },  // ח'
+      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 460, target55: 680 },  // ט'
+      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 440, target55: 665 },  // י'
+      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 428, target55: 660 },  // י"א
+      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 415, target55: 655 },  // י"ב
+      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 640, target55: 880 },  // ז'
+      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 600, target55: 840 },  // ח'
+      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 540, target55: 780 },  // ט'
+      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 522, target55: 762 },  // י'
+      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 513, target55: 754 },  // י"א
+      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 505, target55: 747 },  // י"ב
     ],
   },
   // ── ריצת 1500 מטר (TIME: seconds, lower = better) ────────────────────────
@@ -200,42 +213,60 @@ const NORM_SPECS: NormSpec[] = [
   {
     testKey: 'situps', isTime: false,
     targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 40, target55: 22 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 45, target55: 26 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 50, target55: 30 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 55, target55: 32 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 38, target55: 20 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 42, target55: 24 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 45, target55: 26 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 48, target55: 28 },
+      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 40, target55: 22 },  // ה'–ו'
+      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 42, target55: 24 },  // ז'
+      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 45, target55: 26 },  // ח'
+      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 50, target55: 30 },  // ט'
+      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 52, target55: 31 },  // י'
+      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 54, target55: 32 },  // י"א
+      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 56, target55: 33 },  // י"ב
+      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 38, target55: 20 },  // ה'–ו'
+      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 38, target55: 22 },  // ז'
+      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 42, target55: 24 },  // ח'
+      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 45, target55: 26 },  // ט'
+      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 46, target55: 27 },  // י'
+      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 47, target55: 27 },  // י"א
+      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 48, target55: 28 },  // י"ב
     ],
   },
   // ── שכיבות סמיכה (REPS: higher = better) ─────────────────────────────────
   {
     testKey: 'pushUps', isTime: false,
     targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 25, target55: 12 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 35, target55: 17 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 42, target55: 21 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 48, target55: 24 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 15, target55:  6 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 20, target55:  8 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 23, target55:  9 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 25, target55: 10 },
+      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 25, target55: 12 },  // ה'–ו'
+      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 30, target55: 14 },  // ז'
+      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 35, target55: 17 },  // ח'
+      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 42, target55: 21 },  // ט'
+      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 45, target55: 22 },  // י'
+      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 47, target55: 23 },  // י"א
+      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 50, target55: 25 },  // י"ב
+      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 15, target55:  6 },  // ה'–ו'
+      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 16, target55:  7 },  // ז'
+      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 20, target55:  8 },  // ח'
+      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 23, target55:  9 },  // ט'
+      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 24, target55: 10 },  // י'
+      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 25, target55: 10 },  // י"א
+      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 26, target55: 11 },  // י"ב
     ],
   },
   // ── מתח (REPS: higher = better) ──────────────────────────────────────────
   {
     testKey: 'pullUps', isTime: false,
     targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  8, target55: 2 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 12, target55: 4 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 14, target55: 5 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 16, target55: 6 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100:  4, target55: 1 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100:  6, target55: 2 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  7, target55: 2 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100:  8, target55: 3 },
+      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  8, target55: 2 },  // ה'–ו'
+      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 10, target55: 3 },  // ז'
+      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 12, target55: 4 },  // ח'
+      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 14, target55: 5 },  // ט'
+      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 15, target55: 5 },  // י'
+      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 16, target55: 6 },  // י"א
+      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 17, target55: 6 },  // י"ב
+      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100:  4, target55: 1 },  // ה'–ו'
+      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100:  5, target55: 1 },  // ז'
+      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100:  6, target55: 2 },  // ח'
+      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  7, target55: 2 },  // ט'
+      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100:  7, target55: 3 },  // י'
+      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100:  8, target55: 3 },  // י"א
+      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100:  9, target55: 3 },  // י"ב
     ],
   },
   // ── תלייה סטטית (GENERAL: seconds, higher = better) ──────────────────────

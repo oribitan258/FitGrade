@@ -39,12 +39,15 @@ function bracketFor(score: number): Bracket {
   );
 }
 
-/** Age group definitions matching Ministry categories. */
+/** Age group definitions — per-grade secondary resolution matching seed norm bands. */
 const AGE_GROUPS = [
-  { key: '10-12', label: "ה'–ו'",    minAge: 10, maxAge: 12 },
-  { key: '12-14', label: "ז'–ח'",    minAge: 12, maxAge: 14 },
-  { key: '14-15', label: "ט'",       minAge: 14, maxAge: 15 },
-  { key: '15-18', label: "י'–י\"ב", minAge: 15, maxAge: 18 },
+  { key: '10-12', label: "ה'–ו'", minAge: 10, maxAge: 12 },
+  { key: '12-13', label: "ז'",    minAge: 12, maxAge: 13 },
+  { key: '13-14', label: "ח'",    minAge: 13, maxAge: 14 },
+  { key: '14-15', label: "ט'",    minAge: 14, maxAge: 15 },
+  { key: '15-16', label: "י'",    minAge: 15, maxAge: 16 },
+  { key: '16-17', label: 'י"א',   minAge: 16, maxAge: 17 },
+  { key: '17-18', label: 'י"ב',   minAge: 17, maxAge: 18 },
 ] as const;
 
 type AgeGroupKey = (typeof AGE_GROUPS)[number]['key'];
@@ -291,8 +294,8 @@ export default function AchievementTablesPage(): React.JSX.Element {
 
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [gender, setGender]                 = useState<GenderOpt>('MALE');
-  // Default to ט' (14–15) age group to match the default run2000 test
-  const [ageGroupKey, setAgeGroupKey]       = useState<AgeGroupKey>('14-15');
+  // Default to ז' (12–13) — first secondary grade
+  const [ageGroupKey, setAgeGroupKey]       = useState<AgeGroupKey>('12-13');
   const [search, setSearch]                 = useState('');
 
   // Auto-select "ריצת 2000 מטר" (run2000) when the test-type catalog first loads.
@@ -314,7 +317,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
   // Auto-correct ageGroupKey when available groups change
   const effectiveAgeGroupKey: AgeGroupKey = useMemo(() => {
     if (availableAgeGroups.some((g) => g.value === ageGroupKey)) return ageGroupKey;
-    return availableAgeGroups[0]?.value ?? '14-15';
+    return availableAgeGroups[0]?.value ?? '12-13';
   }, [availableAgeGroups, ageGroupKey]);
 
   // Filtered test type list for the dropdown search

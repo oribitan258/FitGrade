@@ -22,7 +22,7 @@ import { logout } from '@/lib/api-client';
 // ─── Navigation structure ─────────────────────────────────────────────────────
 
 const MAIN_NAV = [
-  { href: '/dashboard', label: 'לוח בקרה',    icon: LayoutDashboard },
+  { href: '/dashboard', label: 'ראשי',         icon: LayoutDashboard },
   { href: '/classes',   label: 'הכיתות שלי',   icon: BookOpen        },
   { href: '/schedule',  label: 'מערכת שעות',   icon: CalendarDays    },
 ] as const;
@@ -42,11 +42,8 @@ const PE_NAV = [
 type NavEntry = { href: string; label: string; icon: typeof LayoutDashboard };
 
 /**
- * Glassmorphic sidebar — sits above the animated background so the
- * gradient and icon grid bleed through the translucent panel.
- *
- * RTL: the sidebar renders on the right (first flex child).
- * border-e = border on the visual "start" edge (logical property, RTL-safe).
+ * Solid deep-violet sidebar — contrasts sharply against the light glass page background.
+ * RTL: sidebar renders on the right (first flex child).
  */
 export function Sidebar(): React.JSX.Element {
   const pathname = usePathname();
@@ -73,21 +70,21 @@ export function Sidebar(): React.JSX.Element {
           className={cn(
             'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150',
             active
-              ? 'bg-indigo-600 text-white shadow-[0_2px_16px_rgba(99,102,241,0.40)]'
-              : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700',
+              ? 'bg-white/15 text-white shadow-[0_0_12px_rgba(255,255,255,0.12)]'
+              : 'text-[#c4b5fd]/75 hover:bg-white/10 hover:text-white',
           )}
         >
-          {/* Icon capsule — glowing when active, breathing animation */}
+          {/* Icon capsule */}
           <motion.div
             className={cn(
               'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-300',
-              active ? 'bg-white/20 shadow-[0_0_14px_rgba(255,255,255,0.30)]' : 'bg-transparent',
+              active ? 'bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.15)]' : 'bg-transparent',
             )}
             animate={active ? { scale: [1, 1.09, 1] } : {}}
             transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
           >
             <Icon
-              className={cn('h-4 w-4', active ? 'text-white' : 'text-slate-500')}
+              className={cn('h-4 w-4', active ? 'text-white' : 'text-[#c4b5fd]/60')}
               aria-hidden="true"
             />
           </motion.div>
@@ -98,19 +95,22 @@ export function Sidebar(): React.JSX.Element {
   }
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col bg-indigo-50/80 backdrop-blur-2xl border-e border-white/60 shadow-[4px_0_40px_rgba(67,56,202,0.18)]">
+    <aside
+      className="flex h-full w-64 shrink-0 flex-col border-e border-white/10 shadow-[4px_0_40px_rgba(76,29,149,0.50)]"
+      style={{ background: '#4c1d95' }}
+    >
       {/* Brand */}
-      <div className="flex h-16 items-center gap-3 border-b border-slate-200/50 px-5">
+      <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
         <motion.div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_24px_rgba(99,102,241,0.50)]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 shadow-[0_0_20px_rgba(255,255,255,0.12)]"
           animate={{ scale: [1, 1.06, 1] }}
-          transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
         >
           <GraduationCap className="h-5 w-5 text-white" aria-hidden="true" />
         </motion.div>
         <div>
-          <span className="text-base font-bold tracking-tight bg-gradient-to-l from-indigo-600 to-violet-600 bg-clip-text text-transparent">FitGrade</span>
-          <p className="text-[10px] text-slate-400 leading-none mt-0.5">מערכת חינוך גופני</p>
+          <span className="text-base font-bold tracking-tight text-white">FitGrade</span>
+          <p className="text-[10px] text-[#c4b5fd]/60 leading-none mt-0.5">מערכת חינוך גופני</p>
         </div>
       </div>
 
@@ -121,8 +121,8 @@ export function Sidebar(): React.JSX.Element {
         ))}
 
         <div className="my-3 px-1">
-          <div className="h-px bg-slate-200/50" />
-          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <div className="h-px bg-white/10" />
+          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-[#c4b5fd]/50">
             כלים
           </p>
         </div>
@@ -132,8 +132,8 @@ export function Sidebar(): React.JSX.Element {
         ))}
 
         <div className="my-3 px-1">
-          <div className="h-px bg-slate-200/50" />
-          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <div className="h-px bg-white/10" />
+          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-[#c4b5fd]/50">
             חינוך גופני
           </p>
         </div>
@@ -144,13 +144,13 @@ export function Sidebar(): React.JSX.Element {
       </nav>
 
       {/* Logout */}
-      <div className="border-t border-slate-200/50 p-3">
+      <div className="border-t border-white/10 p-3">
         <motion.button
           type="button"
           onClick={() => { void handleLogout(); }}
           whileHover={{ x: -2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
           whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-[#c4b5fd]/60 transition-colors hover:bg-red-400/20 hover:text-red-300"
           aria-label="התנתק מהמערכת"
         >
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">

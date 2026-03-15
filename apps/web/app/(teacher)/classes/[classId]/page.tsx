@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -9,22 +10,31 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Activity,
+  Brain,
   CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardCopy,
   Dumbbell,
   Hash,
   Loader2,
+  Lock,
+  Pencil,
   Plus,
+  RefreshCw,
+  Send,
+  Settings2,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Target,
   Timer,
   TrendingUp,
   UserMinus,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import {
   createStudentSchema,
@@ -121,16 +131,17 @@ const INPUT_TYPE_ICONS: Record<string, React.ElementType> = {
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 const PAGE_ENTER = {
-  hidden: { opacity: 0, y: 24 },
+  hidden: { opacity: 0, y: 28 },
   show: {
     opacity: 1, y: 0,
-    transition: { ease: EASE, duration: 0.65, staggerChildren: 0.1, delayChildren: 0.05 },
+    transition: { type: 'spring' as const, stiffness: 260, damping: 28, staggerChildren: 0.1, delayChildren: 0.05 },
   },
 };
 
+/** 3D tilt-up entrance for each section */
 const ITEM = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { ease: EASE, duration: 0.55 } },
+  hidden: { opacity: 0, y: 22, rotateX: 7 },
+  show: { opacity: 1, y: 0, rotateX: 0, transition: { type: 'spring' as const, stiffness: 280, damping: 26 } },
 };
 
 const ROW_STAGGER = {
@@ -139,8 +150,8 @@ const ROW_STAGGER = {
 };
 
 const ROW_ITEM = {
-  hidden: { opacity: 0, y: 8 },
-  show: { opacity: 1, y: 0, transition: { ease: EASE, duration: 0.4 } },
+  hidden: { opacity: 0, y: 10, scale: 0.98 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring' as const, stiffness: 300, damping: 28 } },
 };
 
 // ─── Grade helpers ────────────────────────────────────────────────────────────
@@ -1052,14 +1063,16 @@ function DistributionCard({ distribution, total }: DistributionCardProps): React
 
   return (
     <motion.div
-      className="rounded-2xl bg-sky-50/75 backdrop-blur-xl border border-white/75 p-5 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
-      whileHover={{ y: -4, boxShadow: '0 20px 52px rgba(15,23,42,0.18)' }}
-      transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.35 }}
+      className="prismatic-glass rounded-2xl p-5"
+      whileHover={{ y: -6, scale: 1.015, boxShadow: '0 20px 52px rgba(15,23,42,0.22)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
     >
       <div className="flex items-center gap-2.5 mb-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50">
+        <motion.div
+          className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50"
+          whileHover={{ rotate: [-8, 8, 0], scale: 1.2, transition: { type: 'spring', stiffness: 500, damping: 12 } }}
+        >
           <Activity className="h-4 w-4 text-indigo-600" aria-hidden="true" />
-        </div>
+        </motion.div>
         <div>
           <h3 className="text-sm font-bold text-slate-900">התפלגות לעומת הנורמה</h3>
           <p className="text-xs text-slate-500">לפי ציוני משרד החינוך</p>
@@ -1095,12 +1108,1506 @@ function DistributionCard({ distribution, total }: DistributionCardProps): React
   );
 }
 
+// ─── AI Dispatch helpers ──────────────────────────────────────────────────────
+
+/** Weeks remaining until a plan end date, minimum 1. */
+function weeksUntil(date: Date): number {
+  return Math.max(1, Math.ceil((date.getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000)));
+}
+
+// ─── AI Control Center — plan types & mock data ───────────────────────────────
+
+const PLAN_TARGETS = [
+  'כוח ומהירות',
+  'סיבולת לב-ריאה',
+  'גמישות וכוח ליבה',
+  'כוח פלג גוף עליון',
+] as const;
+
+interface ActivePlanDetails {
+  endDate:   Date;
+  startDate: Date;
+  progress:  number; // 0–100
+  weekNum:   number; // 1–4
+  target:    string;
+}
+
+interface DayExercise {
+  name:   string;
+  detail: string;
+}
+
+interface WeekPlan {
+  week:      number;
+  focus:     string;
+  emoji:     string;
+  exercises: DayExercise[];
+}
+
+/** מסלול הדרגתי — Gradual track */
+const MOCK_PLAN_GRADUAL: WeekPlan[] = [
+  {
+    week: 1, focus: 'בניית בסיס — סיבולת', emoji: '🌱',
+    exercises: [
+      { name: 'ריצה קלה',     detail: '20 דקות, 65% דופק מרבי' },
+      { name: 'שכיבות סמיכה', detail: '3 סטים × 10 חזרות'      },
+      { name: 'פלאנק',         detail: '3 × 20 שניות'            },
+      { name: 'קפיצות כוח',   detail: '2 סטים × 15'             },
+    ],
+  },
+  {
+    week: 2, focus: 'כוח פלג גוף עליון', emoji: '💪',
+    exercises: [
+      { name: 'שכיבות סמיכה', detail: '4 × 12'          },
+      { name: 'מתח מוסגר',    detail: '3 × 6 חזרות'     },
+      { name: 'ריצת שאטל',    detail: '5 × 30 מטר'      },
+      { name: 'כפיפות בטן',   detail: '3 × 20'           },
+    ],
+  },
+  {
+    week: 3, focus: 'כוח פלג גוף תחתון', emoji: '🦵',
+    exercises: [
+      { name: 'סקוואט',       detail: '4 × 15 חזרות'    },
+      { name: "לאנג'ס",       detail: '3 × 12 לכל רגל'  },
+      { name: 'קפיצות לגובה', detail: '3 × 8'            },
+      { name: 'ריצה מהירה',   detail: '6 × 100 מטר'     },
+    ],
+  },
+  {
+    week: 4, focus: 'שיא — עומס מלא', emoji: '🔥',
+    exercises: [
+      { name: 'אינטרוול ריצה', detail: '8 × 200 מטר'         },
+      { name: 'שכיבות סמיכה',  detail: '4 × 15'               },
+      { name: 'סקוואט קפיצה',  detail: '4 × 10'               },
+      { name: 'תרגיל משולב',   detail: '3 סבבים × 5 תרגילים'  },
+    ],
+  },
+];
+
+/** מסלול אינטנסיבי — Intensive track */
+const MOCK_PLAN_INTENSIVE: WeekPlan[] = [
+  {
+    week: 1, focus: 'הפעלה — עצימות גבוהה', emoji: '⚡',
+    exercises: [
+      { name: 'ריצת אינטרוול', detail: '6 × 200 מטר, 85% דופק' },
+      { name: 'שכיבות סמיכה',  detail: '4 × 15 חזרות'           },
+      { name: 'בורפי',          detail: '3 × 12'                 },
+      { name: 'קפיצות קרוספיט', detail: '3 × 10'                },
+    ],
+  },
+  {
+    week: 2, focus: 'כוח + פליאומטריקה', emoji: '🚀',
+    exercises: [
+      { name: 'סקוואט קפיצה',  detail: '4 × 12'          },
+      { name: 'שכיבות פיצוץ',  detail: '4 × 8'            },
+      { name: 'ריצת מדרגות',   detail: '5 × 3 קומות'     },
+      { name: 'מתח מוסגר',     detail: '4 × 8 חזרות'     },
+    ],
+  },
+  {
+    week: 3, focus: 'סיבולת + כוח משולב', emoji: '🔩',
+    exercises: [
+      { name: '5 ק"מ טמפו',    detail: '80% מהירות מרבית'    },
+      { name: 'לאנגס קפיצה',   detail: '4 × 10 לכל רגל'      },
+      { name: 'בורפי + מתח',   detail: '3 × 8 משולב'         },
+      { name: 'אינטרוול אחרון', detail: '4 × 100 מטר ספרינט'  },
+    ],
+  },
+  {
+    week: 4, focus: 'עומס פיק — מבחן כושר', emoji: '🏆',
+    exercises: [
+      { name: 'ריצה 2 ק"מ',   detail: 'מהירות מרבית אישית'      },
+      { name: 'שכיבות סמיכה', detail: '5 × 20 — כמה שיותר'       },
+      { name: 'סקוואט',        detail: '5 × 20'                   },
+      { name: 'מסלול מכשולים', detail: '3 סבבים ← מדידת זמן'     },
+    ],
+  },
+];
+
+/** Alias used by default (gradual) */
+const MOCK_PLAN = MOCK_PLAN_GRADUAL;
+
+// ─── Exercise alternatives (categorized swap options) ──────────────────────────
+// Each key is an exercise name; the value is the full list of alternatives
+// (including the exercise itself) that belong to the same muscle/metric category.
+
+const EXERCISE_ALTERNATIVES: Record<string, DayExercise[]> = {
+  /* ── קטגוריה: ריצה / סיבולת ───────────────────────────────────────────── */
+  'ריצה קלה':       [
+    { name: 'ריצה קלה',         detail: '20 דקות, 65% דופק מרבי'  },
+    { name: 'הליכה מהירה',      detail: '30 דקות, 60% דופק מרבי'  },
+    { name: 'רכיבה על אופניים', detail: '25 דקות, 65% דופק מרבי'  },
+    { name: 'שחייה',            detail: '20 דקות סגנון חופשי'      },
+  ],
+  'ריצה מהירה':     [
+    { name: 'ריצה מהירה',  detail: '6 × 100 מטר'     },
+    { name: 'ריצת שאטל',   detail: '5 × 30 מטר'       },
+    { name: 'ספרינטים',    detail: '8 × 50 מטר'       },
+    { name: 'פרטלק',       detail: '15 דקות שינויי קצב' },
+  ],
+  /* ── קטגוריה: אינטרוול ────────────────────────────────────────────────── */
+  'ריצת אינטרוול':  [
+    { name: 'ריצת אינטרוול',    detail: '6 × 200 מטר, 85% דופק' },
+    { name: 'ריצת שאטל',        detail: '8 × 30 מטר'            },
+    { name: 'ספרינט קצר',       detail: '10 × 50 מטר'           },
+    { name: 'פרטלק',            detail: '20 דקות שינויי קצב'    },
+  ],
+  'אינטרוול ריצה':  [
+    { name: 'אינטרוול ריצה',    detail: '8 × 200 מטר'         },
+    { name: 'ריצת שאטל',        detail: '6 × 40 מטר'          },
+    { name: 'ספרינט קצר',       detail: '10 × 60 מטר'         },
+    { name: 'אינטרוול אחרון',   detail: '4 × 100 מטר ספרינט'  },
+  ],
+  'אינטרוול אחרון': [
+    { name: 'אינטרוול אחרון',   detail: '4 × 100 מטר ספרינט'  },
+    { name: 'ריצת אינטרוול',    detail: '5 × 200 מטר'         },
+    { name: 'ספרינטים',         detail: '8 × 50 מטר'          },
+    { name: 'פרטלק',            detail: '15 דקות שינויי קצב'  },
+  ],
+  'ריצת שאטל':      [
+    { name: 'ריצת שאטל',        detail: '5 × 30 מטר'      },
+    { name: 'ריצת אינטרוול',    detail: '5 × 200 מטר'     },
+    { name: 'ספרינטים',         detail: '6 × 60 מטר'      },
+    { name: 'ריצה מהירה',       detail: '4 × 100 מטר'     },
+  ],
+  '5 ק"מ טמפו':     [
+    { name: '5 ק"מ טמפו',       detail: '80% מהירות מרבית'  },
+    { name: 'ריצה 2 ק"מ',       detail: 'מהירות נוחה'        },
+    { name: 'ריצה קלה',         detail: '30 דקות, 65% דופק' },
+    { name: 'אופניים',          detail: '25 דקות, 70% דופק' },
+  ],
+  'ריצה 2 ק"מ':     [
+    { name: 'ריצה 2 ק"מ',       detail: 'מהירות מרבית אישית'  },
+    { name: '5 ק"מ טמפו',       detail: '75% מהירות מרבית'    },
+    { name: 'ריצת אינטרוול',    detail: '6 × 200 מטר'         },
+    { name: 'פרטלק',            detail: '20 דקות שינויי קצב'  },
+  ],
+  'ריצת מדרגות':    [
+    { name: 'ריצת מדרגות',      detail: '5 × 3 קומות'    },
+    { name: 'ריצת שאטל',        detail: '6 × 30 מטר'      },
+    { name: 'ספרינטים',         detail: '8 × 50 מטר'      },
+    { name: 'בורפי',            detail: '4 × 10'           },
+  ],
+  /* ── קטגוריה: פלג גוף עליון ──────────────────────────────────────────── */
+  'שכיבות סמיכה':   [
+    { name: 'שכיבות סמיכה',          detail: '3 סטים × 10 חזרות' },
+    { name: 'שכיבות סמיכה יהלום',    detail: '3 × 8 חזרות'       },
+    { name: 'שכיבות סמיכה על ברכיים', detail: '3 × 15 חזרות'     },
+    { name: 'החזקת פלאנק',           detail: '3 × 30 שניות'      },
+  ],
+  'שכיבות פיצוץ':   [
+    { name: 'שכיבות פיצוץ',          detail: '4 × 8'        },
+    { name: 'שכיבות סמיכה',          detail: '4 × 15'       },
+    { name: 'שכיבות סמיכה יהלום',    detail: '4 × 10'       },
+    { name: 'מתח מוסגר',             detail: '3 × 6 חזרות'  },
+  ],
+  'מתח מוסגר':      [
+    { name: 'מתח מוסגר',             detail: '3 × 6 חזרות' },
+    { name: 'שכיבות סמיכה',          detail: '4 × 12'      },
+    { name: 'שכיבות סמיכה יהלום',    detail: '3 × 8'       },
+    { name: 'שכיבות פיצוץ',          detail: '3 × 8'       },
+  ],
+  /* ── קטגוריה: ליבה / Core ────────────────────────────────────────────── */
+  'פלאנק':           [
+    { name: 'פלאנק',       detail: '3 × 20 שניות'  },
+    { name: 'פלאנק צדדי',  detail: '3 × 20 שניות כל צד' },
+    { name: 'כפיפות בטן', detail: '3 × 20'         },
+    { name: 'הרמת רגליים', detail: '3 × 15'         },
+  ],
+  'כפיפות בטן':      [
+    { name: 'כפיפות בטן', detail: '3 × 20'              },
+    { name: 'פלאנק',       detail: '3 × 30 שניות'        },
+    { name: 'פלאנק צדדי',  detail: '3 × 20 שניות כל צד'  },
+    { name: 'הרמת רגליים', detail: '3 × 15'              },
+  ],
+  /* ── קטגוריה: פלג גוף תחתון ──────────────────────────────────────────── */
+  'סקוואט':          [
+    { name: 'סקוואט',       detail: '4 × 15 חזרות'   },
+    { name: "לאנג'ס",       detail: '3 × 12 לכל רגל' },
+    { name: 'קפיצות לגובה', detail: '3 × 10'          },
+    { name: 'כריעות רומניות', detail: '4 × 12'        },
+  ],
+  'סקוואט קפיצה':    [
+    { name: 'סקוואט קפיצה',   detail: '4 × 10'          },
+    { name: 'סקוואט',          detail: '4 × 15'          },
+    { name: 'קפיצות לגובה',    detail: '3 × 10'          },
+    { name: "לאנגס קפיצה",     detail: '4 × 8 לכל רגל'  },
+  ],
+  "לאנג'ס":          [
+    { name: "לאנג'ס",          detail: '3 × 12 לכל רגל' },
+    { name: 'סקוואט',          detail: '4 × 15'          },
+    { name: 'קפיצות לגובה',    detail: '3 × 10'          },
+    { name: 'כריעות רומניות',  detail: '4 × 12'          },
+  ],
+  'לאנגס קפיצה':     [
+    { name: 'לאנגס קפיצה',     detail: '4 × 10 לכל רגל' },
+    { name: "לאנג'ס",          detail: '3 × 12 לכל רגל' },
+    { name: 'סקוואט קפיצה',    detail: '4 × 10'          },
+    { name: 'קפיצות לגובה',    detail: '3 × 12'          },
+  ],
+  'קפיצות לגובה':    [
+    { name: 'קפיצות לגובה',    detail: '3 × 8'           },
+    { name: 'סקוואט קפיצה',    detail: '3 × 10'          },
+    { name: 'קפיצות כוח',      detail: '3 × 12'          },
+    { name: 'לאנגס קפיצה',     detail: '3 × 8 לכל רגל'  },
+  ],
+  'קפיצות כוח':      [
+    { name: 'קפיצות כוח',      detail: '2 סטים × 15'    },
+    { name: 'קפיצות לגובה',    detail: '3 × 10'          },
+    { name: 'סקוואט קפיצה',    detail: '3 × 10'          },
+    { name: 'בורפי',            detail: '3 × 10'          },
+  ],
+  /* ── קטגוריה: HIIT / CrossFit ────────────────────────────────────────── */
+  'בורפי':           [
+    { name: 'בורפי',            detail: '3 × 12'        },
+    { name: 'קפיצות קרוספיט',  detail: '3 × 10'        },
+    { name: 'שכיבות פיצוץ',    detail: '3 × 8'         },
+    { name: 'ריצת מדרגות',     detail: '4 × 3 קומות'   },
+  ],
+  'קפיצות קרוספיט':  [
+    { name: 'קפיצות קרוספיט',  detail: '3 × 10'        },
+    { name: 'בורפי',            detail: '3 × 10'        },
+    { name: 'סקוואט קפיצה',    detail: '3 × 12'        },
+    { name: 'שכיבות פיצוץ',    detail: '3 × 8'         },
+  ],
+  'בורפי + מתח':     [
+    { name: 'בורפי + מתח',      detail: '3 × 8 משולב'   },
+    { name: 'בורפי',            detail: '4 × 10'         },
+    { name: 'מתח מוסגר',        detail: '4 × 6 חזרות'   },
+    { name: 'שכיבות פיצוץ',     detail: '4 × 8'         },
+  ],
+  'תרגיל משולב':     [
+    { name: 'תרגיל משולב',      detail: '3 סבבים × 5 תרגילים'  },
+    { name: 'בורפי',            detail: '4 × 12'               },
+    { name: 'מסלול מכשולים',    detail: '3 סבבים ← מדידת זמן'  },
+    { name: 'קפיצות קרוספיט',   detail: '4 × 10'               },
+  ],
+  'מסלול מכשולים':   [
+    { name: 'מסלול מכשולים',    detail: '3 סבבים ← מדידת זמן'  },
+    { name: 'תרגיל משולב',      detail: '3 סבבים × 5 תרגילים'  },
+    { name: 'בורפי',            detail: '4 × 12'               },
+    { name: 'ריצת שאטל',        detail: '6 × 30 מטר'           },
+  ],
+};
+
+// ─── AI Control Center Modal ───────────────────────────────────────────────────
+
+interface AiControlCenterModalProps {
+  open:                 boolean;
+  onOpenChange:         (open: boolean) => void;
+  students:             StudentData[];
+  activePlanDetailsMap: Map<string, ActivePlanDetails>;
+  lockedStudents:       StudentData[];
+  eligibleStudents:     StudentData[];
+  studentGradesMap:     Map<string, number>;
+}
+
+type GenerateState = 'idle' | 'generating' | 'preview' | 'sending' | 'sent';
+
+function AiControlCenterModal({
+  open,
+  onOpenChange,
+  students,
+  activePlanDetailsMap,
+  lockedStudents,
+  eligibleStudents,
+  studentGradesMap,
+}: AiControlCenterModalProps): React.JSX.Element {
+  const [activeTab, setActiveTab]             = useState<'active' | 'generate'>('active');
+  const [targetStudentId, setTargetStudentId] = useState('');
+  const [generateState, setGenerateState]     = useState<GenerateState>('idle');
+  const [currentPlan, setCurrentPlan]         = useState<WeekPlan[]>(MOCK_PLAN);
+  const [expandedWeek, setExpandedWeek]       = useState<number | null>(null);
+  // Tab A: drill-down
+  const [selectedPlanStudentId, setSelectedPlanStudentId] = useState<string | null>(null);
+  // Tab B: multi-track + manual edit
+  const [selectedTrack, setSelectedTrack]     = useState<0 | 1>(0); // 0=gradual, 1=intensive
+  const [isEditMode, setIsEditMode]           = useState(false);
+  const [editablePlan, setEditablePlan]       = useState<WeekPlan[]>(MOCK_PLAN);
+  // Key format: "${weekIdx}-${exIdx}" — which exercise row has its carousel open
+  const [carouselKey, setCarouselKey]         = useState<string | null>(null);
+  // Inline save feedback: 'idle' | 'saving' | 'saved'
+  const [saveState, setSaveState]             = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab('active');
+      setTargetStudentId('');
+      setGenerateState('idle');
+      setExpandedWeek(null);
+      setSelectedPlanStudentId(null);
+      setSelectedTrack(0);
+      setIsEditMode(false);
+      setEditablePlan(MOCK_PLAN);
+      setCarouselKey(null);
+      setSaveState('idle');
+    }
+  }, [open]);
+
+  // Real-time workout progress received from students via localStorage → storage event
+  const [liveProgressMap, setLiveProgressMap] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    // Seed initial values from localStorage for all students with active plans
+    const initial = new Map<string, number>();
+    for (const student of lockedStudents) {
+      const raw = localStorage.getItem(`fitgrade-progress-${student.id}`);
+      if (raw !== null) {
+        const pct = Number(raw);
+        if (!isNaN(pct)) initial.set(student.id, pct);
+      }
+    }
+    if (initial.size > 0) setLiveProgressMap(initial);
+
+    function handleStorage(e: StorageEvent): void {
+      if (!e.key?.startsWith('fitgrade-progress-')) return;
+      const studentId = e.key.slice('fitgrade-progress-'.length);
+      const pct = e.newValue !== null ? Number(e.newValue) : null;
+      if (pct === null || isNaN(pct)) return;
+      setLiveProgressMap((prev) => new Map(prev).set(studentId, pct));
+    }
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [lockedStudents]);
+
+  const targetStudent       = students.find((s) => s.id === targetStudentId) ?? null;
+  const targetHasActivePlan = activePlanDetailsMap.has(targetStudentId);
+  const hasPendingChanges   = JSON.stringify(editablePlan) !== JSON.stringify(currentPlan);
+
+  // Overlay: derive once, outside JSX — eliminates the IIFE pattern that confused AnimatePresence
+  const overlayStudent = selectedPlanStudentId !== null
+    ? (lockedStudents.find((s) => s.id === selectedPlanStudentId) ?? null)
+    : null;
+  const overlayDetails = selectedPlanStudentId !== null
+    ? (activePlanDetailsMap.get(selectedPlanStudentId) ?? null)
+    : null;
+  const showOverlay = selectedPlanStudentId !== null && overlayStudent !== null && overlayDetails !== null;
+
+  function applyTrack(track: 0 | 1): WeekPlan[] {
+    return track === 0 ? MOCK_PLAN_GRADUAL : MOCK_PLAN_INTENSIVE;
+  }
+
+  async function handleGenerate(): Promise<void> {
+    if (!targetStudentId || targetHasActivePlan) return;
+    setGenerateState('generating');
+    setIsEditMode(false);
+    await new Promise<void>((r) => setTimeout(r, 1600));
+    const plan = applyTrack(selectedTrack);
+    setCurrentPlan(plan);
+    setEditablePlan(plan);
+    setExpandedWeek(1);
+    setGenerateState('preview');
+  }
+
+  async function handleRegenerate(): Promise<void> {
+    setGenerateState('generating');
+    setIsEditMode(false);
+    await new Promise<void>((r) => setTimeout(r, 1200));
+    // Switch to the other track on regenerate (mock behaviour)
+    const nextTrack: 0 | 1 = selectedTrack === 0 ? 1 : 0;
+    setSelectedTrack(nextTrack);
+    const plan = applyTrack(nextTrack);
+    setCurrentPlan(plan);
+    setEditablePlan(plan);
+    setExpandedWeek(null);
+    setGenerateState('preview');
+  }
+
+  function handleTrackSwitch(track: 0 | 1): void {
+    if (track === selectedTrack) return;
+    setSelectedTrack(track);
+    const plan = applyTrack(track);
+    setCurrentPlan(plan);
+    setEditablePlan(plan);
+    setIsEditMode(false);
+    setCarouselKey(null);
+    setSaveState('idle');
+    setExpandedWeek(null);
+  }
+
+  function handleSwapExercise(weekIdx: number, exIdx: number, option: DayExercise): void {
+    setEditablePlan((prev) =>
+      prev.map((w, wi) =>
+        wi !== weekIdx
+          ? w
+          : { ...w, exercises: w.exercises.map((ex, ei) => (ei === exIdx ? option : ex)) },
+      ),
+    );
+    setSaveState('idle');
+    // Carousel stays open so teacher can see the selected card highlighted
+  }
+
+  async function handleSavePlan(): Promise<void> {
+    setSaveState('saving');
+    // Mock: persist editablePlan as the current plan
+    await new Promise<void>((r) => setTimeout(r, 900));
+    setCurrentPlan(editablePlan);
+    setSaveState('saved');
+    // Broadcast updated plan to the specific student's portal via localStorage
+    if (targetStudentId) {
+      try {
+        const payload = { plan: editablePlan, savedAt: Date.now() };
+        localStorage.setItem(`fitgrade-workout-plan-${targetStudentId}`, JSON.stringify(payload));
+      } catch { /* storage quota exceeded — non-critical */ }
+    }
+    setTimeout(() => { setSaveState('idle'); }, 2500);
+  }
+
+  async function handleApproveDispatch(): Promise<void> {
+    setGenerateState('sending');
+    await new Promise<void>((r) => setTimeout(r, 1500));
+    setGenerateState('sent');
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="fixed left-[50%] top-[50%] z-[9999] w-full max-w-2xl translate-x-[-50%] translate-y-[-50%] rounded-3xl border-0 bg-white/85 p-0 shadow-2xl shadow-slate-900/25 backdrop-blur-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* ── Dark-glass header ─────────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-br from-slate-800 via-slate-700 to-indigo-900 px-7 py-6">
+          <div className="pointer-events-none absolute -end-10 -top-10 h-36 w-36 rounded-full bg-white/5" />
+          <div className="pointer-events-none absolute -start-8 -bottom-8 h-28 w-28 rounded-full bg-indigo-500/10" />
+          <DialogHeader>
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 shadow-[0_0_20px_rgba(255,255,255,0.10)]">
+                <Settings2 className="h-5 w-5 text-white" aria-hidden="true" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-extrabold text-white">
+                  מרכז בקרה AI
+                </DialogTitle>
+                <DialogDescription className="mt-0.5 text-sm text-white/65">
+                  ניהול, מעקב ויצירת תוכניות אימון מותאמות אישית
+                </DialogDescription>
+              </div>
+            </div>
+
+            {/* Tab pills */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('active')}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all',
+                  activeTab === 'active'
+                    ? 'bg-white text-slate-900 shadow-md'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white',
+                )}
+              >
+                <Activity className="h-4 w-4" aria-hidden="true" />
+                מעקב תוכניות פעילות
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('generate')}
+                className={cn(
+                  'flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all',
+                  activeTab === 'generate'
+                    ? 'bg-white text-slate-900 shadow-md'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white',
+                )}
+              >
+                <Brain className="h-4 w-4" aria-hidden="true" />
+                יצירה ושילוח
+              </button>
+            </div>
+          </DialogHeader>
+        </div>
+
+        {/* ── Scrollable content ────────────────────────────────────── */}
+        <div className="max-h-[60vh] overflow-y-auto p-6">
+          <AnimatePresence mode="wait">
+
+            {/* ══ Tab A: Active Protocols ══════════════════════════════ */}
+            {activeTab === 'active' ? (
+              <motion.div
+                key="active-tab"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ ease: EASE, duration: 0.28 }}
+                className="space-y-5"
+              >
+                {/* ── Bento grid of active plans ─────────────────────── */}
+                <div>
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                    תוכניות בפעילות ({lockedStudents.length})
+                  </p>
+                  {lockedStudents.length === 0 ? (
+                    <div className="flex flex-col items-center gap-3 py-10 text-center">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+                        <CheckCircle2 className="h-6 w-6 text-slate-300" aria-hidden="true" />
+                      </div>
+                      <p className="text-sm font-medium text-slate-400">אין תוכניות פעילות כרגע</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {lockedStudents.map((student, i) => {
+                        const details  = activePlanDetailsMap.get(student.id);
+                        if (!details) return null;
+                        // Live progress from student's workout session overrides the static value
+                        const liveProgress = liveProgressMap.get(student.id) ?? details.progress;
+                        const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
+                        const tint     = AVATAR_TINTS[i % AVATAR_TINTS.length]!;
+                        return (
+                          <motion.div
+                            key={student.id}
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ ease: EASE, duration: 0.4, delay: i * 0.1 }}
+                            className="prismatic-glass rounded-2xl p-4"
+                          >
+                            {/* Student header */}
+                            <div className="mb-3 flex items-center gap-3">
+                              <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold', tint)}>
+                                {initials}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-bold text-slate-800">
+                                  {student.firstName} {student.lastName}
+                                </p>
+                                <p className="text-xs font-medium text-indigo-600">{details.target}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                שבוע {details.weekNum}/4
+                              </span>
+                            </div>
+
+                            {/* Glowing progress bar — updates live as student completes exercises */}
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">התקדמות</span>
+                                <span className="font-bold text-indigo-700">{liveProgress}%</span>
+                              </div>
+                              <div className="h-2.5 overflow-hidden rounded-full bg-indigo-100">
+                                <motion.div
+                                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500"
+                                  style={{ boxShadow: '0 0 8px rgba(99,102,241,0.55)' }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${liveProgress}%` }}
+                                  transition={{ ease: EASE, duration: 0.5 }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Dates + weeks remaining */}
+                            <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                              <span>התחלה: {details.startDate.toLocaleDateString('he-IL')}</span>
+                              <span className="flex items-center gap-1">
+                                <Lock className="h-3 w-3" aria-hidden="true" />
+                                עוד {weeksUntil(details.endDate)} שבועות
+                              </span>
+                            </div>
+
+                            {/* Open plan overlay */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPlanStudentId(student.id)}
+                              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-indigo-200/80 bg-white/60 py-1.5 text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-50"
+                            >
+                              <Target className="h-3 w-3" aria-hidden="true" />
+                              👁️ צפה בפירוט התוכנית
+                            </button>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Waiting-for-plan section ───────────────────────── */}
+                {eligibleStudents.length > 0 && (
+                  <div>
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-emerald-700">
+                      ממתינים לתוכנית ({eligibleStudents.length})
+                    </p>
+                    <div className="overflow-hidden rounded-2xl border border-emerald-200/70 bg-emerald-50/50">
+                      {eligibleStudents.map((student, i) => {
+                        const score = studentGradesMap.get(student.id) ?? 0;
+                        return (
+                          <div
+                            key={student.id}
+                            className={cn('flex items-center gap-3 px-4 py-3', i > 0 && 'border-t border-emerald-100')}
+                          >
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-orange-400" />
+                            <p className="flex-1 text-sm font-semibold text-slate-700">
+                              {student.firstName} {student.lastName}
+                            </p>
+                            <span className="text-sm font-bold tabular-nums text-orange-500">
+                              {score > 0 ? score : '—'}
+                            </span>
+                            <motion.button
+                              type="button"
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => {
+                                setActiveTab('generate');
+                                setTargetStudentId(student.id);
+                                setGenerateState('idle');
+                              }}
+                              className="flex items-center gap-1.5 rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 transition-colors hover:bg-violet-200"
+                            >
+                              <Brain className="h-3 w-3" aria-hidden="true" />
+                              צור תוכנית
+                            </motion.button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {eligibleStudents.length === 0 && lockedStudents.length > 0 && (
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center text-xs font-medium text-emerald-700">
+                    כל התלמידים מתחת לנורמה כבר בתוכנית פעילה 🎉
+                  </div>
+                )}
+              </motion.div>
+
+            ) : (
+              /* ══ Tab B: Plan Generation & Dispatch ══════════════════ */
+              <motion.div
+                key="generate-tab"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ ease: EASE, duration: 0.28 }}
+                className="space-y-5"
+              >
+                {/* Student picker (hidden when sent) */}
+                {generateState !== 'sent' && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      בחר תלמיד לבניית תוכנית
+                    </p>
+                    <select
+                      value={targetStudentId}
+                      onChange={(e) => {
+                        setTargetStudentId(e.target.value);
+                        setGenerateState('idle');
+                      }}
+                      disabled={generateState === 'generating' || generateState === 'sending'}
+                      className={cn(SELECT_STYLES)}
+                      aria-label="בחר תלמיד לבניית תוכנית"
+                    >
+                      <option value="">— בחר תלמיד —</option>
+                      {eligibleStudents.length > 0 && (
+                        <optgroup label="ממתינים לתוכנית">
+                          {eligibleStudents.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.firstName} {s.lastName} (ציון: {studentGradesMap.get(s.id) ?? '—'})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="כל התלמידים">
+                        {students
+                          .filter((s) => !eligibleStudents.some((e) => e.id === s.id))
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.firstName} {s.lastName}
+                              {activePlanDetailsMap.has(s.id) ? ' ⏳' : ''}
+                            </option>
+                          ))}
+                      </optgroup>
+                    </select>
+
+                    {/* Active-plan warning */}
+                    {targetHasActivePlan && targetStudentId && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700"
+                      >
+                        <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>
+                          לתלמיד יש תוכנית פעילה — ניתן לבנות תוכנית חדשה בעוד{' '}
+                          {weeksUntil(activePlanDetailsMap.get(targetStudentId)!.endDate)} שבועות
+                        </span>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Generate button ───────────────────────────────── */}
+                {generateState === 'idle' && (
+                  <motion.button
+                    type="button"
+                    onClick={() => { void handleGenerate(); }}
+                    disabled={!targetStudentId || targetHasActivePlan}
+                    whileHover={
+                      targetStudentId && !targetHasActivePlan
+                        ? { scale: 1.02, boxShadow: '0 12px 36px rgba(139,92,246,0.45)', transition: { type: 'spring', stiffness: 400, damping: 22 } }
+                        : {}
+                    }
+                    whileTap={targetStudentId && !targetHasActivePlan ? { scale: 0.97 } : {}}
+                    className={cn(
+                      'relative flex h-12 w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl text-sm font-extrabold text-white transition-all',
+                      targetStudentId && !targetHasActivePlan
+                        ? 'bg-gradient-to-br from-violet-500 to-indigo-600 shadow-[0_4px_20px_rgba(139,92,246,0.35)]'
+                        : 'cursor-not-allowed bg-slate-200 text-slate-400',
+                    )}
+                  >
+                    {targetStudentId && !targetHasActivePlan && (
+                      <motion.div
+                        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/12 to-transparent"
+                        animate={{ x: ['-100%', '200%'] }}
+                        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1 }}
+                      />
+                    )}
+                    <Brain className="relative z-10 h-4 w-4" aria-hidden="true" />
+                    <span className="relative z-10">
+                      {targetStudentId && !targetHasActivePlan
+                        ? `בנה תוכנית 4 שבועות עבור ${targetStudent?.firstName ?? ''}`
+                        : targetStudentId
+                        ? 'תלמיד זה בתוכנית פעילה'
+                        : 'בחר תלמיד תחילה'}
+                    </span>
+                  </motion.button>
+                )}
+
+                {/* ── Generating spinner ───────────────────────────── */}
+                {generateState === 'generating' && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col items-center gap-3 py-10 text-center"
+                  >
+                    <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-violet-100">
+                      <Loader2 className="h-7 w-7 animate-spin text-violet-600" aria-hidden="true" />
+                      <motion.div
+                        className="absolute inset-0 rounded-full border-2 border-violet-300"
+                        animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
+                        transition={{ duration: 1.4, repeat: Infinity }}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">ה-AI בונה תוכנית אישית...</p>
+                      <p className="mt-0.5 text-xs text-slate-500">מנתח פרופיל כושר, גיל ותוצאות</p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ── Plan preview (Review & Approve) ─────────────── */}
+                {generateState === 'preview' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ ease: EASE, duration: 0.35 }}
+                    className="space-y-4"
+                  >
+                    {/* Header row */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100">
+                        <Brain className="h-4 w-4 text-violet-600" aria-hidden="true" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-800">
+                          תוכנית 4 שבועות עבור {targetStudent?.firstName} {targetStudent?.lastName}
+                        </p>
+                        <p className="text-xs text-slate-500">בדוק ואשר לפני השליחה לפורטל התלמיד</p>
+                      </div>
+                    </div>
+
+                    {/* Track selector */}
+                    <div className="flex gap-2">
+                      {([
+                        { idx: 0 as const, label: 'מסלול הדרגתי 🌱', desc: 'עומס נמוך-בינוני' },
+                        { idx: 1 as const, label: 'מסלול אינטנסיבי ⚡', desc: 'עצימות גבוהה' },
+                      ] satisfies { idx: 0 | 1; label: string; desc: string }[]).map(({ idx, label, desc }) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleTrackSwitch(idx)}
+                          className={cn(
+                            'flex flex-1 flex-col items-center rounded-xl border px-3 py-2 text-xs font-bold transition-all',
+                            selectedTrack === idx
+                              ? 'border-violet-300 bg-violet-50 text-violet-700 shadow-sm ring-1 ring-violet-300'
+                              : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-300 hover:bg-white',
+                          )}
+                        >
+                          <span>{label}</span>
+                          <span className={cn('mt-0.5 text-[10px] font-medium', selectedTrack === idx ? 'text-violet-500' : 'text-slate-400')}>
+                            {desc}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Edit toggle */}
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditMode((v) => !v)}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all',
+                          isEditMode
+                            ? 'border-amber-300 bg-amber-50 text-amber-700'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
+                        )}
+                      >
+                        <Pencil className="h-3 w-3" aria-hidden="true" />
+                        {isEditMode ? '✅ סיים החלפה' : '🔄 החלף תרגילים'}
+                      </button>
+                    </div>
+
+                    {/* Week accordion */}
+                    <div className="space-y-2">
+                      {editablePlan.map((week, wi) => (
+                        <motion.div
+                          key={`${selectedTrack}-${week.week}`}
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ ease: EASE, duration: 0.3, delay: wi * 0.07 }}
+                          className={cn(
+                            'overflow-hidden rounded-2xl border shadow-sm',
+                            isEditMode
+                              ? 'border-amber-200/80 bg-amber-50/40'
+                              : 'border-slate-200/80 bg-white/70',
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setExpandedWeek(expandedWeek === week.week ? null : week.week)}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-slate-50/80"
+                          >
+                            <span className="text-xl">{week.emoji}</span>
+                            <div className="flex-1">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                שבוע {week.week}
+                              </p>
+                              <p className="text-sm font-bold text-slate-800">{week.focus}</p>
+                            </div>
+                            {isEditMode && (
+                              <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                                עריכה
+                              </span>
+                            )}
+                            <motion.div
+                              animate={{ rotate: expandedWeek === week.week ? 180 : 0 }}
+                              transition={{ ease: EASE, duration: 0.22 }}
+                            >
+                              <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                            </motion.div>
+                          </button>
+                          <AnimatePresence>
+                            {expandedWeek === week.week && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ ease: EASE, duration: 0.28 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="space-y-1.5 border-t border-slate-100 px-4 py-3">
+                                  {week.exercises.map((ex, ei) => {
+                                    const key          = `${wi}-${ei}`;
+                                    const alternatives = EXERCISE_ALTERNATIVES[ex.name] ?? [ex];
+                                    const isOpen       = carouselKey === key;
+                                    return (
+                                      <div key={key}>
+                                        {/* Exercise trigger row */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setCarouselKey(isOpen ? null : key)}
+                                          className={cn(
+                                            'group flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-start transition-colors',
+                                            isOpen
+                                              ? 'bg-violet-50/80'
+                                              : 'hover:bg-slate-50/80',
+                                          )}
+                                          aria-expanded={isOpen}
+                                          title="לחץ לבחירת תרגיל חלופי"
+                                        >
+                                          <span className={cn(
+                                            'h-1.5 w-1.5 shrink-0 rounded-full transition-colors',
+                                            isOpen ? 'bg-violet-500' : 'bg-violet-300',
+                                          )} />
+                                          <span className={cn(
+                                            'flex-1 text-sm font-semibold transition-colors',
+                                            isOpen ? 'text-violet-700' : 'text-slate-700 group-hover:text-violet-600',
+                                          )}>
+                                            {ex.name}
+                                          </span>
+                                          <span className="shrink-0 text-xs text-slate-400">{ex.detail}</span>
+                                          <span className={cn(
+                                            'shrink-0 text-[10px] transition-opacity',
+                                            isOpen ? 'opacity-100 text-violet-400' : 'opacity-0 group-hover:opacity-60 text-slate-300',
+                                          )}>
+                                            {isOpen ? '▲' : '✏️'}
+                                          </span>
+                                        </button>
+
+                                        {/* Inline carousel */}
+                                        <AnimatePresence>
+                                          {isOpen && (
+                                            <motion.div
+                                              initial={{ height: 0, opacity: 0 }}
+                                              animate={{ height: 'auto', opacity: 1 }}
+                                              exit={{ height: 0, opacity: 0 }}
+                                              transition={{ ease: EASE, duration: 0.22 }}
+                                              className="overflow-hidden"
+                                            >
+                                              <div className="flex gap-2 overflow-x-auto pb-2.5 pt-2 ps-2" style={{ scrollbarWidth: 'none' }}>
+                                                {alternatives.map((opt) => {
+                                                  const isSelected = opt.name === ex.name;
+                                                  return (
+                                                    <motion.button
+                                                      key={opt.name}
+                                                      type="button"
+                                                      onClick={() => handleSwapExercise(wi, ei, opt)}
+                                                      whileHover={{ y: -2, transition: { type: 'spring', stiffness: 400, damping: 20 } }}
+                                                      whileTap={{ scale: 0.96 }}
+                                                      className={cn(
+                                                        'shrink-0 rounded-xl border px-3 py-2 text-start backdrop-blur-md transition-all',
+                                                        isSelected
+                                                          ? 'border-violet-400 bg-violet-50/90 text-violet-700 shadow-[0_0_14px_rgba(139,92,246,0.35)] ring-1 ring-violet-300'
+                                                          : 'border-violet-100 bg-white/90 text-slate-700 hover:border-violet-300 hover:bg-violet-50/60',
+                                                      )}
+                                                      aria-pressed={isSelected}
+                                                    >
+                                                      <p className="text-xs font-bold leading-tight">{opt.name}</p>
+                                                      <p className="mt-0.5 text-[10px] text-slate-400 leading-tight">{opt.detail}</p>
+                                                      {isSelected && (
+                                                        <p className="mt-1 text-[9px] font-extrabold uppercase tracking-wide text-violet-500">✓ נבחר</p>
+                                                      )}
+                                                    </motion.button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    {/* Save pending changes button */}
+                    <AnimatePresence>
+                      {(hasPendingChanges || saveState !== 'idle') && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          transition={{ ease: EASE, duration: 0.22 }}
+                        >
+                          <motion.button
+                            type="button"
+                            onClick={() => { void handleSavePlan(); }}
+                            disabled={saveState !== 'idle'}
+                            whileHover={saveState === 'idle' ? { scale: 1.02 } : {}}
+                            whileTap={saveState === 'idle' ? { scale: 0.97 } : {}}
+                            className={cn(
+                              'relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 py-3 text-sm font-extrabold transition-all',
+                              saveState === 'saved'
+                                ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-[0_4px_16px_rgba(16,185,129,0.4)]'
+                                : saveState === 'saving'
+                                ? 'bg-gradient-to-br from-violet-400 to-indigo-500 text-white opacity-80'
+                                : 'bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-[0_4px_20px_rgba(139,92,246,0.4)]',
+                            )}
+                          >
+                            {saveState !== 'saving' && (
+                              <motion.div
+                                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+                                animate={{ x: ['-100%', '200%'] }}
+                                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', repeatDelay: 0.8 }}
+                              />
+                            )}
+                            {saveState === 'saving' ? (
+                              <Loader2 className="relative z-10 h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : saveState === 'saved' ? (
+                              <CheckCircle2 className="relative z-10 h-4 w-4" aria-hidden="true" />
+                            ) : (
+                              <Pencil className="relative z-10 h-4 w-4" aria-hidden="true" />
+                            )}
+                            <span className="relative z-10">
+                              {saveState === 'saving'
+                                ? 'שומר שינויים...'
+                                : saveState === 'saved'
+                                ? '✅ התוכנית עודכנה בהצלחה!'
+                                : 'שמור ועדכן תוכנית'}
+                            </span>
+                          </motion.button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-3 pt-1">
+                      {/* Regenerate */}
+                      <motion.button
+                        type="button"
+                        onClick={() => { void handleRegenerate(); }}
+                        whileHover={{ y: -2 }}
+                        whileTap={{ scale: 0.96 }}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                      >
+                        <RefreshCw className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                        רענן תוכנית
+                      </motion.button>
+
+                      {/* Approve & Dispatch */}
+                      <motion.button
+                        type="button"
+                        onClick={() => { void handleApproveDispatch(); }}
+                        whileHover={{ scale: 1.03, boxShadow: '0 10px 30px rgba(16,185,129,0.45)', transition: { type: 'spring', stiffness: 400, damping: 22 } }}
+                        whileTap={{ scale: 0.97 }}
+                        className="relative flex flex-1 items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_4px_16px_rgba(16,185,129,0.35)]"
+                      >
+                        <motion.div
+                          className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/12 to-transparent"
+                          animate={{ x: ['-100%', '200%'] }}
+                          transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1 }}
+                        />
+                        <CheckCircle2 className="relative z-10 h-4 w-4" aria-hidden="true" />
+                        <span className="relative z-10">✅ אשר ושגר לפורטל התלמיד</span>
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ── Sending spinner ──────────────────────────────── */}
+                {generateState === 'sending' && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col items-center gap-3 py-10 text-center"
+                  >
+                    <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                      <Loader2 className="h-7 w-7 animate-spin text-emerald-600" aria-hidden="true" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-800">שולח לפורטל התלמיד...</p>
+                  </motion.div>
+                )}
+
+                {/* ── Success state ────────────────────────────────── */}
+                {generateState === 'sent' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ ease: EASE, duration: 0.4 }}
+                    className="flex flex-col items-center gap-4 py-10 text-center"
+                  >
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-600" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-extrabold text-slate-900">התוכנית שוגרה! ✅</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {targetStudent?.firstName} יוכל לעקוב אחרי התוכנית בפרופיל האישי שלו
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="rounded-xl"
+                      onClick={() => { setGenerateState('idle'); setTargetStudentId(''); }}
+                    >
+                      בנה תוכנית לתלמיד נוסף
+                    </Button>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+        </div>
+
+        {/* ── Plan detail overlay — portal to document.body to escape parent stacking context ── */}
+        {showOverlay && overlayStudent !== null && overlayDetails !== null && createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              zIndex: 999999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(4px)',
+              padding: '1rem',
+            }}
+            onClick={() => setSelectedPlanStudentId(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden"
+            >
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setSelectedPlanStudentId(null)}
+                className="absolute top-4 end-4 z-10 p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200"
+                aria-label="סגור"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+
+              {/* Header */}
+              <div className="flex items-center gap-3 p-5 pb-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100">
+                  <Brain className="h-4 w-4 text-indigo-600" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold text-slate-900">
+                    תוכנית {overlayStudent.firstName} {overlayStudent.lastName}
+                  </p>
+                  <p className="text-xs font-medium text-indigo-600">{overlayDetails.target}</p>
+                </div>
+              </div>
+
+              {/* ── Performance progress chart ─────────────────────── */}
+              {(() => {
+                const CHART_DATA = [
+                  { week: 'שבוע 1', score: 65 },
+                  { week: 'שבוע 2', score: 72 },
+                  { week: 'שבוע 3', score: 85 },
+                  { week: 'שבוע 4', score: 92 },
+                ];
+                return (
+                  <div className="mx-5 mb-2 h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={CHART_DATA} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="planGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.45} />
+                            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis
+                          dataKey="week"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: '#a78bfa', fontWeight: 600 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: 'rgba(23,15,55,0.75)',
+                            backdropFilter: 'blur(12px)',
+                            WebkitBackdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(139,92,246,0.30)',
+                            borderRadius: '0.75rem',
+                            boxShadow: '0 10px 40px -10px rgba(76,29,149,0.35)',
+                            padding: '8px 14px',
+                          }}
+                          labelStyle={{ color: '#c4b5fd', fontSize: 11, fontWeight: 700 }}
+                          itemStyle={{ color: '#ede9fe', fontSize: 12, fontWeight: 600 }}
+                          formatter={(v: number) => [`${v}`, 'ציון']}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="score"
+                          stroke="#8b5cf6"
+                          strokeWidth={2.5}
+                          fill="url(#planGrad)"
+                          dot={{ fill: '#8b5cf6', r: 4, strokeWidth: 0 }}
+                          activeDot={{ r: 6, fill: '#c4b5fd', strokeWidth: 0 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })()}
+
+              {/* 4-week breakdown — scrollable */}
+              <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-4">
+                {MOCK_PLAN_GRADUAL.map((week) => (
+                  <div key={week.week} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                    <p className="mb-2 flex items-center gap-2 text-xs font-extrabold text-indigo-700">
+                      <span className="text-base">{week.emoji}</span>
+                      שבוע {week.week} — {week.focus}
+                      {week.week === overlayDetails.weekNum && (
+                        <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                          עכשיו
+                        </span>
+                      )}
+                    </p>
+                    <div className="space-y-1.5 ps-4">
+                      {week.exercises.map((ex) => (
+                        <div key={ex.name} className="flex items-center gap-2">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-300" />
+                          <span className="text-xs font-semibold text-slate-700">{ex.name}</span>
+                          <span className="ms-auto text-[11px] text-slate-400">{ex.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        , document.body)}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── AI Dispatch Modal ────────────────────────────────────────────────────────
+
+interface AiDispatchModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  eligibleStudents: StudentData[];
+  lockedStudents: StudentData[];
+  activePlanMap: Map<string, Date>;
+  studentGradesMap: Map<string, number>;
+}
+
+function AiDispatchModal({
+  open,
+  onOpenChange,
+  eligibleStudents,
+  lockedStudents,
+  activePlanMap,
+  studentGradesMap,
+}: AiDispatchModalProps): React.JSX.Element {
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(eligibleStudents.map((s) => s.id)),
+  );
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]       = useState(false);
+
+  // Reset whenever the modal opens fresh
+  useEffect(() => {
+    if (open) {
+      setSelected(new Set(eligibleStudents.map((s) => s.id)));
+      setSent(false);
+      setSending(false);
+    }
+  }, [open, eligibleStudents]);
+
+  function toggleStudent(id: string): void {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSend(): Promise<void> {
+    if (selected.size === 0) return;
+    setSending(true);
+    await new Promise<void>((r) => setTimeout(r, 1800));
+    setSending(false);
+    setSent(true);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg rounded-3xl border-0 bg-white/80 p-0 shadow-2xl shadow-slate-900/20 backdrop-blur-2xl">
+
+        {/* Gradient header */}
+        <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-600 px-7 py-6">
+          <div className="pointer-events-none absolute -end-8 -top-8 h-28 w-28 rounded-full bg-white/8" />
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/20">
+                <Brain className="h-5 w-5 text-white" aria-hidden="true" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-extrabold text-white">
+                  שליחת תוכנית אימון AI
+                </DialogTitle>
+                <DialogDescription className="mt-0.5 text-sm text-white/70">
+                  תוכנית כושר מותאמת אישית לתלמידים מתחת לנורמה
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+        </div>
+
+        <div className="space-y-5 p-6">
+          {/* ── Success state ────────────────────────────────────────── */}
+          {sent ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ ease: EASE, duration: 0.45 }}
+              className="flex flex-col items-center gap-4 py-6 text-center"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                <Sparkles className="h-8 w-8 text-emerald-600" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-lg font-extrabold text-slate-900">התוכנית נשלחה בהצלחה! 🎉</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selected.size} תלמידים יקבלו תוכנית אימון ל-4 שבועות בפרופיל האישי שלהם
+                </p>
+              </div>
+              <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
+                סגור
+              </Button>
+            </motion.div>
+          ) : (
+            <>
+              {/* ── Section 1: Eligible ─────────────────────────────── */}
+              {eligibleStudents.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
+                    זכאים לתוכנית חדשה ({eligibleStudents.length})
+                  </p>
+                  <div className="overflow-hidden rounded-2xl border border-emerald-200/70 bg-emerald-50/60">
+                    {eligibleStudents.map((student, i) => {
+                      const isSelected = selected.has(student.id);
+                      const score      = studentGradesMap.get(student.id) ?? 0;
+                      return (
+                        <motion.button
+                          key={student.id}
+                          type="button"
+                          onClick={() => toggleStudent(student.id)}
+                          whileHover={{ x: -3 }}
+                          whileTap={{ scale: 0.98 }}
+                          className={cn(
+                            'flex w-full items-center gap-3 px-4 py-3 text-start transition-colors',
+                            i > 0 && 'border-t border-emerald-100',
+                            isSelected ? 'bg-emerald-100/60' : 'hover:bg-emerald-50',
+                          )}
+                        >
+                          {/* Animated checkbox */}
+                          <motion.div
+                            animate={{ scale: isSelected ? [1, 1.25, 1] : 1 }}
+                            transition={{ duration: 0.25 }}
+                            className={cn(
+                              'flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                              isSelected
+                                ? 'border-emerald-500 bg-emerald-500'
+                                : 'border-slate-300 bg-white',
+                            )}
+                          >
+                            {isSelected && (
+                              <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </motion.div>
+
+                          <p className="flex-1 text-sm font-semibold text-slate-800">
+                            {student.firstName} {student.lastName}
+                          </p>
+                          <span className={cn(
+                            'text-sm font-extrabold tabular-nums',
+                            score < 60 ? 'text-rose-500' : 'text-orange-500',
+                          )}>
+                            {score > 0 ? score : '—'}
+                          </span>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Section 2: Locked / In active plan ──────────────── */}
+              {lockedStudents.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                    במהלך תוכנית אימון ⏳ ({lockedStudents.length})
+                  </p>
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70">
+                    {lockedStudents.map((student, i) => {
+                      const planEnd = activePlanMap.get(student.id);
+                      const weeks   = planEnd ? weeksUntil(planEnd) : 1;
+                      return (
+                        <div
+                          key={student.id}
+                          className={cn(
+                            'flex items-center gap-3 px-4 py-3 opacity-55',
+                            i > 0 && 'border-t border-slate-100',
+                          )}
+                        >
+                          <Lock className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-600">
+                              {student.firstName} {student.lastName}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              מטופל — מסיים תוכנית בעוד {weeks} שבועות
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Empty eligible */}
+              {eligibleStudents.length === 0 && (
+                <div className="flex flex-col items-center gap-3 py-6 text-center">
+                  <Lock className="h-8 w-8 text-slate-300" aria-hidden="true" />
+                  <p className="text-sm font-semibold text-slate-500">
+                    כל התלמידים המתחת לנורמה כבר בתוכנית פעילה
+                  </p>
+                </div>
+              )}
+
+              {/* ── Send button ──────────────────────────────────────── */}
+              {eligibleStudents.length > 0 && (
+                <motion.button
+                  type="button"
+                  onClick={() => { void handleSend(); }}
+                  disabled={sending || selected.size === 0}
+                  whileHover={
+                    !sending && selected.size > 0
+                      ? { scale: 1.02, boxShadow: '0 12px 40px rgba(139,92,246,0.50)', transition: { type: 'spring', stiffness: 400, damping: 22 } }
+                      : {}
+                  }
+                  whileTap={!sending ? { scale: 0.97 } : {}}
+                  className={cn(
+                    'relative flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl text-sm font-extrabold text-white transition-opacity',
+                    sending || selected.size === 0
+                      ? 'cursor-not-allowed bg-slate-300'
+                      : 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-[0_4px_24px_rgba(139,92,246,0.40)]',
+                  )}
+                >
+                  {/* Shimmer sweep */}
+                  {!sending && selected.size > 0 && (
+                    <motion.div
+                      className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent"
+                      animate={{ x: ['-100%', '200%'] }}
+                      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1 }}
+                    />
+                  )}
+                  {sending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  <span className="relative z-10">
+                    {sending
+                      ? 'שולח תוכנית...'
+                      : selected.size === 0
+                      ? 'בחר תלמידים'
+                      : `שלח תוכנית ל-${selected.size} תלמידים`}
+                  </span>
+                </motion.button>
+              )}
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClassDetailPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
-  const [isAddStudentOpen, setIsAddStudentOpen]         = useState(false);
-  const [isCreateSessionOpen, setIsCreateSessionOpen]   = useState(false);
+  const [isAddStudentOpen, setIsAddStudentOpen]               = useState(false);
+  const [isCreateSessionOpen, setIsCreateSessionOpen]         = useState(false);
+  const [isAiDispatchOpen, setIsAiDispatchOpen]               = useState(false);
+  const [isAiControlCenterOpen, setIsAiControlCenterOpen]     = useState(false);
   const [selectedTestId, setSelectedTestId]             = useState<string | null>(null);
   const [copied, setCopied]                             = useState(false);
 
@@ -1207,6 +2714,49 @@ export default function ClassDetailPage(): React.JSX.Element {
     [selectedSummary],
   );
 
+  /** All students whose cross-test score is below the norm threshold. */
+  const failingStudents = useMemo(
+    () => (students ?? []).filter((s) => {
+      const score = studentGradesMap.get(s.id) ?? 0;
+      return score > 0 && score < 70;
+    }),
+    [students, studentGradesMap],
+  );
+
+  /**
+   * Deterministic mock: the first 2 failing students already have an active
+   * 4-week plan that started 2 weeks ago and ends in ~2 weeks.
+   * In production this would come from the API.
+   */
+  const activePlanDetailsMap = useMemo<Map<string, ActivePlanDetails>>(() => {
+    const map = new Map<string, ActivePlanDetails>();
+    failingStudents.slice(0, 2).forEach((s, i) => {
+      const endDate   = new Date();
+      endDate.setDate(endDate.getDate() + 14);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 14);
+      map.set(s.id, {
+        endDate,
+        startDate,
+        progress: 50,   // 14 of 28 days elapsed
+        weekNum:  2,    // halfway through week 2
+        target:   PLAN_TARGETS[i % PLAN_TARGETS.length]!,
+      });
+    });
+    return map;
+  }, [failingStudents]);
+
+  const activePlanMap = useMemo<Map<string, Date>>(() => {
+    const map = new Map<string, Date>();
+    for (const [id, details] of activePlanDetailsMap) {
+      map.set(id, details.endDate);
+    }
+    return map;
+  }, [activePlanDetailsMap]);
+
+  const lockedStudents   = useMemo(() => failingStudents.filter((s) =>  activePlanMap.has(s.id)), [failingStudents, activePlanMap]);
+  const eligibleStudents = useMemo(() => failingStudents.filter((s) => !activePlanMap.has(s.id)), [failingStudents, activePlanMap]);
+
   async function copyJoinCode(): Promise<void> {
     if (!cls) return;
     await navigator.clipboard.writeText(cls.joinCode);
@@ -1271,6 +2821,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         initial="hidden"
         animate="show"
         className="space-y-6"
+        style={{ perspective: 1200 }}
       >
         {/* ── Breadcrumb ─────────────────────────────────────────────── */}
         <motion.nav variants={ITEM} aria-label="ניווט עמודים" className="flex items-center gap-1.5 text-sm">
@@ -1282,11 +2833,11 @@ export default function ClassDetailPage(): React.JSX.Element {
         </motion.nav>
 
         {/* ── Bento header grid ──────────────────────────────────────── */}
-        <motion.div variants={ITEM} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <motion.div variants={ITEM} className="grid grid-cols-1 gap-3 sm:grid-cols-3" style={{ perspective: 1200 }}>
 
           {/* Card 1 — Class identity */}
           <motion.div
-            whileHover={{ y: -3, transition: { ease: EASE, duration: 0.35 } }}
+            whileHover={{ y: -5, scale: 1.015, boxShadow: '0 20px 52px rgba(99,102,241,0.45)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
             className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 p-6 shadow-[0_4px_28px_rgba(99,102,241,0.35)] sm:col-span-1"
           >
             <div className="pointer-events-none absolute -end-8 -top-8 h-28 w-28 rounded-full bg-white/8" />
@@ -1319,12 +2870,17 @@ export default function ClassDetailPage(): React.JSX.Element {
 
           {/* Card 2 — Quick stats (real attendance %) */}
           <motion.div
-            whileHover={{ y: -3, transition: { ease: EASE, duration: 0.35 } }}
+            whileHover={{ y: -5, scale: 1.015, boxShadow: '0 20px 52px rgba(16,185,129,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
             className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-600 p-6 shadow-[0_4px_28px_rgba(16,185,129,0.30)]"
           >
             <div className="pointer-events-none absolute -start-6 -bottom-6 h-24 w-24 rounded-full bg-white/10" />
             <div className="flex items-center gap-2 mb-1">
-              <Users className="h-3.5 w-3.5 text-emerald-100" aria-hidden="true" />
+              <motion.div
+                animate={{ scale: [1, 1.18, 1] }}
+                transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <Users className="h-3.5 w-3.5 text-emerald-100" aria-hidden="true" />
+              </motion.div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-100">תלמידים רשומים</p>
             </div>
             <div className="text-4xl font-extrabold text-white mb-3">{cls.studentCount}</div>
@@ -1340,8 +2896,8 @@ export default function ClassDetailPage(): React.JSX.Element {
           <motion.button
             type="button"
             onClick={() => setIsCreateSessionOpen(true)}
-            whileHover={{ y: -3, scale: 1.02, transition: { ease: EASE, duration: 0.35 } }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ y: -5, scale: 1.03, boxShadow: '0 24px 56px rgba(245,158,11,0.50)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
+            whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
             className="relative flex cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 p-6 text-center shadow-[0_4px_28px_rgba(245,158,11,0.35)]"
           >
             <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/12" />
@@ -1356,6 +2912,112 @@ export default function ClassDetailPage(): React.JSX.Element {
           </motion.button>
 
         </motion.div>
+
+        {/* ── Smart Team Builder CTA ─────────────────────────────────── */}
+        <motion.div variants={ITEM}>
+          <Link href={`/classes/${classId}/team-builder`}>
+            <motion.div
+              whileHover={{ y: -4, boxShadow: '0 20px 52px rgba(139,92,246,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
+              whileTap={{ scale: 0.98 }}
+              className="relative flex cursor-pointer items-center gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-600 px-7 py-5 shadow-[0_4px_28px_rgba(139,92,246,0.35)]"
+            >
+              <div className="pointer-events-none absolute -end-10 -bottom-10 h-32 w-32 rounded-full bg-white/8" />
+              <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/5" />
+              <motion.div
+                animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.1, 1] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+              >
+                <Users className="h-6 w-6 text-white" aria-hidden="true" />
+              </motion.div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-extrabold text-white">חלוקת כוחות חכמה</p>
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white/90">AI</span>
+                </div>
+                <p className="mt-0.5 text-sm text-white/75">
+                  צור קבוצות מאוזנות אוטומטית לפי ציוני הכושר · אלגוריתם Snake Draft
+                </p>
+              </div>
+              <motion.div
+                animate={{ x: [0, 4, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                className="shrink-0"
+              >
+                <ChevronRight className="h-6 w-6 text-white/70" aria-hidden="true" />
+              </motion.div>
+            </motion.div>
+          </Link>
+        </motion.div>
+
+        {/* ── AI Dispatch banner ─────────────────────────────────────── */}
+        {failingStudents.length > 0 && (
+          <motion.div variants={ITEM}>
+            <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-rose-200/80 bg-gradient-to-r from-rose-50 to-orange-50 px-5 py-4 shadow-sm backdrop-blur-sm">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-100">
+                <ShieldAlert className="h-5 w-5 text-rose-600" aria-hidden="true" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-rose-900">
+                  זיהינו <strong>{failingStudents.length} תלמידים</strong> מתחת לנורמה
+                  {lockedStudents.length > 0 && (
+                    <span className="text-rose-600">
+                      {' '}({lockedStudents.length} מתוכם כבר בתוכנית פעילה ⏳)
+                    </span>
+                  )}.
+                </p>
+                {eligibleStudents.length > 0 ? (
+                  <p className="mt-0.5 text-xs text-rose-600">
+                    {eligibleStudents.length} תלמידים זכאים לתוכנית אימון AI חדשה
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    כל התלמידים כבר בתוכנית — ניתן לשלוח שוב בתום 4 שבועות
+                  </p>
+                )}
+              </div>
+              <motion.button
+                type="button"
+                onClick={() => setIsAiDispatchOpen(true)}
+                disabled={eligibleStudents.length === 0}
+                whileHover={
+                  eligibleStudents.length > 0
+                    ? { scale: 1.04, boxShadow: '0 8px 28px rgba(139,92,246,0.42)', transition: { type: 'spring', stiffness: 400, damping: 22 } }
+                    : {}
+                }
+                whileTap={eligibleStudents.length > 0 ? { scale: 0.97 } : {}}
+                className={cn(
+                  'relative flex shrink-0 items-center gap-2 overflow-hidden rounded-xl px-4 py-2 text-sm font-bold text-white transition-colors',
+                  eligibleStudents.length > 0
+                    ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-[0_2px_16px_rgba(139,92,246,0.35)]'
+                    : 'cursor-not-allowed bg-slate-300',
+                )}
+              >
+                {eligibleStudents.length > 0 && (
+                  <motion.div
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent"
+                    animate={{ x: ['-100%', '200%'] }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.5 }}
+                  />
+                )}
+                <Sparkles className="relative z-10 h-4 w-4" aria-hidden="true" />
+                <span className="relative z-10">שלח תוכנית AI</span>
+              </motion.button>
+
+              {/* Secondary: open AI Control Center */}
+              <motion.button
+                type="button"
+                onClick={() => setIsAiControlCenterOpen(true)}
+                whileHover={{ scale: 1.04, transition: { type: 'spring', stiffness: 400, damping: 22 } }}
+                whileTap={{ scale: 0.97 }}
+                className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
+              >
+                <Settings2 className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                <span>⚙️ ניהול ומעקב</span>
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Test type selector — premium dropdown ──────────────────── */}
         <motion.div variants={ITEM}>
@@ -1400,9 +3062,8 @@ export default function ClassDetailPage(): React.JSX.Element {
 
                 {/* Gamified podium */}
                 <motion.div
-                  className="rounded-2xl bg-amber-50/75 backdrop-blur-xl border border-white/75 p-6 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
-                  whileHover={{ y: -4, boxShadow: '0 20px 52px rgba(15,23,42,0.18)' }}
-                  transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.35 }}
+                  className="rounded-2xl bg-amber-50/75 backdrop-blur-3xl border border-white/75 ring-1 ring-white/20 p-6 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
+                  whileHover={{ y: -6, scale: 1.015, boxShadow: '0 20px 52px rgba(245,158,11,0.22)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
                 >
                   <div className="flex items-center gap-2.5 mb-5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50">
@@ -1424,14 +3085,16 @@ export default function ClassDetailPage(): React.JSX.Element {
 
                 {/* Progress over time chart */}
                 <motion.div
-                  className="rounded-2xl bg-indigo-50/75 backdrop-blur-xl border border-white/75 p-6 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
-                  whileHover={{ y: -4, boxShadow: '0 20px 52px rgba(15,23,42,0.18)' }}
-                  transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.35 }}
+                  className="rounded-2xl bg-indigo-50/75 backdrop-blur-3xl border border-white/75 ring-1 ring-white/20 p-6 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
+                  whileHover={{ y: -6, scale: 1.015, boxShadow: '0 20px 52px rgba(99,102,241,0.22)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
                 >
                   <div className="flex items-center gap-2.5 mb-5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50">
+                    <motion.div
+                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50"
+                      whileHover={{ scale: 1.2, y: -2, transition: { type: 'spring', stiffness: 400, damping: 12 } }}
+                    >
                       <TrendingUp className="h-4 w-4 text-indigo-600" aria-hidden="true" />
-                    </div>
+                    </motion.div>
                     <div>
                       <h2 className="text-sm font-bold text-slate-900">התקדמות הכיתה</h2>
                       <p className="text-xs text-slate-500">{selectedSummary.nameHe} לאורך השנה</p>
@@ -1491,7 +3154,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         <motion.div variants={ITEM}>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-base font-bold text-slate-800">
+              <h2 className="text-base font-bold tracking-tight bg-gradient-to-l from-indigo-700 to-violet-700 bg-clip-text text-transparent">
                 רשימת תלמידים
                 {students && <span className="ms-2 text-sm font-normal text-slate-400">({students.length})</span>}
               </h2>
@@ -1500,11 +3163,17 @@ export default function ClassDetailPage(): React.JSX.Element {
             <motion.button
               type="button"
               onClick={() => setIsAddStudentOpen(true)}
-              whileHover={{ y: -2, transition: { ease: [0.22, 1, 0.36, 1], duration: 0.3 } }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ y: -3, scale: 1.04, boxShadow: '0 8px 28px rgba(99,102,241,0.40)', transition: { type: 'spring', stiffness: 400, damping: 25 } }}
+              whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
               className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
             >
-              <UserPlus className="h-4 w-4" aria-hidden="true" />
+              <motion.span
+                animate={{ scale: [1, 1.15, 1] }}
+                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="inline-flex"
+              >
+                <UserPlus className="h-4 w-4" aria-hidden="true" />
+              </motion.span>
               הוסף תלמיד
             </motion.button>
           </div>
@@ -1547,7 +3216,7 @@ export default function ClassDetailPage(): React.JSX.Element {
           )}
 
           {!studentsLoading && students && students.length > 0 && (
-            <div className="overflow-hidden rounded-2xl bg-indigo-50/72 backdrop-blur-xl border border-white/78 shadow-[0_8px_28px_rgba(15,23,42,0.10)]">
+            <div className="overflow-hidden rounded-2xl bg-indigo-50/72 backdrop-blur-3xl border border-white/78 ring-1 ring-white/20 shadow-[0_8px_28px_rgba(15,23,42,0.10)]">
               {/* Header */}
               <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] gap-4">
                 {[
@@ -1583,7 +3252,12 @@ export default function ClassDetailPage(): React.JSX.Element {
                         <Link href={`/classes/${classId}/student/${student.id}`} className="contents">
                           {/* Name + avatar */}
                           <div className="flex items-center gap-3">
-                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}>{initials}</div>
+                            <motion.div
+                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}
+                              whileHover={{ scale: 1.18, rotate: -6, transition: { type: 'spring', stiffness: 500, damping: 14 } }}
+                            >
+                              {initials}
+                            </motion.div>
                             <div>
                               <div className={cn(
                                 'text-sm font-semibold transition-colors',
@@ -1633,7 +3307,11 @@ export default function ClassDetailPage(): React.JSX.Element {
                           absentLoading={absentLoadingIds.has(student.id)}
                         />
                         {/* Arrow */}
-                        <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
+                        <motion.div
+                          whileHover={{ x: -3, transition: { type: 'spring', stiffness: 500, damping: 20 } }}
+                        >
+                          <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
+                        </motion.div>
                       </div>
                     </motion.li>
                   );
@@ -1649,6 +3327,23 @@ export default function ClassDetailPage(): React.JSX.Element {
         open={isAddStudentOpen}
         onOpenChange={setIsAddStudentOpen}
         onSuccess={() => { void mutateStudents(); }}
+      />
+      <AiDispatchModal
+        open={isAiDispatchOpen}
+        onOpenChange={setIsAiDispatchOpen}
+        eligibleStudents={eligibleStudents}
+        lockedStudents={lockedStudents}
+        activePlanMap={activePlanMap}
+        studentGradesMap={studentGradesMap}
+      />
+      <AiControlCenterModal
+        open={isAiControlCenterOpen}
+        onOpenChange={setIsAiControlCenterOpen}
+        students={students ?? []}
+        activePlanDetailsMap={activePlanDetailsMap}
+        lockedStudents={lockedStudents}
+        eligibleStudents={eligibleStudents}
+        studentGradesMap={studentGradesMap}
       />
       <CreateSessionModal
         classId={classId}
