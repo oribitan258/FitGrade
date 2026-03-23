@@ -10,7 +10,9 @@ import {
   BelowNormItemDto,
   DashboardStatsResponseDto,
   MissingResultItemDto,
+  TopAchievementItemDto,
   TopStudentItemDto,
+  TopStudentPerClassItemDto,
 } from './dto/dashboard-stats-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -58,5 +60,25 @@ export class DashboardController {
     @Query('testTypeId') testTypeId?: string,
   ): Promise<TopStudentItemDto[]> {
     return this.dashboardService.getTopStudents(user.sub, testTypeId);
+  }
+
+  @Get('top-achievements')
+  @ApiOperation({ summary: 'Get top individual test achievements across all teacher classes, one best result per student, ordered by score descending.' })
+  @ApiResponse({ status: 200, type: [TopAchievementItemDto] })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  async getTopAchievements(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<TopAchievementItemDto[]> {
+    return this.dashboardService.getTopAchievements(user.sub);
+  }
+
+  @Get('top-per-class')
+  @ApiOperation({ summary: 'Get top 3 students per class ranked by average grade across all their results.' })
+  @ApiResponse({ status: 200, type: [TopStudentPerClassItemDto] })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  async getTopStudentsPerClass(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<TopStudentPerClassItemDto[]> {
+    return this.dashboardService.getTopStudentsPerClass(user.sub);
   }
 }

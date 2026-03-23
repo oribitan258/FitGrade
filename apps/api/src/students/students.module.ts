@@ -14,5 +14,6 @@ import { StudentPortalRepository } from './student-portal.repository';
     StudentPortalService,
     StudentPortalRepository,
   ],
+  exports: [StudentsService], // CopilotModule imports StudentsService
 })
 export class StudentsModule {}

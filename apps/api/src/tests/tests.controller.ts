@@ -21,6 +21,7 @@ import {
 import { TestsService } from './tests.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { SubmitResultDto } from './dto/submit-result.dto';
+import { OverrideGradeDto } from './dto/override-grade.dto';
 import { TestTypeResponseDto } from './dto/test-type-response.dto';
 import { SessionResponseDto } from './dto/session-response.dto';
 import { SessionDetailResponseDto } from './dto/session-detail-response.dto';
@@ -168,6 +169,29 @@ export class TestsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<SessionResponseDto> {
     return this.testsService.completeSession(sessionId, user.sub);
+  }
+
+  /**
+   * Overrides the calculated grade for a specific test result.
+   * Used in the beep test post-summary and any manual grade correction flow.
+   */
+  @Patch('sessions/:sessionId/results/:resultId')
+  @HttpCode(HttpStatus.OK)
+  @ApiTags('results')
+  @ApiOperation({ summary: 'Override the grade for a test result' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'resultId', description: 'TestResult ID' })
+  @ApiResponse({ status: 200, type: ResultResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session or result not found' })
+  async overrideGrade(
+    @Param('sessionId') sessionId: string,
+    @Param('resultId') resultId: string,
+    @Body() dto: OverrideGradeDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<ResultResponseDto> {
+    return this.testsService.overrideGrade(sessionId, resultId, user.sub, dto);
   }
 
   /**

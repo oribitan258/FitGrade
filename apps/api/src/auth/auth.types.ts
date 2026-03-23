@@ -19,6 +19,15 @@ export interface TeacherRecord {
   avatarUrl: string | null;
 }
 
+/** Full teacher profile returned by GET /auth/me. */
+export interface TeacherProfileRecord {
+  id: string;
+  email: string;
+  name: string;
+  school: string | null;
+  avatarUrl: string | null;
+}
+
 /**
  * Data returned from findStudentForLogin — includes passwordHash for
  * bcrypt.compare. Never leaves the auth module.

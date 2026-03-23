@@ -687,7 +687,7 @@ async function seedClass(opts: {
   sessions:    Array<{ testKey: string; date: Date }>;
   testTypeIds: Map<string, string>;
   passwordHash: string;
-}): Promise<void> {
+}): Promise<string> {
   const {
     name, gradeLabel, joinCode, teacherId,
     students, classAge, sessions, testTypeIds, passwordHash,
@@ -823,6 +823,7 @@ async function seedClass(opts: {
     `(${attendanceData.length - absent - late} present, ${late} late, ${absent} absent)`,
   );
   console.log(`  ${gradeLabel} seeded ✓`);
+  return cls.id;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -843,6 +844,7 @@ async function main(): Promise<void> {
     data: {
       email:     'teacher@test.com',
       name:      'מורה לבדיקות',
+      school:    'Ben-Gurion Academy',
       googleId:  'dev-google-id-do-not-use-in-prod',
       avatarUrl: null,
     },
@@ -853,7 +855,7 @@ async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash('password123', BCRYPT_ROUNDS);
 
   console.log("\nSeeding grade-10 class (כיתה י' 1)...");
-  await seedClass({
+  const class10Id = await seedClass({
     name:        "כיתה י' 1",
     gradeLabel:  'Grade 10',
     joinCode:    'CLASS10',
@@ -871,7 +873,7 @@ async function main(): Promise<void> {
   });
 
   console.log("\nSeeding grade-7 class (כיתה ז' 2)...");
-  await seedClass({
+  const class7Id = await seedClass({
     name:        "כיתה ז' 2",
     gradeLabel:  'Grade 7',
     joinCode:    'CLASS7',
@@ -887,6 +889,25 @@ async function main(): Promise<void> {
     testTypeIds,
     passwordHash,
   });
+
+  // ── Schedule entries for TODAY (2026-03-21, Saturday, dayOfWeek=6) ──────────
+  // Dev-only: Saturday entries allow testing the dashboard schedule panel today.
+  // Times span the day so the service returns a mix of past / now / next / later.
+  console.log('\nSeeding today\'s schedule entries (dayOfWeek=6, Saturday)...');
+  type ScheduleEntryDelegate = {
+    createMany: (args: { data: unknown[] }) => Promise<{ count: number }>;
+  };
+  const seDelegate = (prisma as unknown as { scheduleEntry: ScheduleEntryDelegate }).scheduleEntry;
+  const { count: scheduleCount } = await seDelegate.createMany({
+    data: [
+      { teacherId: teacher.id, dayOfWeek: 6, period: 0, startTime: '07:30', classId: class10Id },
+      { teacherId: teacher.id, dayOfWeek: 6, period: 1, startTime: '10:00', classId: class7Id  },
+      { teacherId: teacher.id, dayOfWeek: 6, period: 2, startTime: '13:15', classId: class10Id },
+      { teacherId: teacher.id, dayOfWeek: 6, period: 3, startTime: '19:30', classId: class7Id  },
+      { teacherId: teacher.id, dayOfWeek: 6, period: 4, startTime: '20:30', classId: class10Id },
+    ],
+  });
+  console.log(`  Schedule entries created: ${scheduleCount}`);
 
   console.log('\n══════════════════════════════════════════════════════');
   console.log('  Seeding complete.');

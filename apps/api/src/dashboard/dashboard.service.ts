@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DashboardRepository, PASS_GRADE_THRESHOLD, TOP_STUDENTS_LIMIT } from './dashboard.repository';
+import { DashboardRepository, PASS_GRADE_THRESHOLD, TOP_ACHIEVEMENTS_LIMIT, TOP_STUDENTS_LIMIT } from './dashboard.repository';
 import type { ClassAttendanceStat } from './dashboard.repository';
 import type {
   DashboardClassStatDto,
@@ -8,6 +8,8 @@ import type {
   MissingResultItemDto,
   BelowNormItemDto,
   TopStudentItemDto,
+  TopAchievementItemDto,
+  TopStudentPerClassItemDto,
 } from './dto/dashboard-stats-response.dto';
 
 @Injectable()
@@ -123,5 +125,16 @@ export class DashboardService {
       ? await this.dashboardRepository.findTopStudentsByTestType(classIds, testTypeId, TOP_STUDENTS_LIMIT)
       : await this.dashboardRepository.findTopStudents(classIds, TOP_STUDENTS_LIMIT);
     return students.map((s, i) => ({ rank: i + 1, ...s }));
+  }
+
+  async getTopAchievements(teacherId: string): Promise<TopAchievementItemDto[]> {
+    const classIds = await this.getTeacherClassIds(teacherId);
+    const items = await this.dashboardRepository.findTopAchievements(classIds, TOP_ACHIEVEMENTS_LIMIT);
+    return items.map((item, i) => ({ rank: i + 1, ...item }));
+  }
+
+  async getTopStudentsPerClass(teacherId: string): Promise<TopStudentPerClassItemDto[]> {
+    const classIds = await this.getTeacherClassIds(teacherId);
+    return this.dashboardRepository.findTopStudentsPerClass(classIds);
   }
 }

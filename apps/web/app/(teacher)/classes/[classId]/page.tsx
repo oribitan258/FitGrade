@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import useSWR from 'swr';
 import Link from 'next/link';
@@ -23,6 +23,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Settings2,
   ShieldAlert,
@@ -171,6 +172,183 @@ const LEVEL_STYLE: Record<FitnessLevel, { label: string; bg: string; text: strin
   pass:      { label: 'עובר',         bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   },
   fail:      { label: 'מתחת לנורמה', bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     },
 };
+
+// ─── Student Search Bar ───────────────────────────────────────────────────────
+
+interface StudentSearchBarProps {
+  value:    string;
+  onChange: (v: string) => void;
+  count:    number;
+  total:    number;
+}
+
+function StudentSearchBar({ value, onChange, count, total }: StudentSearchBarProps): React.JSX.Element {
+  const inputRef              = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
+  const isFiltering           = value.trim().length > 0;
+
+  return (
+    <div className="relative w-full" role="search" aria-label="חיפוש תלמידים">
+      {/* Ambient violet glow ring */}
+      <motion.div
+        className="pointer-events-none absolute -inset-[3px] rounded-2xl"
+        animate={{
+          opacity: focused ? 1 : 0,
+          boxShadow: focused
+            ? '0 0 0 3px rgba(99,102,241,0.20), 0 0 24px rgba(99,102,241,0.16), 0 0 48px rgba(139,92,246,0.09)'
+            : '0 0 0 0px rgba(99,102,241,0)',
+        }}
+        transition={{ duration: 0.28, ease: 'easeOut' }}
+        aria-hidden="true"
+      />
+
+      {/* Glass pill */}
+      <motion.div
+        animate={{
+          scale:      focused ? 1.010 : 1,
+          background: focused ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.55)',
+        }}
+        transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+        className="relative flex items-center gap-3 rounded-2xl border border-white/70 px-4 cursor-text"
+        style={{
+          backdropFilter:       'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          boxShadow:            '0 2px 16px rgba(15,23,42,0.07), inset 0 1px 0 rgba(255,255,255,0.80)',
+          height: 46,
+        }}
+        onClick={() => { inputRef.current?.focus(); }}
+      >
+        {/* Search icon — RTL start = right side */}
+        <motion.div
+          animate={{ color: focused ? '#6366f1' : '#94a3b8' }}
+          transition={{ duration: 0.18 }}
+          className="shrink-0"
+          aria-hidden="true"
+        >
+          <Search className="h-4 w-4" />
+        </motion.div>
+
+        {/* Input */}
+        <input
+          ref={inputRef}
+          type="search"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); }}
+          onFocus={() => { setFocused(true); }}
+          onBlur={() => { setFocused(false); }}
+          placeholder="חפש תלמיד לפי שם..."
+          aria-label="חיפוש תלמיד לפי שם"
+          className={cn(
+            'flex-1 min-w-0 bg-transparent text-sm font-medium outline-none placeholder:text-slate-400 transition-colors duration-150',
+            focused ? 'text-slate-800' : 'text-slate-600',
+          )}
+          autoComplete="off"
+          spellCheck={false}
+        />
+
+        {/* Live result counter pill */}
+        <AnimatePresence>
+          {isFiltering && (
+            <motion.span
+              key="count"
+              initial={{ opacity: 0, scale: 0.65 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.65 }}
+              transition={{ type: 'spring', stiffness: 440, damping: 28 }}
+              className="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold tabular-nums"
+              style={{
+                background: count > 0 ? 'rgba(99,102,241,0.10)' : 'rgba(239,68,68,0.10)',
+                color:      count > 0 ? '#4f46e5'               : '#dc2626',
+              }}
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {count}/{total}
+            </motion.span>
+          )}
+        </AnimatePresence>
+
+        {/* Clear ✕ */}
+        <AnimatePresence>
+          {isFiltering && (
+            <motion.button
+              key="clear"
+              type="button"
+              initial={{ opacity: 0, scale: 0.65, rotate: -45 }}
+              animate={{ opacity: 1, scale: 1,    rotate: 0   }}
+              exit={{ opacity: 0, scale: 0.65,    rotate: 45  }}
+              transition={{ type: 'spring', stiffness: 440, damping: 28 }}
+              whileHover={{ scale: 1.18, backgroundColor: 'rgba(99,102,241,0.10)' }}
+              whileTap={{ scale: 0.88 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+                inputRef.current?.focus();
+              }}
+              className="shrink-0 flex items-center justify-center h-6 w-6 rounded-lg text-slate-400 hover:text-indigo-600 transition-colors"
+              aria-label="נקה חיפוש"
+            >
+              <X className="h-3.5 w-3.5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Student Search Empty State ────────────────────────────────────────────────
+// Pattern inspired by 21st.dev EmptyState — three fan-spread icon cards
+
+function StudentSearchEmptyState({ query }: { query: string }): React.JSX.Element {
+  return (
+    <motion.div
+      key="student-search-empty"
+      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0,  scale: 1    }}
+      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+      transition={{ ease: EASE, duration: 0.35 }}
+      className="group flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-indigo-200/60 bg-white/55 backdrop-blur-xl py-14 text-center"
+      role="status"
+      aria-live="polite"
+    >
+      {/* Three fan-spread icon cards */}
+      <div className="flex items-end justify-center" style={{ gap: 6 }}>
+        {/* Left card — tilted */}
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-slate-200/80 -rotate-6 translate-y-1"
+          aria-hidden="true"
+        >
+          <Users className="h-5 w-5 text-slate-400" />
+        </div>
+        {/* Center card — upright, lifts on hover */}
+        <motion.div
+          className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-lg ring-1 ring-indigo-200/70 z-10"
+          whileHover={{ y: -4 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+          aria-hidden="true"
+        >
+          <Search className="h-5 w-5 text-indigo-400" />
+        </motion.div>
+        {/* Right card — tilted */}
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-slate-200/80 rotate-6 translate-y-1"
+          aria-hidden="true"
+        >
+          <Brain className="h-5 w-5 text-slate-400" />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <p className="font-semibold text-slate-700">לא נמצא תלמיד בשם זה</p>
+        <p className="text-sm text-slate-400 max-w-xs">
+          לא נמצאו תלמידים התואמים לחיפוש{' '}
+          <span className="font-medium text-indigo-500">&ldquo;{query}&rdquo;</span>
+        </p>
+      </div>
+    </motion.div>
+  );
+}
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -684,9 +862,31 @@ function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalP
         },
       );
 
-      const destination = isStopwatch
-        ? `/classes/${classId}/session/${session.id}/live`
-        : `/classes/${classId}/session/${session.id}/manual`;
+      const isSprint10x4   = isStopwatch && (
+        selectedType?.nameHe.includes('10X4') === true ||
+        selectedType?.nameHe.includes('10x4') === true ||
+        (selectedType?.nameHe.includes('10') === true && selectedType?.nameHe.includes('4') === true && selectedType?.nameHe.includes('שאטל') === true)
+      );
+      const isSprint60     = selectedType?.nameHe.includes('60') === true || selectedType?.nameHe.includes('ספרינט') === true;
+      const isLongDistance = isStopwatch && (
+        selectedType?.nameHe.includes('800')  === true ||
+        selectedType?.nameHe.includes('1000') === true ||
+        selectedType?.nameHe.includes('1500') === true ||
+        selectedType?.nameHe.includes('2000') === true ||
+        selectedType?.nameHe.includes('מרחק') === true
+      );
+      const destination =
+        selectedType?.nameHe.includes('ביפ') === true
+          ? `/classes/${classId}/session/${session.id}/beep`
+          : isLongDistance
+            ? `/classes/${classId}/session/${session.id}/long-distance`
+            : isSprint10x4
+              ? `/classes/${classId}/session/${session.id}/sprint-10x4`
+              : isSprint60 && isStopwatch
+                ? `/classes/${classId}/session/${session.id}/sprint`
+                : isStopwatch
+                  ? `/classes/${classId}/session/${session.id}/live`
+                  : `/classes/${classId}/session/${session.id}/manual`;
 
       router.push(destination);
     } catch (err) {
@@ -2616,6 +2816,7 @@ export default function ClassDetailPage(): React.JSX.Element {
   const [absentLoadingIds, setAbsentLoadingIds] = useState<Set<string>>(new Set());
   const [exemptDialogStudentId, setExemptDialogStudentId]   = useState<string | null>(null);
   const [absenceDialogStudentId, setAbsenceDialogStudentId] = useState<string | null>(null);
+  const [studentSearch, setStudentSearch] = useState('');
 
   const { data: cls,      error: classError,    isLoading: classLoading    } = useClass(classId);
   const { data: students, error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
@@ -2713,6 +2914,15 @@ export default function ClassDetailPage(): React.JSX.Element {
       (selectedSummary?.distribution.fail      ?? 0),
     [selectedSummary],
   );
+
+  /** Students filtered by the search bar — case-insensitive, Hebrew-aware. */
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q || !students) return students ?? [];
+    return students.filter((s) =>
+      `${s.firstName} ${s.lastName}`.toLowerCase().includes(q),
+    );
+  }, [students, studentSearch]);
 
   /** All students whose cross-test score is below the norm threshold. */
   const failingStudents = useMemo(
@@ -3178,6 +3388,23 @@ export default function ClassDetailPage(): React.JSX.Element {
             </motion.button>
           </div>
 
+          {/* Search bar — only when students are loaded */}
+          {!studentsLoading && !studentsError && students && students.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ease: EASE, duration: 0.35, delay: 0.08 }}
+              className="mb-3"
+            >
+              <StudentSearchBar
+                value={studentSearch}
+                onChange={setStudentSearch}
+                count={filteredStudents.length}
+                total={students.length}
+              />
+            </motion.div>
+          )}
+
           {studentsLoading && (
             <div className="overflow-hidden rounded-2xl bg-white/65 backdrop-blur-xl shadow-[0_2px_16px_rgba(15,23,42,0.07)]">
               {[1, 2, 3, 4].map((n) => (
@@ -3216,6 +3443,15 @@ export default function ClassDetailPage(): React.JSX.Element {
           )}
 
           {!studentsLoading && students && students.length > 0 && (
+            <>
+              {/* No-results empty state when search filters everything out */}
+              <AnimatePresence mode="popLayout">
+                {filteredStudents.length === 0 && (
+                  <StudentSearchEmptyState key="search-empty" query={studentSearch} />
+                )}
+              </AnimatePresence>
+
+              {filteredStudents.length > 0 && (
             <div className="overflow-hidden rounded-2xl bg-indigo-50/72 backdrop-blur-3xl border border-white/78 ring-1 ring-white/20 shadow-[0_8px_28px_rgba(15,23,42,0.10)]">
               {/* Header */}
               <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] gap-4">
@@ -3231,7 +3467,8 @@ export default function ClassDetailPage(): React.JSX.Element {
                 ))}
               </div>
               <motion.ul variants={ROW_STAGGER} initial="hidden" animate="show">
-                {students.map((student, index) => {
+                <AnimatePresence mode="popLayout">
+                {filteredStudents.map((student, index) => {
                   const score    = studentGradesMap.get(student.id) ?? 0;
                   const level    = score > 0 ? gradeLevel(score) : 'fail';
                   const ls       = LEVEL_STYLE[level];
@@ -3243,7 +3480,7 @@ export default function ClassDetailPage(): React.JSX.Element {
                   const isExempt = record?.status === 'EXCUSED';
 
                   return (
-                    <motion.li key={student.id} variants={ROW_ITEM}>
+                    <motion.li key={student.id} layout variants={ROW_ITEM}>
                       <div className={cn(
                         'grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] items-center gap-4 border-b border-slate-50 px-5 py-3.5 last:border-0 transition-colors group',
                         isExempt ? 'bg-orange-50/40' : 'hover:bg-indigo-50/40',
@@ -3316,8 +3553,11 @@ export default function ClassDetailPage(): React.JSX.Element {
                     </motion.li>
                   );
                 })}
+                </AnimatePresence>
               </motion.ul>
             </div>
+              )}
+            </>
           )}
         </motion.div>
       </motion.div>

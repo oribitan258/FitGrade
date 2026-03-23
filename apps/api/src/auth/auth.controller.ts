@@ -23,7 +23,9 @@ import { AuthService } from './auth.service';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { StudentLoginDto } from './dto/student-login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { TeacherProfileDto } from './dto/teacher-profile.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { TeacherRecord } from './auth.types';
 
@@ -46,6 +48,17 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
   ) {}
+
+  // ─── Authenticated teacher profile ────────────────────────────────────────
+
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get the authenticated teacher profile (name, school, avatar)' })
+  @ApiResponse({ status: 200, type: TeacherProfileDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  async getMe(@CurrentUser() user: JwtPayload): Promise<TeacherProfileDto> {
+    return this.authService.getProfile(user.sub);
+  }
 
   // ─── Teacher Google OAuth ──────────────────────────────────────────────────
 

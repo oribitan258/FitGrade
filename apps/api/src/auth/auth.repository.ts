@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import type { GoogleTeacherProfile, TeacherRecord, StudentLoginRecord } from './auth.types';
+import type { GoogleTeacherProfile, TeacherProfileRecord, TeacherRecord, StudentLoginRecord } from './auth.types';
 
 @Injectable()
 export class AuthRepository {
@@ -43,6 +43,22 @@ export class AuthRepository {
       where: { email },
       select: { id: true, email: true, name: true, avatarUrl: true },
     });
+  }
+
+  /**
+   * Finds a teacher by primary key — used by GET /auth/me.
+   * NOTE: After adding the `school` field to the Prisma schema, run
+   *   `pnpm exec prisma generate && pnpm exec prisma migrate dev`
+   * to make the field available on the Prisma client.
+   */
+  async findTeacherById(id: string): Promise<TeacherProfileRecord | null> {
+    const row = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true, avatarUrl: true },
+    });
+    if (row === null) return null;
+    // school is not yet in Prisma select until migration runs; default to null
+    return { ...row, school: (row as Record<string, unknown>)['school'] as string | null ?? null };
   }
 
   /**

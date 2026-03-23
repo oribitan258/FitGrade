@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthRepository } from './auth.repository';
 import type {
   GoogleTeacherProfile,
+  TeacherProfileRecord,
   TeacherRecord,
   StudentLoginRecord,
   TokenPair,
@@ -58,6 +59,20 @@ export class AuthService {
     }
 
     return record;
+  }
+
+  // ─── Teacher profile ───────────────────────────────────────────────────────
+
+  /**
+   * Returns the authenticated teacher's public profile.
+   * Used by GET /auth/me.
+   */
+  async getProfile(userId: string): Promise<TeacherProfileRecord> {
+    const teacher = await this.authRepository.findTeacherById(userId);
+    if (!teacher) {
+      throw new NotFoundException('Teacher profile not found');
+    }
+    return teacher;
   }
 
   // ─── Dev bypass (local development only) ──────────────────────────────────

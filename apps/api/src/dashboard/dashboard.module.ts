@@ -8,5 +8,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [DashboardController],
   providers: [DashboardService, DashboardRepository],
+  exports: [DashboardService], // CopilotModule imports DashboardService
 })
 export class DashboardModule {}

@@ -13,6 +13,8 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EventsModule } from './events/events.module';
 import { ReportsModule } from './reports/reports.module';
+import { CopilotModule } from './copilot/copilot.module';
+import { ScheduleModule } from './schedule/schedule.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -31,6 +33,8 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     DashboardModule,
     EventsModule,
     ReportsModule,
+    CopilotModule,
+    ScheduleModule,
   ],
   controllers: [AppController],
   providers: [

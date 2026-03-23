@@ -290,6 +290,41 @@ export class TestsRepository {
   }
 
   /**
+   * Updates gradeOverride and overrideReason on an existing TestResult.
+   * Throws NotFoundException if the result doesn't exist.
+   */
+  async overrideResultGrade(
+    resultId: string,
+    gradeOverride: number,
+    overrideReason: string | undefined,
+  ): Promise<ResultResponseDto> {
+    try {
+      const result = await this.prisma.testResult.update({
+        where: { id: resultId },
+        data: { gradeOverride, overrideReason: overrideReason ?? null },
+        select: RESULT_SELECT,
+      });
+      return {
+        id: result.id,
+        sessionId: result.sessionId,
+        studentId: result.studentId,
+        rawValue: Number(result.rawValue ?? 0),
+        calculatedGrade: result.calculatedGrade ?? 0,
+        gradeOverride: result.gradeOverride,
+        recordedAt: result.recordedAt,
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException(`תוצאה ${resultId} לא נמצאה`);
+      }
+      throw e;
+    }
+  }
+
+  /**
    * Creates a TestResult for a student in a session with the pre-calculated grade.
    * Throws ConflictException if a result already exists for this student+session.
    */

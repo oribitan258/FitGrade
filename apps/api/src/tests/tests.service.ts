@@ -6,6 +6,7 @@ import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
 import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import type { SubmitResultDto } from './dto/submit-result.dto';
+import type { OverrideGradeDto } from './dto/override-grade.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
 import type { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 
@@ -95,6 +96,33 @@ export class TestsService {
     const session = await this.testsRepository.completeSession(sessionId);
     this.logger.log(`Session completed: id=${sessionId} teacher=${teacherId}`);
     return session;
+  }
+
+  /**
+   * Overrides the grade for an existing test result.
+   *
+   * 1. Verifies the session belongs to the teacher's class (ownership check).
+   * 2. Applies the override grade and optional reason to the result.
+   */
+  async overrideGrade(
+    sessionId: string,
+    resultId: string,
+    teacherId: string,
+    dto: OverrideGradeDto,
+  ): Promise<ResultResponseDto> {
+    await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+
+    const result = await this.testsRepository.overrideResultGrade(
+      resultId,
+      dto.gradeOverride,
+      dto.overrideReason,
+    );
+
+    this.logger.log(
+      `Grade overridden: result=${resultId} session=${sessionId} override=${dto.gradeOverride} teacher=${teacherId}`,
+    );
+
+    return result;
   }
 
   /**

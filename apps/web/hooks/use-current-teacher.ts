@@ -1,0 +1,31 @@
+/**
+ * SWR hook for the authenticated teacher's profile.
+ * GET /auth/me — returns { id, name, school, email, avatarUrl }.
+ */
+import useSWR from 'swr';
+import { apiRequest } from '@/lib/api-client';
+
+export interface TeacherProfile {
+  id: string;
+  email: string;
+  name: string;
+  school: string | null;
+  avatarUrl: string | null;
+}
+
+function fetcher(path: string): Promise<TeacherProfile> {
+  return apiRequest<TeacherProfile>(path);
+}
+
+export function useCurrentTeacher(): {
+  teacher: TeacherProfile | undefined;
+  isLoading: boolean;
+  error: unknown;
+} {
+  const { data, isLoading, error } = useSWR<TeacherProfile>(
+    '/auth/me',
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  return { teacher: data, isLoading, error };
+}

@@ -8,5 +8,6 @@ import { GradingModule } from '../grading/grading.module';
   imports: [GradingModule], // GradingModule exports GradingService for grade calculation
   controllers: [TestsController],
   providers: [TestsService, TestsRepository],
+  exports: [TestsService], // CopilotModule imports TestsService
 })
 export class TestsModule {}

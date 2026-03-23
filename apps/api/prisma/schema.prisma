@@ -54,14 +54,17 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String
+  school    String?  // Optional school / institution name
   avatarUrl String?
   googleId  String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  classes   Class[]
-  auditLogs AuditLog[]
-  events    Event[]
+  classes         Class[]
+  auditLogs       AuditLog[]
+  events          Event[]
+  aiActionLogs    AiActionLog[]
+  scheduleEntries ScheduleEntry[]
 
   @@map("users")
 }
@@ -94,6 +97,7 @@ model Class {
   attendanceRecords AttendanceRecord[]
   talmidautRecords  TalmidautRecord[]
   finalGrades       StudentFinalGrade[]
+  scheduleEntries   ScheduleEntry[]
 
   @@index([teacherId])
   @@map("classes")
@@ -354,6 +358,70 @@ model Event {
 
   @@index([teacherId, eventDate])
   @@map("events")
+}
+
+// ─────────────────────────────────────────────
+// AI ACTION LOG (Copilot WRITE actions — reversible)
+// One row per executed WRITE tool call. Stores a pre-write snapshot
+// to enable teacher-triggered rollback via POST /api/copilot/actions/:id/revert.
+// ─────────────────────────────────────────────
+
+model AiActionLog {
+  id       String @id @default(cuid())
+  teacherId String
+  teacher  User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  // Which tool was executed (e.g. "save_attendance", "generate_exercise_plan")
+  toolName String
+
+  // Pre-generated Hebrew description shown in the History tab
+  // e.g. "שמירת נוכחות ל-15 תלמידים בכיתה י׳"
+  summary String
+
+  // Exact params passed to the tool (stored for expand detail view)
+  params Json
+
+  // State snapshot captured BEFORE the write, used to revert the action:
+  //   save_attendance       → { attendanceRecords: { studentId, status }[] }
+  //   generate_exercise_plan → { existingPlan: ExercisePlan | null }
+  //   submit_test_result     → { existingResultId: string | null }
+  snapshot Json
+
+  // null = action is still active; non-null = teacher reverted it
+  revertedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([teacherId, createdAt])
+  @@map("ai_action_logs")
+}
+
+// ─────────────────────────────────────────────
+// SCHEDULE ENTRY (Teacher weekly timetable)
+// One row per class assigned to a day+period slot.
+// dayOfWeek: 0=Sunday, 1=Monday … 4=Thursday (Israeli school week).
+// period: 0-based index mapping to PERIOD_START_TIMES constant.
+// startTime: "HH:MM" string — denormalised from PERIODS for server-side status calc.
+// ─────────────────────────────────────────────
+
+model ScheduleEntry {
+  id        String   @id @default(cuid())
+  dayOfWeek Int      // 0–6 (0 = Sunday)
+  period    Int      // 0-based period index
+  startTime String   // "HH:MM" — denormalised for fast status computation
+
+  teacherId String
+  teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  classId String
+  class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, dayOfWeek, period])
+  @@index([teacherId, dayOfWeek])
+  @@map("schedule_entries")
 }
 
 // ─────────────────────────────────────────────

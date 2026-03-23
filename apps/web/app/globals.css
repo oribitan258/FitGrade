@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,16 +22,16 @@
     overflow: hidden;
     background: linear-gradient(
       135deg,
-      rgba(23, 15, 55, 0.08) 0%,
-      rgba(23, 15, 55, 0.05) 50%,
-      rgba(23, 15, 55, 0.03) 100%
+      rgba(255, 255, 255, 0.072) 0%,
+      rgba(255, 255, 255, 0.048) 50%,
+      rgba(255, 255, 255, 0.032) 100%
     );
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(139, 92, 246, 0.20);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(139, 92, 246, 0.28);
     box-shadow:
-      0 10px 40px -10px rgba(76, 29, 149, 0.25),
-      inset 0 1px 1px rgba(255, 255, 255, 0.20);
+      0 10px 40px -10px rgba(0, 0, 0, 0.45),
+      inset 0 1px 1px rgba(255, 255, 255, 0.10);
   }
 
   /* Light-sweep pseudo-element — sits above card content (pointer-events: none) */
@@ -52,6 +54,73 @@
   .prismatic-glass:hover::after {
     animation: prismatic-sweep 0.70s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
+
+  /* ── Card Tiers ──────────────────────────────────────────────────────────────
+   * Three surface depths from the Master Execution Plan §3A.
+   * Use .card-hero / .card-standard / .card-inline — do NOT add Tailwind shadow
+   * classes on top of these; the shadow is baked in to preserve the layering.  */
+
+  .card-hero {
+    background: var(--fg-surface-1);
+    border: 1px solid var(--fg-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07), 0 1px 4px rgba(0, 0, 0, 0.04);
+    border-radius: 24px;
+  }
+
+  .card-standard {
+    background: var(--fg-surface-2);
+    border: 1px solid var(--fg-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border-radius: 16px;
+  }
+
+  .card-inline {
+    background: var(--fg-surface-3);
+    border: 1px solid var(--fg-border);
+    border-radius: 12px;
+  }
+
+  /* ── Frosted Glass Overlays ──────────────────────────────────────────────────
+   * .glass-light — frosted overlay for photos in Mode A (dashboard hero)
+   * .glass-dark  — frosted overlay for photos in Mode B (live arena)
+   * These are applied to the overlay div that sits atop a full-bleed image.    */
+
+  .glass-light {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.60);
+  }
+
+  .glass-dark {
+    background: rgba(15, 10, 46, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* ── Semantic Glow States ────────────────────────────────────────────────────
+   * Applied to cards and interactive elements to communicate their live status.
+   * .glow-live    — running test, active session (green)
+   * .glow-focus   — selected item, focused input (violet)
+   * .glow-warning — student in WARNING state, data approaching threshold (amber)
+   * .glow-error   — failure states, eliminated, below norm (red)              */
+
+  .glow-live {
+    box-shadow: 0 0 0 1px rgba(132, 204, 22, 0.4), 0 0 20px rgba(132, 204, 22, 0.2);
+  }
+
+  .glow-focus {
+    box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.5), 0 0 20px rgba(139, 92, 246, 0.15);
+  }
+
+  .glow-warning {
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.6), 0 0 24px rgba(245, 158, 11, 0.25);
+  }
+
+  .glow-error {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.6), 0 0 24px rgba(239, 68, 68, 0.20);
+  }
 }
 
 /*
@@ -68,7 +137,7 @@
 
 @layer base {
   :root {
-    /* ── shadcn/ui slate base (light mode) ────────────────────── */
+    /* ── shadcn/ui slate base (light mode) ────────────────────────────────── */
     --background:        0 0% 100%;
     --foreground:        222.2 84% 4.9%;
 
@@ -98,6 +167,52 @@
     --ring:              222.2 84% 4.9%;
 
     --radius:            0.5rem;
+
+    /* ── FitGrade Design System — Mode A: Command Center ─────────────────────
+     * The off-white (#F2F4F8) canvas is the page background.
+     * Cards sit on top as white surfaces — one clean level of visual hierarchy.
+     * All dashboard, roster, profile, and admin pages use these tokens.        */
+    --fg-canvas:      #F8FAFC;
+    --fg-surface-1:   #FFFFFF;
+    --fg-surface-2:   rgba(255, 255, 255, 0.92);
+    --fg-surface-3:   rgba(255, 255, 255, 0.60);
+    --fg-border:      rgba(0, 0, 0, 0.06);
+    --fg-text-1:      #0F172A;
+    --fg-text-2:      #64748B;
+    --fg-text-3:      #94A3B8;
+
+    /* ── FitGrade Brand Tokens ────────────────────────────────────────────────
+     * Violet = identity / brand. Green = sport action / live states.
+     * Amber = warning. Red = failure / elimination.                            */
+    --fg-violet:       #6D28D9;
+    --fg-violet-soft:  #8B5CF6;
+    --fg-green:        #16A34A;
+    --fg-lime:         #84CC16;
+    --fg-amber:        #F59E0B;
+    --fg-red:          #EF4444;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  /* ── Mode B: Live Arena ──────────────────────────────────────────────────────
+   * Applied automatically when data-arena="true" on <body>.
+   * BeepTestContext sets this when a timed test is running.
+   * The deep indigo canvas + glowing instruments create zero-distraction focus. */
+  [data-arena='true'] {
+    --fg-canvas:    #0F0A2E;
+    --fg-surface-1: rgba(255, 255, 255, 0.07);
+    --fg-surface-2: rgba(255, 255, 255, 0.05);
+    --fg-surface-3: rgba(255, 255, 255, 0.03);
+    --fg-border:    rgba(255, 255, 255, 0.10);
+    --fg-text-1:    #FFFFFF;
+    --fg-text-2:    rgba(255, 255, 255, 0.65);
+    --fg-text-3:    rgba(255, 255, 255, 0.35);
   }
 
   .dark {
@@ -128,6 +243,14 @@
     --border:            217.2 32.6% 17.5%;
     --input:             217.2 32.6% 17.5%;
     --ring:              212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   * {
@@ -136,6 +259,8 @@
 
   body {
     @apply bg-background text-foreground;
+    /* Smooth canvas transition when BeepTestContext toggles data-arena */
+    transition: background-color 400ms ease;
     background-image:
       radial-gradient(ellipse at 15% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 55%),
       radial-gradient(ellipse at 85% 80%, rgba(16, 185, 129, 0.04) 0%, transparent 55%);
@@ -156,4 +281,196 @@
     opacity: 0.025;
     mix-blend-mode: overlay;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * 2026 ELITE DARK GLASS — Design Token System
+ * Shattered Glass aesthetic: deep dark surfaces, fractured neon accents,
+ * refracting glow shadows, and angular clip-path shards.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Fractured Accent Palette ─────────────────────────────────────────────── */
+  --fg-cyan:           #00d4ff;   /* Speed / Beep Test   */
+  --fg-neon-green:     #39ff14;   /* Success / High Grade */
+  --fg-neon-orange:    #ff6b00;   /* Alert / Below Norm   */
+  --fg-dark-base:      #0a0a0f;   /* Canvas base          */
+
+  /* ── Dark Glass Surfaces ──────────────────────────────────────────────────── */
+  --glass-base:        rgba(13, 13, 26, 0.72);
+  --glass-card:        rgba(255, 255, 255, 0.05);
+  --glass-card-hi:     rgba(255, 255, 255, 0.08);
+  --glass-border:      rgba(255, 255, 255, 0.08);
+  --glass-border-hi:   rgba(255, 255, 255, 0.16);
+
+  /* ── Glow Shadows — light refracting through fractured glass ─────────────── */
+  --glow-violet:   0 0 0 1px rgba(123,47,255,0.35), 0 0 18px rgba(123,47,255,0.50), 0 0 40px rgba(123,47,255,0.18);
+  --glow-cyan:     0 0 0 1px rgba(0,212,255,0.35),  0 0 18px rgba(0,212,255,0.50),  0 0 40px rgba(0,212,255,0.18);
+  --glow-neon:     0 0 0 1px rgba(57,255,20,0.35),  0 0 18px rgba(57,255,20,0.50),  0 0 40px rgba(57,255,20,0.18);
+  --glow-orange:   0 0 0 1px rgba(255,107,0,0.35),  0 0 18px rgba(255,107,0,0.50),  0 0 40px rgba(255,107,0,0.18);
+  --glow-violet-xl: 0 0 40px rgba(123,47,255,0.70), 0 0 80px rgba(123,47,255,0.28), 0 0 120px rgba(123,47,255,0.10);
+}
+
+@layer components {
+  /* ── Dark Glass Card Surface ──────────────────────────────────────────────── */
+  .dark-glass-card {
+    background:              var(--glass-card);
+    backdrop-filter:         blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border:                  1px solid var(--glass-border);
+  }
+
+  /* ── Fractured Glass Panel (sidebar / sheets) ─────────────────────────────── */
+  .dark-glass-surface {
+    background:              var(--glass-base);
+    backdrop-filter:         blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+  }
+
+  /* ── Shattered Glass Clip-Path Shards ─────────────────────────────────────── *
+   * Apply to absolute divs inside hero/card backgrounds for a fractured look.   */
+  .shard-1 { clip-path: polygon(0% 0%, 68% 0%, 100% 38%, 100% 100%, 32% 100%, 0% 62%); }
+  .shard-2 { clip-path: polygon(18% 0%, 100% 0%, 100% 82%, 82% 100%, 0% 100%, 0% 18%); }
+  .shard-3 { clip-path: polygon(0% 22%, 28% 0%, 100% 0%, 100% 78%, 72% 100%, 0% 100%); }
+  .shard-4 { clip-path: polygon(12% 0%, 100% 0%, 100% 88%, 88% 100%, 0% 100%, 0% 12%); }
+
+  /* ── Neon Glow Border Utilities ───────────────────────────────────────────── */
+  .glow-border-violet { border-color: rgba(123,47,255,0.45) !important; box-shadow: var(--glow-violet); }
+  .glow-border-cyan   { border-color: rgba(0,212,255,0.45)  !important; box-shadow: var(--glow-cyan);   }
+  .glow-border-neon   { border-color: rgba(57,255,20,0.45)  !important; box-shadow: var(--glow-neon);   }
+  .glow-border-orange { border-color: rgba(255,107,0,0.45)  !important; box-shadow: var(--glow-orange); }
+
+  /* ── Magic UI: Border Beam offset animation support ───────────────────────── */
+  @property --beam-color-from { syntax: '<color>'; inherits: false; initial-value: #7b2fff; }
+  @property --beam-color-to   { syntax: '<color>'; inherits: false; initial-value: #00d4ff; }
+
+  /* ── Frosted Glass Card — semi-transparent surface with liquid wave ripple ── *
+   * Apply class="glass-card" to any card or container surface.
+   * Semi-transparent at 40% white — requires a rich background to look good.
+   * Ripple effect: circular refraction wave on hover.                          */
+
+  @keyframes glass-ripple {
+    from { transform: translate(-50%, -50%) scale(0); opacity: 0.55; }
+    to   { transform: translate(-50%, -50%) scale(2.8); opacity: 0; }
+  }
+
+  .glass-card {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.40);
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.50);
+    box-shadow:
+      0 8px 32px rgba(31, 38, 135, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.60);
+    border-radius: 24px;
+  }
+
+  /* Liquid wave pseudo-element */
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(
+      circle,
+      rgba(109, 40, 217, 0.14) 0%,
+      rgba(0, 212, 255, 0.08) 45%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .glass-card:hover::before {
+    animation: glass-ripple 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  /* ── Infinite Student Ticker — horizontal sports ribbon ───────────────────── */
+  .ticker-ribbon {
+    overflow: hidden;
+    cursor: default;
+  }
+
+  .ticker-track {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    animation: ticker-scroll 32s linear infinite;
+  }
+
+  .ticker-ribbon:hover .ticker-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * ELITE SAAS GLOBAL POLISH
+ * Smooth scrolling · Violet text selection · Sleek custom scrollbars
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Smooth scrolling ──────────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ── Violet brand text selection ──────────────────────────────────────────── */
+::selection {
+  background-color: rgba(109, 40, 217, 0.22);
+  color: #3b0764;
+}
+
+::-moz-selection {
+  background-color: rgba(109, 40, 217, 0.22);
+  color: #3b0764;
+}
+
+/* ── Sleek scrollbars — light-aware (Mode A canvas) ──────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(109, 40, 217, 0.25);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(109, 40, 217, 0.45);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark (Mode B arena) — brighter scrollbar */
+[data-arena='true'] ::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.40);
+}
+
+[data-arena='true'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.65);
+}
+
+/* Firefox thin scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(109, 40, 217, 0.25) transparent;
 }

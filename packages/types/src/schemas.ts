@@ -372,3 +372,29 @@ export interface TopStudentItem {
   /** Student gender — used for gender-split MVP sections. */
   gender: Gender;
 }
+
+/** Top student per class — GET /dashboard/top-per-class — top 3 per class by average score */
+export interface TopStudentPerClassItem {
+  /** Rank within the class: 1, 2, or 3. */
+  rank: number;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  /** Average calculatedGrade across all recorded results in this class (0–100). */
+  avgScore: number;
+}
+
+/** Top individual achievement — GET /dashboard/top-achievements */
+export interface TopAchievementItem {
+  /** Rank position, starting at 1. */
+  rank: number;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  /** Hebrew name of the specific exam (e.g. "ריצת 2000מ׳"). */
+  examName: string;
+  /** The student's calculatedGrade for this result (0–100). */
+  score: number;
+}

@@ -6,6 +6,6 @@ import { ClassesRepository } from './classes.repository';
 @Module({
   controllers: [ClassesController],
   providers: [ClassesService, ClassesRepository],
-  exports: [ClassesRepository], // StudentsModule uses ClassesRepository to verify ownership
+  exports: [ClassesRepository, ClassesService], // CopilotModule also imports ClassesService
 })
 export class ClassesModule {}

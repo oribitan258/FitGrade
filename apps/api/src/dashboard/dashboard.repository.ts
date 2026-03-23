@@ -62,8 +62,29 @@ export interface RawTopStudent {
   gender: string;
 }
 
+export interface RawTopStudentPerClass {
+  rank: number;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  avgScore: number;
+}
+
+export interface RawTopAchievement {
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  examName: string;
+  score: number;
+}
+
 /** Maximum students returned by the top-students endpoint. */
 export const TOP_STUDENTS_LIMIT = 20;
+
+/** Maximum achievements returned by the top-achievements endpoint. */
+export const TOP_ACHIEVEMENTS_LIMIT = 10;
 
 @Injectable()
 export class DashboardRepository {
@@ -406,5 +427,143 @@ export class DashboardRepository {
         };
       })
       .filter((r) => r.studentName !== '');
+  }
+
+  /**
+   * Returns the top N individual test results across all teacher classes,
+   * deduplicated by student (only the student's single best result is kept),
+   * ordered by score descending.
+   */
+  async findTopAchievements(classIds: string[], limit: number): Promise<RawTopAchievement[]> {
+    if (classIds.length === 0) return [];
+
+    // Fetch a wide set ordered by score desc; deduplicate in memory to ensure
+    // each student appears at most once with their highest-scoring result.
+    const results = await this.prisma.testResult.findMany({
+      where: {
+        session: { classId: { in: classIds } },
+        calculatedGrade: { not: null },
+      },
+      orderBy: { calculatedGrade: 'desc' },
+      take: limit * 10,
+      select: {
+        calculatedGrade: true,
+        student: { select: { id: true, firstName: true, lastName: true } },
+        session: {
+          select: {
+            classId: true,
+            class: { select: { name: true } },
+            testType: { select: { nameHe: true } },
+          },
+        },
+      },
+    });
+
+    const seen = new Set<string>();
+    const deduped: RawTopAchievement[] = [];
+    for (const r of results) {
+      if (seen.has(r.student.id)) continue;
+      seen.add(r.student.id);
+      deduped.push({
+        studentId: r.student.id,
+        studentName: `${r.student.firstName} ${r.student.lastName}`,
+        classId: r.session.classId,
+        className: r.session.class.name,
+        examName: r.session.testType.nameHe,
+        score: r.calculatedGrade ?? 0,
+      });
+      if (deduped.length === limit) break;
+    }
+    return deduped;
+  }
+
+  /**
+   * Returns the top 3 students per class by average calculatedGrade.
+   * Aggregates in memory: sessions → results → group by classId+studentId → avg → top-3 per class.
+   */
+  async findTopStudentsPerClass(classIds: string[]): Promise<RawTopStudentPerClass[]> {
+    if (classIds.length === 0) return [];
+
+    // Step 1: sessions with classId for the teachers' classes
+    const sessions = await this.prisma.testSession.findMany({
+      where: { classId: { in: classIds } },
+      select: { id: true, classId: true },
+    });
+    if (sessions.length === 0) return [];
+
+    const sessionClassMap = new Map(sessions.map((s) => [s.id, s.classId]));
+
+    // Step 2: all results for those sessions
+    const results = await this.prisma.testResult.findMany({
+      where: { sessionId: { in: sessions.map((s) => s.id) }, calculatedGrade: { not: null } },
+      select: { studentId: true, sessionId: true, calculatedGrade: true },
+    });
+
+    // Step 3: group by classId → studentId → grades[]
+    const classStudentGrades = new Map<string, Map<string, number[]>>();
+    for (const r of results) {
+      const classId = sessionClassMap.get(r.sessionId);
+      if (!classId) continue;
+      if (!classStudentGrades.has(classId)) classStudentGrades.set(classId, new Map());
+      const studentMap = classStudentGrades.get(classId)!;
+      const grades = studentMap.get(r.studentId) ?? [];
+      grades.push(r.calculatedGrade ?? 0);
+      studentMap.set(r.studentId, grades);
+    }
+
+    // Step 4: per class → sort by avg → take top 3
+    const topEntries: Array<{ classId: string; studentId: string; avgScore: number }> = [];
+    for (const [classId, studentMap] of classStudentGrades) {
+      const sorted = [...studentMap.entries()]
+        .map(([studentId, grades]) => ({
+          studentId,
+          avgScore: Math.round(grades.reduce((s, g) => s + g, 0) / grades.length),
+        }))
+        .sort((a, b) => b.avgScore - a.avgScore)
+        .slice(0, 3);
+      for (const s of sorted) topEntries.push({ classId, ...s });
+    }
+    if (topEntries.length === 0) return [];
+
+    // Step 5: fetch student names and class names in parallel
+    const studentIds = [...new Set(topEntries.map((x) => x.studentId))];
+    const [students, classes] = await Promise.all([
+      this.prisma.student.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, firstName: true, lastName: true },
+      }),
+      this.prisma.class.findMany({
+        where: { id: { in: classIds } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const studentNameMap = new Map(students.map((s) => [s.id, `${s.firstName} ${s.lastName}`]));
+    const classNameMap = new Map(classes.map((c) => [c.id, c.name]));
+
+    // Step 6: build flat ranked list — rank resets per class
+    const byClass = new Map<string, Array<{ studentId: string; avgScore: number }>>();
+    for (const entry of topEntries) {
+      const list = byClass.get(entry.classId) ?? [];
+      list.push({ studentId: entry.studentId, avgScore: entry.avgScore });
+      byClass.set(entry.classId, list);
+    }
+
+    const output: RawTopStudentPerClass[] = [];
+    for (const [classId, students] of byClass) {
+      students.forEach((s, idx) => {
+        const studentName = studentNameMap.get(s.studentId);
+        if (!studentName) return;
+        output.push({
+          rank: idx + 1,
+          studentId: s.studentId,
+          studentName,
+          classId,
+          className: classNameMap.get(classId) ?? '',
+          avgScore: s.avgScore,
+        });
+      });
+    }
+    return output;
   }
 }

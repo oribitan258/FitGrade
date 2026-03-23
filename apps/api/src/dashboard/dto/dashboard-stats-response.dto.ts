@@ -100,6 +100,49 @@ export class BelowNormItemDto {
   normThreshold!: number;
 }
 
+export class TopAchievementItemDto {
+  @ApiProperty({ description: 'Rank position starting at 1' })
+  rank!: number;
+
+  @ApiProperty()
+  studentId!: string;
+
+  @ApiProperty()
+  studentName!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty({ description: 'Hebrew name of the specific exam (e.g. "ריצת 2000מ׳")' })
+  examName!: string;
+
+  @ApiProperty({ description: 'calculatedGrade for this result (0–100)' })
+  score!: number;
+}
+
+export class TopStudentPerClassItemDto {
+  @ApiProperty({ description: 'Rank within the class: 1, 2, or 3' })
+  rank!: number;
+
+  @ApiProperty()
+  studentId!: string;
+
+  @ApiProperty()
+  studentName!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty({ description: 'Average calculatedGrade across all results in this class (0–100)' })
+  avgScore!: number;
+}
+
 export class TopStudentItemDto {
   @ApiProperty({ description: 'Rank position starting at 1' })
   rank!: number;

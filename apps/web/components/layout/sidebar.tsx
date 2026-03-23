@@ -19,6 +19,37 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { logout } from '@/lib/api-client';
 
+// ─── Animated subtitle with slow ripple wave ──────────────────────────────────
+
+function SubtitleRipple(): React.JSX.Element {
+  return (
+    <div className="relative mt-0.5 overflow-hidden py-0.5">
+      {/* Static text */}
+      <span className="relative z-10 block text-[11px] font-semibold leading-none tracking-wide text-white/80">
+        מדדים, לא ניחושים
+      </span>
+
+      {/* Ripple wave — slow shimmer sweep */}
+      <motion.div
+        className="pointer-events-none absolute inset-y-0 w-12"
+        style={{
+          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%)',
+          filter: 'blur(4px)',
+        }}
+        initial={{ x: '-48px' }}
+        animate={{ x: '260px' }}
+        transition={{
+          duration: 3.8,
+          repeat: Infinity,
+          repeatDelay: 2.5,
+          ease: 'easeInOut',
+        }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 // ─── Navigation structure ─────────────────────────────────────────────────────
 
 const MAIN_NAV = [
@@ -33,21 +64,17 @@ const TOOLS_NAV = [
 ] as const;
 
 const PE_NAV = [
-  { href: '/exemptions',           label: 'פטורים',           icon: ShieldAlert },
-  { href: '/outstanding-students', label: 'תלמידים מצטיינים', icon: Crown       },
+  { href: '/exemptions',           label: 'פטורים',            icon: ShieldAlert },
+  { href: '/outstanding-students', label: 'תלמידים מצטיינים',  icon: Crown       },
   { href: '/events',               label: 'אירועים וטורנירים', icon: Swords      },
-  { href: '/exercise-bank',        label: 'מתכנן שיעור',      icon: Dumbbell    },
+  { href: '/exercise-bank',        label: 'מתכנן שיעור',       icon: Dumbbell    },
 ] as const;
 
 type NavEntry = { href: string; label: string; icon: typeof LayoutDashboard };
 
-/**
- * Solid deep-violet sidebar — contrasts sharply against the light glass page background.
- * RTL: sidebar renders on the right (first flex child).
- */
 export function Sidebar(): React.JSX.Element {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -61,103 +88,192 @@ export function Sidebar(): React.JSX.Element {
   function NavItem({ href, label, icon: Icon }: NavEntry): React.JSX.Element {
     const active = isActive(href);
     return (
-      <motion.div
-        whileHover={active ? {} : { x: -2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
-      >
+      <div className="px-2">
         <Link
           href={href}
           aria-current={active ? 'page' : undefined}
           className={cn(
-            'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150',
-            active
-              ? 'bg-white/15 text-white shadow-[0_0_12px_rgba(255,255,255,0.12)]'
-              : 'text-[#c4b5fd]/75 hover:bg-white/10 hover:text-white',
+            'group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200',
+            active ? 'text-white' : 'text-white/60 hover:text-white',
           )}
+          style={
+            active
+              ? {
+                  background: 'linear-gradient(135deg, rgba(139,92,246,0.45) 0%, rgba(109,40,217,0.38) 100%)',
+                  border: '1px solid rgba(196,157,255,0.60)',
+                  boxShadow: [
+                    '0 0 24px rgba(168,85,247,0.45)',
+                    '0 0 48px rgba(168,85,247,0.18)',
+                    'inset 0 1px 0 rgba(255,255,255,0.20)',
+                    'inset 0 0 20px rgba(139,92,246,0.15)',
+                    '0 4px 12px rgba(0,0,0,0.25)',
+                  ].join(', '),
+                  backdropFilter: 'blur(12px)',
+                }
+              : {
+                  border: '1px solid transparent',
+                }
+          }
+          onMouseEnter={(e) => {
+            if (!active) {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.10)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!active) {
+              e.currentTarget.style.background = '';
+              e.currentTarget.style.border = '1px solid transparent';
+            }
+          }}
         >
-          {/* Icon capsule */}
-          <motion.div
+          <span className="truncate">{label}</span>
+          <Icon
             className={cn(
-              'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-300',
-              active ? 'bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.15)]' : 'bg-transparent',
+              'h-[18px] w-[18px] shrink-0 transition-colors duration-200',
+              active ? 'text-violet-200' : 'text-white/35 group-hover:text-white/65',
             )}
-            animate={active ? { scale: [1, 1.09, 1] } : {}}
-            transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
-          >
-            <Icon
-              className={cn('h-4 w-4', active ? 'text-white' : 'text-[#c4b5fd]/60')}
-              aria-hidden="true"
-            />
-          </motion.div>
-          <span className="flex-1 truncate">{label}</span>
+            aria-hidden="true"
+          />
         </Link>
-      </motion.div>
+      </div>
     );
   }
 
   return (
     <aside
-      className="flex h-full w-64 shrink-0 flex-col border-e border-white/10 shadow-[4px_0_40px_rgba(76,29,149,0.50)]"
-      style={{ background: '#4c1d95' }}
+      className="relative flex h-full w-64 shrink-0 flex-col overflow-hidden"
+      style={{
+        background: 'linear-gradient(160deg, rgba(45,28,95,0.88) 0%, rgba(28,16,68,0.92) 40%, rgba(18,10,48,0.95) 100%)',
+        backdropFilter: 'blur(40px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+        borderInlineEnd: '1px solid rgba(196,157,255,0.12)',
+        boxShadow: [
+          'inset -1px 0 0 rgba(168,85,247,0.08)',
+          '4px 0 32px rgba(0,0,0,0.30)',
+        ].join(', '),
+      }}
     >
-      {/* Brand */}
-      <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-        <motion.div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 shadow-[0_0_20px_rgba(255,255,255,0.12)]"
-          animate={{ scale: [1, 1.06, 1] }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+      {/* ── Ambient top glow (decorative) ───────────────────────────────────── */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-48"
+        style={{
+          background: 'radial-gradient(ellipse at 60% 0%, rgba(139,92,246,0.22) 0%, transparent 70%)',
+        }}
+        aria-hidden="true"
+      />
+
+      {/* ── Ambient bottom glow (decorative) ────────────────────────────────── */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-32"
+        style={{
+          background: 'radial-gradient(ellipse at 40% 100%, rgba(168,85,247,0.12) 0%, transparent 70%)',
+        }}
+        aria-hidden="true"
+      />
+
+      {/* ── Brand ──────────────────────────────────────────────────────────── */}
+      <div
+        className="relative z-10 flex h-[68px] items-center justify-between px-5"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        <div className="min-w-0">
+          <span
+            className="block text-[15px] font-black tracking-tight"
+            style={{
+              background: 'linear-gradient(to left, #f9a8d4, #e879f9, #a78bfa)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            FitGrade
+          </span>
+          <SubtitleRipple />
+        </div>
+
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.50) 0%, rgba(109,40,217,0.42) 100%)',
+            border: '1px solid rgba(196,157,255,0.50)',
+            boxShadow: [
+              '0 0 20px rgba(168,85,247,0.40)',
+              'inset 0 1px 0 rgba(255,255,255,0.20)',
+            ].join(', '),
+            backdropFilter: 'blur(8px)',
+          }}
         >
-          <GraduationCap className="h-5 w-5 text-white" aria-hidden="true" />
-        </motion.div>
-        <div>
-          <span className="text-base font-bold tracking-tight text-white">FitGrade</span>
-          <p className="text-[10px] text-[#c4b5fd]/60 leading-none mt-0.5">מערכת חינוך גופני</p>
+          <GraduationCap className="h-[18px] w-[18px] text-violet-100" aria-hidden="true" />
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4" aria-label="ניווט ראשי">
-        {MAIN_NAV.map((item) => (
-          <NavItem key={item.href} {...item} />
-        ))}
+      {/* ── Navigation ─────────────────────────────────────────────────────── */}
+      <nav className="relative z-10 flex-1 overflow-y-auto py-3" aria-label="ניווט ראשי">
+        <div className="space-y-0.5">
+          {MAIN_NAV.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+        </div>
 
-        <div className="my-3 px-1">
-          <div className="h-px bg-white/10" />
-          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-[#c4b5fd]/50">
+        {/* Divider */}
+        <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+        {/* Section: כלים */}
+        <div className="mb-2 px-5">
+          <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
             כלים
           </p>
         </div>
 
-        {TOOLS_NAV.map((item) => (
-          <NavItem key={item.href} {...item} />
-        ))}
+        <div className="space-y-0.5">
+          {TOOLS_NAV.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+        </div>
 
-        <div className="my-3 px-1">
-          <div className="h-px bg-white/10" />
-          <p className="mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-[#c4b5fd]/50">
+        {/* Divider */}
+        <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+        {/* Section: חינוך גופני */}
+        <div className="mb-2 px-5">
+          <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
             חינוך גופני
           </p>
         </div>
 
-        {PE_NAV.map((item) => (
-          <NavItem key={item.href} {...item} />
-        ))}
+        <div className="space-y-0.5">
+          {PE_NAV.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+        </div>
       </nav>
 
-      {/* Logout */}
-      <div className="border-t border-white/10 p-3">
-        <motion.button
+      {/* ── Logout ─────────────────────────────────────────────────────────── */}
+      <div
+        className="relative z-10 p-2"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        <button
           type="button"
           onClick={() => { void handleLogout(); }}
-          whileHover={{ x: -2, transition: { type: 'spring', stiffness: 400, damping: 30 } }}
-          whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-[#c4b5fd]/60 transition-colors hover:bg-red-400/20 hover:text-red-300"
+          className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200"
+          style={{ color: 'rgba(255,255,255,0.40)' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'rgba(252,165,165,1)';
+            e.currentTarget.style.background = 'rgba(239,68,68,0.10)';
+            e.currentTarget.style.border = '1px solid rgba(239,68,68,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'rgba(255,255,255,0.40)';
+            e.currentTarget.style.background = '';
+            e.currentTarget.style.border = '';
+          }}
           aria-label="התנתק מהמערכת"
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-          </div>
-          התנתק
-        </motion.button>
+          <span>התנתק</span>
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
     </aside>
   );
