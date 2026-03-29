@@ -14,13 +14,26 @@ import {
   Printer,
   Save,
   ShieldAlert,
+  Star,
+  TrendingDown,
   TrendingUp,
   Users,
   X,
 } from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useSemester } from '@/contexts/semester-context';
 import { useClasses } from '@/hooks/use-classes';
 import { useClassReport, useCommentsBank } from '@/hooks/use-reports';
 import { apiRequest } from '@/lib/api-client';
@@ -31,6 +44,35 @@ import type { ReportRow } from '@fitgrade/types';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+
+// ─── Print detection hook ──────────────────────────────────────────────────────
+
+/**
+ * Returns `true` from the moment the print dialog opens until it closes.
+ * Also accepts an externalOverride so the print-button click arms the flag
+ * a React tick before window.print() fires (covers the 100ms setTimeout gap).
+ *
+ * WHY THIS EXISTS:
+ * Framer Motion applies animation initial-states as inline styles
+ * (e.g. `style="opacity:0; transform:translateY(24px)"`).
+ * Inline styles have higher specificity than ANY stylesheet rule, including
+ * `!important`, so CSS cannot fix a blank print page — we must remove the
+ * `initial` prop entirely so the element renders at its final state.
+ */
+function useIsPrinting(externalOverride = false): boolean {
+  const [browserPrinting, setBrowserPrinting] = useState(false);
+  useEffect(() => {
+    const before = (): void => setBrowserPrinting(true);
+    const after  = (): void => setBrowserPrinting(false);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint',  after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint',  after);
+    };
+  }, []);
+  return browserPrinting || externalOverride;
+}
 
 const TAB_IDS = ['grades', 'attendance', 'exemptions', 'tests'] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -162,6 +204,8 @@ function buildTSVForTab(tab: TabId, rows: ReportRow[], edits: EditMap): string {
 
 function downloadCSV(rows: ReportRow[], edits: EditMap, className: string): void {
   const BOM = '\uFEFF'; // UTF-8 BOM for Hebrew Excel compatibility
+  // Row 1: class title so Excel opens with a clear header
+  const titleRow = `"דוח כיתתי - ${className.replace(/"/g, '""')}"`;
   const headers = [
     'שם תלמיד', 'קוד תלמיד', 'ממוצע מבחנים', 'ציון התנהגות',
     'ציון מומלץ', 'ציון סופי', 'הערה מילולית', 'חיסורים',
@@ -181,12 +225,53 @@ function downloadCSV(rows: ReportRow[], edits: EditMap, className: string): void
       row.unexcusedAbsences,
     ].join(',');
   });
-  const csv = BOM + [headers.join(','), ...csvRows].join('\n');
+  const csv = BOM + [titleRow, headers.join(','), ...csvRows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `דוח-ציונים-${className}.csv`;
+  // File name includes class name so saved files are easy to identify
+  a.download = `דוח-כיתה-${className}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Full-year Excel export: flat comparison table.
+ * Columns: שם תלמיד | ממוצע מחצית א' | ממוצע מחצית ב' | שינוי | ציון מומלץ
+ * No charts — pure data for teachers to paste into external tools.
+ */
+function downloadFullYearCSV(merged: MergedStudentRow[], className: string): void {
+  const BOM = '\uFEFF';
+  const titleRow = `"דוח שנה שלמה - ${className.replace(/"/g, '""')}"`;
+  const headers = [
+    'שם תלמיד',
+    "ממוצע מחצית א'",
+    "ממוצע מחצית ב'",
+    'שינוי',
+    'ציון מומלץ',
+  ];
+  const csvRows = merged.map((row) => {
+    const semA = row.semA?.fitnessAvg ?? '';
+    const semB = row.semB?.fitnessAvg ?? '';
+    const delta = row.semA !== null && row.semB !== null
+      ? (row.delta > 0 ? `+${row.delta}` : String(row.delta))
+      : '';
+    const recommended = row.semB?.recommendedFinalGrade ?? row.semA?.recommendedFinalGrade ?? '';
+    return [
+      `${row.firstName} ${row.lastName}`,
+      semA,
+      semB,
+      delta,
+      recommended,
+    ].join(',');
+  });
+  const csv = BOM + [titleRow, headers.join(','), ...csvRows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `דוח-שנה-שלמה-${className}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -313,101 +398,112 @@ function FinalGradesTab({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)] print:shadow-none print:border-slate-200">
-      <div
-        className="grid gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 print:bg-slate-50"
-        style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 3fr' }}
-      >
-        {['שם תלמיד', 'ממוצע מבחנים', 'ציון התנהגות'].map((h) => (
-          <span key={h} className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</span>
-        ))}
-        {/* Glowing "Recommended Grade" header */}
-        <span className="text-[11px] font-black uppercase tracking-wider bg-gradient-to-l from-indigo-600 to-violet-600 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(99,102,241,0.35)]">
-          ציון מומלץ ✦
-        </span>
-        {['ציון סופי', 'הערה מילולית'].map((h) => (
-          <span key={h} className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</span>
-        ))}
-      </div>
+      <table className="w-full border-collapse">
+        <colgroup>
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '38%' }} />
+        </colgroup>
+        <thead className="bg-slate-50/80 print:bg-slate-50">
+          <tr className="border-b border-slate-100">
+            {['שם תלמיד', 'ממוצע מבחנים', 'ציון התנהגות'].map((h) => (
+              <th key={h} className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</th>
+            ))}
+            <th className="px-4 py-3 text-start text-[11px] font-black uppercase tracking-wider bg-gradient-to-l from-indigo-600 to-violet-600 bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(99,102,241,0.35)] print:text-indigo-700 print:bg-none">
+              ציון מומלץ ✦
+            </th>
+            {['ציון סופי', 'הערה מילולית'].map((h) => (
+              <th key={h} className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const edit = localEdits.get(row.studentId);
+            const gradeDisplay = edit?.finalGrade ?? String(row.recommendedFinalGrade);
+            const commentDisplay = edit?.comment ?? row.suggestedComment;
+            const gradeNum = parseInt(gradeDisplay, 10);
+            const isSuggested =
+              !row.teacherFinalGrade &&
+              parseInt(gradeDisplay, 10) === row.recommendedFinalGrade &&
+              commentDisplay === row.suggestedComment;
 
-      <div className="divide-y divide-slate-50">
-        {rows.map((row) => {
-          const edit = localEdits.get(row.studentId);
-          const gradeDisplay = edit?.finalGrade ?? String(row.recommendedFinalGrade);
-          const commentDisplay = edit?.comment ?? row.suggestedComment;
-          const gradeNum = parseInt(gradeDisplay, 10);
-          const isSuggested =
-            !row.teacherFinalGrade &&
-            parseInt(gradeDisplay, 10) === row.recommendedFinalGrade &&
-            commentDisplay === row.suggestedComment;
-
-          return (
-            <div
-              key={row.studentId}
-              className="grid items-center gap-3 px-4 py-3 hover:bg-indigo-50/30 transition-colors"
-              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 3fr' }}
-            >
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
-                <p className="text-xs text-slate-400 font-mono">{row.studentCode}</p>
-                {row.unexcusedAbsences > 0 && (
-                  <span className="text-[10px] font-bold text-red-600 bg-red-50 rounded-full px-1.5 py-px">
-                    {row.unexcusedAbsences} חיסורים
-                  </span>
-                )}
-              </div>
-              <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.fitnessAvg))}>
-                {row.fitnessAvg > 0 ? row.fitnessAvg : '—'}
-              </span>
-              <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.conductScore))}>
-                {row.conductScore > 0 ? row.conductScore : '—'}
-              </span>
-              {/* Recommended — highlighted badge */}
-              <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 text-sm font-black tabular-nums text-indigo-700 shadow-[0_0_10px_rgba(99,102,241,0.15)]">
-                {row.recommendedFinalGrade}
-              </span>
-              {/* Final grade — editable */}
-              {printMode ? (
-                <span className={cn('text-lg font-extrabold tabular-nums', !isNaN(gradeNum) && gradeColor(gradeNum))}>
-                  {gradeDisplay || '—'}
-                </span>
-              ) : (
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={gradeDisplay}
-                  onChange={(e) => onEditGrade(row.studentId, e.target.value)}
-                  className={cn(
-                    'h-9 w-16 text-center font-extrabold text-base rounded-lg border-slate-200 bg-white/80',
-                    'focus-visible:ring-indigo-400 tabular-nums',
-                    !isNaN(gradeNum) && gradeNum >= 90 && 'text-emerald-600',
-                    !isNaN(gradeNum) && gradeNum >= 75 && gradeNum < 90 && 'text-blue-600',
-                    !isNaN(gradeNum) && gradeNum >= 60 && gradeNum < 75 && 'text-amber-600',
-                    !isNaN(gradeNum) && gradeNum < 60 && 'text-red-600',
+            return (
+              <tr key={row.studentId} className="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
+                <td className="px-4 py-3 align-middle">
+                  <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
+                  <p className="text-xs text-slate-400 font-mono">{row.studentCode}</p>
+                  {row.unexcusedAbsences > 0 && (
+                    <span className="text-[10px] font-bold text-red-600 bg-red-50 rounded-full px-1.5 py-px">
+                      {row.unexcusedAbsences} חיסורים
+                    </span>
                   )}
-                  aria-label={`ציון סופי עבור ${row.firstName} ${row.lastName}`}
-                />
-              )}
-              <div className="flex items-center gap-1.5">
-                <CommentCombobox
-                  value={commentDisplay}
-                  onChange={(v) => onEditComment(row.studentId, v)}
-                  bank={bank}
-                  printMode={printMode}
-                />
-                {isSuggested && !printMode && (
-                  <span
-                    className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-px text-[9px] font-bold text-indigo-500 whitespace-nowrap"
-                    title="הוצע על ידי המערכת"
-                  >
-                    AI
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.fitnessAvg))}>
+                    {row.fitnessAvg > 0 ? row.fitnessAvg : '—'}
                   </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.conductScore))}>
+                    {row.conductScore > 0 ? row.conductScore : '—'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 text-sm font-black tabular-nums text-indigo-700 shadow-[0_0_10px_rgba(99,102,241,0.15)]">
+                    {row.recommendedFinalGrade}
+                  </span>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  {printMode ? (
+                    <span className={cn('text-lg font-extrabold tabular-nums', !isNaN(gradeNum) && gradeColor(gradeNum))}>
+                      {gradeDisplay || '—'}
+                    </span>
+                  ) : (
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={gradeDisplay}
+                      onChange={(e) => onEditGrade(row.studentId, e.target.value)}
+                      className={cn(
+                        'h-9 w-16 text-center font-extrabold text-base rounded-lg border-slate-200 bg-white/80',
+                        'focus-visible:ring-indigo-400 tabular-nums',
+                        !isNaN(gradeNum) && gradeNum >= 90 && 'text-emerald-600',
+                        !isNaN(gradeNum) && gradeNum >= 75 && gradeNum < 90 && 'text-blue-600',
+                        !isNaN(gradeNum) && gradeNum >= 60 && gradeNum < 75 && 'text-amber-600',
+                        !isNaN(gradeNum) && gradeNum < 60 && 'text-red-600',
+                      )}
+                      aria-label={`ציון סופי עבור ${row.firstName} ${row.lastName}`}
+                    />
+                  )}
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <div className="flex items-center gap-1.5">
+                    <CommentCombobox
+                      value={commentDisplay}
+                      onChange={(v) => onEditComment(row.studentId, v)}
+                      bank={bank}
+                      printMode={printMode}
+                    />
+                    {isSuggested && !printMode && (
+                      <span
+                        className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-px text-[9px] font-bold text-indigo-500 whitespace-nowrap"
+                        title="הוצע על ידי המערכת"
+                      >
+                        AI
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -428,61 +524,76 @@ function AttendanceTab({ rows, localEdits, bank, onEditComment, printMode }: Att
   }
   return (
     <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
-      <div
-        className="grid gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3"
-        style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 3fr' }}
-      >
-        {['שם תלמיד', 'שיעורים', 'חיסורים', 'אחוז נוכחות', 'סטטוס', 'הערה מילולית'].map((h) => (
-          <span key={h} className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</span>
-        ))}
-      </div>
-      <div className="divide-y divide-slate-50">
-        {rows.map((row) => {
-          const present = row.totalLessons - row.unexcusedAbsences;
-          const pct = row.totalLessons > 0 ? Math.round((present / row.totalLessons) * 100) : 100;
-          const edit = localEdits.get(row.studentId);
-          const commentDisplay = edit?.comment ?? row.suggestedComment;
-          return (
-            <div
-              key={row.studentId}
-              className="grid items-center gap-3 px-4 py-3 hover:bg-indigo-50/30 transition-colors"
-              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 3fr' }}
-            >
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
-                <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
-              </div>
-              <span className="text-sm font-semibold text-slate-700 tabular-nums">{row.totalLessons}</span>
-              <span className={cn('text-sm font-bold tabular-nums', row.unexcusedAbsences > 3 ? 'text-red-600' : 'text-slate-700')}>
-                {row.unexcusedAbsences}
-              </span>
-              <div className="flex items-center gap-2">
-                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
-                  <motion.div
-                    className={cn('h-full rounded-full', pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500')}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ ease: EASE, duration: 0.8 }}
+      <table className="w-full border-collapse">
+        <colgroup>
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '14%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '38%' }} />
+        </colgroup>
+        <thead className="bg-slate-50/80">
+          <tr className="border-b border-slate-100">
+            {['שם תלמיד', 'שיעורים', 'חיסורים', 'אחוז נוכחות', 'סטטוס', 'הערה מילולית'].map((h) => (
+              <th key={h} className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const present = row.totalLessons - row.unexcusedAbsences;
+            const pct = row.totalLessons > 0 ? Math.round((present / row.totalLessons) * 100) : 100;
+            const edit = localEdits.get(row.studentId);
+            const commentDisplay = edit?.comment ?? row.suggestedComment;
+            return (
+              <tr key={row.studentId} className="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
+                <td className="px-4 py-3 align-middle">
+                  <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
+                  <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className="text-sm font-semibold text-slate-700 tabular-nums">{row.totalLessons}</span>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className={cn('text-sm font-bold tabular-nums', row.unexcusedAbsences > 3 ? 'text-red-600' : 'text-slate-700')}>
+                    {row.unexcusedAbsences}
+                  </span>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 print:hidden">
+                      <motion.div
+                        className={cn('h-full rounded-full', pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500')}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ ease: EASE, duration: 0.8 }}
+                      />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700 tabular-nums">{pct}%</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <span className={cn(
+                    'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold',
+                    pct >= 80 ? 'bg-emerald-50 text-emerald-700' : pct >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700',
+                  )}>
+                    {pct >= 80 ? 'תקין' : pct >= 60 ? 'לתשומת לב' : 'חריג'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 align-middle">
+                  <CommentCombobox
+                    value={commentDisplay}
+                    onChange={(v) => onEditComment(row.studentId, v)}
+                    bank={bank}
+                    printMode={printMode}
                   />
-                </div>
-                <span className="text-sm font-semibold text-slate-700 tabular-nums">{pct}%</span>
-              </div>
-              <span className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold',
-                pct >= 80 ? 'bg-emerald-50 text-emerald-700' : pct >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700',
-              )}>
-                {pct >= 80 ? 'תקין' : pct >= 60 ? 'לתשומת לב' : 'חריג'}
-              </span>
-              <CommentCombobox
-                value={commentDisplay}
-                onChange={(v) => onEditComment(row.studentId, v)}
-                bank={bank}
-                printMode={printMode}
-              />
-            </div>
-          );
-        })}
-      </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -512,39 +623,45 @@ function ExemptionsTab({ rows, localEdits, bank, onEditComment, printMode }: Exe
     <div className="space-y-2">
       <p className="text-sm text-slate-500 mb-3">תלמידים עם 3 חיסורים ומעלה — {atRisk.length} תלמידים</p>
       <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
-        <div
-          className="grid gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3"
-          style={{ gridTemplateColumns: '2fr 1fr 3fr' }}
-        >
-          {['שם תלמיד', 'חיסורים', 'הערה מילולית'].map((h) => (
-            <span key={h} className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</span>
-          ))}
-        </div>
-        <div className="divide-y divide-slate-50">
-          {atRisk.map((row) => {
-            const edit = localEdits.get(row.studentId);
-            const commentDisplay = edit?.comment ?? row.suggestedComment;
-            return (
-              <div
-                key={row.studentId}
-                className="grid items-center gap-3 px-4 py-3 hover:bg-indigo-50/30 transition-colors"
-                style={{ gridTemplateColumns: '2fr 1fr 3fr' }}
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
-                  <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
-                </div>
-                <span className="text-lg font-extrabold text-red-600 tabular-nums">{row.unexcusedAbsences}</span>
-                <CommentCombobox
-                  value={commentDisplay}
-                  onChange={(v) => onEditComment(row.studentId, v)}
-                  bank={bank}
-                  printMode={printMode}
-                />
-              </div>
-            );
-          })}
-        </div>
+        <table className="w-full border-collapse">
+          <colgroup>
+            <col style={{ width: '35%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '50%' }} />
+          </colgroup>
+          <thead className="bg-slate-50/80">
+            <tr className="border-b border-slate-100">
+              {['שם תלמיד', 'חיסורים', 'הערה מילולית'].map((h) => (
+                <th key={h} className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {atRisk.map((row) => {
+              const edit = localEdits.get(row.studentId);
+              const commentDisplay = edit?.comment ?? row.suggestedComment;
+              return (
+                <tr key={row.studentId} className="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
+                  <td className="px-4 py-3 align-middle">
+                    <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
+                    <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
+                  </td>
+                  <td className="px-4 py-3 align-middle">
+                    <span className="text-lg font-extrabold text-red-600 tabular-nums">{row.unexcusedAbsences}</span>
+                  </td>
+                  <td className="px-4 py-3 align-middle">
+                    <CommentCombobox
+                      value={commentDisplay}
+                      onChange={(v) => onEditComment(row.studentId, v)}
+                      bank={bank}
+                      printMode={printMode}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -622,45 +739,60 @@ function TestResultsTab({ rows, localEdits, bank, onEditComment, printMode }: Te
       </div>
       {selectedTestId && (
         <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
-          <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-            <p className="text-sm font-bold text-slate-700">
-              תוצאות — {selectedName}
-              <span className="ms-2 text-xs font-normal text-slate-400">({filteredRows.length} תלמידים)</span>
-            </p>
-          </div>
-          <div className="divide-y divide-slate-50">
-            {filteredRows.map((row, i) => {
-              const edit = localEdits.get(row.studentId);
-              const commentDisplay = edit?.comment ?? row.suggestedComment;
-              return (
-                <div
-                  key={row.studentId}
-                  className="grid items-center gap-4 px-4 py-3 hover:bg-indigo-50/30 transition-colors"
-                  style={{ gridTemplateColumns: 'auto 1fr auto 3fr' }}
-                >
-                  <span className={cn(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold',
-                    i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-slate-100 text-slate-600' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-slate-400',
-                  )}>
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
-                    <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
-                  </div>
-                  <span className={cn('text-xl font-extrabold tabular-nums', gradeColor(row.testGrade ?? 0))}>
-                    {row.testGrade}
-                  </span>
-                  <CommentCombobox
-                    value={commentDisplay}
-                    onChange={(v) => onEditComment(row.studentId, v)}
-                    bank={bank}
-                    printMode={printMode}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          <table className="w-full border-collapse">
+            <colgroup>
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '30%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '55%' }} />
+            </colgroup>
+            <thead className="bg-slate-50/80">
+              <tr className="border-b border-slate-100">
+                <th className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">#</th>
+                <th className="px-4 py-3 text-start text-sm font-bold text-slate-700">
+                  תוצאות — {selectedName}
+                  <span className="ms-2 text-xs font-normal text-slate-400">({filteredRows.length} תלמידים)</span>
+                </th>
+                <th className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">ציון</th>
+                <th className="px-4 py-3 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">הערה מילולית</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row, i) => {
+                const edit = localEdits.get(row.studentId);
+                const commentDisplay = edit?.comment ?? row.suggestedComment;
+                return (
+                  <tr key={row.studentId} className="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
+                    <td className="px-4 py-3 align-middle">
+                      <span className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold',
+                        i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-slate-100 text-slate-600' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-slate-400',
+                      )}>
+                        {i + 1}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <p className="text-sm font-semibold text-slate-800">{row.firstName} {row.lastName}</p>
+                      <p className="font-mono text-xs text-slate-400">{row.studentCode}</p>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <span className={cn('text-xl font-extrabold tabular-nums', gradeColor(row.testGrade ?? 0))}>
+                        {row.testGrade}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 align-middle">
+                      <CommentCombobox
+                        value={commentDisplay}
+                        onChange={(v) => onEditComment(row.studentId, v)}
+                        bank={bank}
+                        printMode={printMode}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -844,9 +976,484 @@ function SyncDialog({ open, onClose, onApply, rows }: SyncDialogProps): React.JS
   );
 }
 
+// ─── Full Year Annual Summary ──────────────────────────────────────────────────
+
+interface MergedStudentRow {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  semA: ReportRow | null;
+  semB: ReportRow | null;
+  /** fitnessAvg change: semB − semA. 0 when either semester is missing. */
+  delta: number;
+}
+
+interface ChartPoint {
+  nameHe: string;
+  semA: number;
+  semB: number;
+}
+
+function buildMergedRows(rowsA: ReportRow[], rowsB: ReportRow[]): MergedStudentRow[] {
+  const mapA = new Map(rowsA.map((r) => [r.studentId, r]));
+  const mapB = new Map(rowsB.map((r) => [r.studentId, r]));
+  const allIds = new Set([...rowsA.map((r) => r.studentId), ...rowsB.map((r) => r.studentId)]);
+  return Array.from(allIds)
+    .map((id): MergedStudentRow => {
+      const a = mapA.get(id) ?? null;
+      const b = mapB.get(id) ?? null;
+      const source = (a ?? b)!;
+      return {
+        studentId: id,
+        firstName: source.firstName,
+        lastName: source.lastName,
+        semA: a,
+        semB: b,
+        delta: a && b ? b.fitnessAvg - a.fitnessAvg : 0,
+      };
+    })
+    .sort((x, y) => x.lastName.localeCompare(y.lastName, 'he'));
+}
+
+function buildChartData(rowsA: ReportRow[], rowsB: ReportRow[]): ChartPoint[] {
+  const aggA = new Map<string, { sum: number; count: number; nameHe: string }>();
+  const aggB = new Map<string, { sum: number; count: number; nameHe: string }>();
+
+  for (const row of rowsA) {
+    for (const t of row.testBreakdown) {
+      const e = aggA.get(t.testTypeId) ?? { sum: 0, count: 0, nameHe: t.nameHe };
+      e.sum += t.grade; e.count += 1;
+      aggA.set(t.testTypeId, e);
+    }
+  }
+  for (const row of rowsB) {
+    for (const t of row.testBreakdown) {
+      const e = aggB.get(t.testTypeId) ?? { sum: 0, count: 0, nameHe: t.nameHe };
+      e.sum += t.grade; e.count += 1;
+      aggB.set(t.testTypeId, e);
+    }
+  }
+
+  const allTestIds = new Set([...Array.from(aggA.keys()), ...Array.from(aggB.keys())]);
+  return Array.from(allTestIds).map((id): ChartPoint => {
+    const a = aggA.get(id);
+    const b = aggB.get(id);
+    return {
+      nameHe: (a ?? b)!.nameHe,
+      semA: a ? Math.round(a.sum / a.count) : 0,
+      semB: b ? Math.round(b.sum / b.count) : 0,
+    };
+  });
+}
+
+function TrendIndicator({ delta }: { delta: number }): React.JSX.Element {
+  if (delta === 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-400">
+        —
+      </span>
+    );
+  }
+  const isUp = delta > 0;
+  const abs = Math.abs(delta);
+  const strong = abs >= 5;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums',
+        isUp
+          ? strong
+            ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
+            : 'bg-emerald-50 text-emerald-600'
+          : strong
+            ? 'bg-red-100 text-red-700 ring-1 ring-red-200'
+            : 'bg-red-50 text-red-500',
+      )}
+    >
+      {isUp
+        ? <TrendingUp   className="h-3 w-3 shrink-0" aria-hidden="true" />
+        : <TrendingDown className="h-3 w-3 shrink-0" aria-hidden="true" />
+      }
+      {isUp ? '+' : ''}{delta}
+    </span>
+  );
+}
+
+// ─── Custom Recharts bar shapes — gradient fills ──────────────────────────────
+
+type BarShapeProps = { x?: number; y?: number; width?: number; height?: number };
+
+/** Violet→Indigo gradient bar for Semester A */
+function BarShapeA({ x = 0, y = 0, width = 0, height = 0 }: BarShapeProps): React.JSX.Element | null {
+  if (height <= 0 || width <= 0) return null;
+  return <rect x={x} y={y} width={width} height={height} fill="url(#barGradA)" rx={5} ry={5} />;
+}
+
+/** Emerald→Green gradient bar for Semester B */
+function BarShapeB({ x = 0, y = 0, width = 0, height = 0 }: BarShapeProps): React.JSX.Element | null {
+  if (height <= 0 || width <= 0) return null;
+  return <rect x={x} y={y} width={width} height={height} fill="url(#barGradB)" rx={5} ry={5} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FullYearSkeleton(): React.JSX.Element {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-slate-100" />)}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="h-36 rounded-2xl bg-slate-100" />
+        <div className="h-36 rounded-2xl bg-slate-100" />
+      </div>
+      <div className="h-64 rounded-2xl bg-slate-100" />
+      <div className="h-96 rounded-2xl bg-slate-100" />
+    </div>
+  );
+}
+
+interface FullYearViewProps {
+  rowsA: ReportRow[];
+  rowsB: ReportRow[];
+  isLoading: boolean;
+  classLabel: string;
+  /** Set to true before window.print() fires so all motion elements skip their
+   *  initial-invisible state and render at their final (opacity:1, y:0) values. */
+  printMode?: boolean;
+}
+
+function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }: FullYearViewProps): React.JSX.Element {
+  /** True whenever the browser is about to print (covers both the print button
+   *  and Ctrl+P). While true every motion element skips its initial state. */
+  const isPrinting = useIsPrinting(printMode);
+  // All hooks before any conditional return
+  const merged     = useMemo(() => buildMergedRows(rowsA, rowsB),   [rowsA, rowsB]);
+  const chartData  = useMemo(() => buildChartData(rowsA, rowsB),    [rowsA, rowsB]);
+
+  const classAvgA  = rowsA.length > 0
+    ? Math.round(rowsA.reduce((s, r) => s + r.fitnessAvg, 0) / rowsA.length) : 0;
+  const classAvgB  = rowsB.length > 0
+    ? Math.round(rowsB.reduce((s, r) => s + r.fitnessAvg, 0) / rowsB.length) : 0;
+  const totalAbsences = rowsA.reduce((s, r) => s + r.unexcusedAbsences, 0)
+                      + rowsB.reduce((s, r) => s + r.unexcusedAbsences, 0);
+  const studentCount = merged.length;
+
+  const topImprover = useMemo((): MergedStudentRow | null => {
+    const candidates = merged.filter((r) => r.semA !== null && r.semB !== null && r.delta > 0);
+    if (candidates.length === 0) return null;
+    return candidates.reduce((best, r) => r.delta > best.delta ? r : best);
+  }, [merged]);
+
+  const perfectAttendance = useMemo(
+    () => merged.filter((r) =>
+      (r.semA?.unexcusedAbsences ?? 1) === 0 &&
+      (r.semB?.unexcusedAbsences ?? 1) === 0 &&
+      (r.semA !== null || r.semB !== null),
+    ),
+    [merged],
+  );
+
+  const printDate = new Date().toLocaleDateString('he-IL', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  if (isLoading) return <FullYearSkeleton />;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Print-only annual report header ──────────────────────────── */}
+      <div className="hidden print:block border-b-2 border-slate-800 pb-5 mb-2" dir="rtl">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">דו&quot;ח ריכוז ציונים שנתי — תשפ&quot;ו</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-700">כיתה: {classLabel}</p>
+          </div>
+          <div className="text-end text-xs text-slate-500 space-y-0.5">
+            <p>תאריך הפקה: {printDate}</p>
+            <p>סה&quot;כ תלמידים: {studentCount}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Summary stat cards ────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {(
+          [
+            { label: 'תלמידים',          value: studentCount,  icon: Users,       color: 'text-indigo-600',  bg: 'bg-indigo-50'  },
+            { label: "ממוצע מחצית א'",   value: classAvgA,     icon: TrendingUp,  color: 'text-violet-600',  bg: 'bg-violet-50'  },
+            { label: "ממוצע מחצית ב'",   value: classAvgB,     icon: TrendingUp,  color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'חיסורים שנתיים',   value: totalAbsences, icon: BookOpen,    color: 'text-amber-600',   bg: 'bg-amber-50'   },
+          ] satisfies Array<{ label: string; value: number; icon: React.ElementType; color: string; bg: string }>
+        ).map(({ label, value, icon: Icon, color, bg }, idx) => (
+          <motion.div
+            key={label}
+            initial={isPrinting ? false : { opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: isPrinting ? 0 : idx * 0.08, type: 'spring', stiffness: 320, damping: 26 }}
+            whileHover={isPrinting ? undefined : { y: -6, scale: 1.03, transition: { type: 'spring', stiffness: 400, damping: 28 } }}
+            className="relative overflow-hidden rounded-2xl bg-white/85 backdrop-blur-2xl border border-white/30 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.07)] hover:shadow-[0_20px_50px_rgb(0,0,0,0.13)] transition-shadow cursor-default print:shadow-none print:border-slate-200 print:bg-white print:border-slate-200"
+          >
+            {/* Decorative gradient orb — pure decoration, hidden in print */}
+            <div className={cn('pointer-events-none absolute -end-5 -top-5 h-20 w-20 rounded-full opacity-25 blur-2xl print:hidden', bg)} aria-hidden="true" />
+            <div className={cn('relative mb-2.5 flex h-9 w-9 items-center justify-center rounded-xl shadow-sm', bg)}>
+              <Icon className={cn('h-4 w-4', color)} aria-hidden="true" />
+            </div>
+            <div className={cn('relative text-3xl font-extrabold tabular-nums', color)}>{value}</div>
+            <div className="relative mt-0.5 text-xs font-medium text-slate-500">{label}</div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* ── Insights ──────────────────────────────────────────────────── */}
+      {(topImprover !== null || perfectAttendance.length > 0) && (
+        <motion.div
+          initial={isPrinting ? false : { opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isPrinting ? 0 : 0.35, ease: EASE, duration: 0.4 }}
+          className="grid gap-4 sm:grid-cols-2 print:grid-cols-2"
+        >
+          {/* Top improver */}
+          {topImprover !== null && (
+            <motion.div
+              whileHover={isPrinting ? undefined : { y: -4, scale: 1.02, transition: { type: 'spring', stiffness: 380, damping: 28 } }}
+              className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50/95 to-orange-50/95 backdrop-blur-sm p-5 shadow-sm hover:shadow-[0_12px_36px_rgba(245,158,11,0.20)] transition-shadow print:shadow-none print:border-amber-200 print:bg-amber-50"
+            >
+              {/* Decorative orb */}
+              <div className="pointer-events-none absolute -start-4 -bottom-4 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl print:hidden" aria-hidden="true" />
+              <div className="relative flex items-center gap-3 mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 shadow-sm">
+                  <TrendingUp className="h-5 w-5 text-amber-600" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500">תלמיד/ת השנה</p>
+                  <p className="text-xs font-medium text-amber-700">המשתפר/ת ביותר</p>
+                </div>
+              </div>
+              <p className="relative text-lg font-extrabold text-slate-800">
+                {topImprover.firstName} {topImprover.lastName}
+              </p>
+              <p className="relative mt-1 text-sm text-amber-700">
+                שיפור של{' '}
+                <span className="font-bold text-emerald-600">+{topImprover.delta}</span>
+                {' '}נקודות ממחצית א׳ למחצית ב׳
+              </p>
+            </motion.div>
+          )}
+
+          {/* Perfect attendance */}
+          {perfectAttendance.length > 0 && (
+            <motion.div
+              whileHover={isPrinting ? undefined : { y: -4, scale: 1.02, transition: { type: 'spring', stiffness: 380, damping: 28 } }}
+              className="relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 to-teal-50/95 backdrop-blur-sm p-5 shadow-sm hover:shadow-[0_12px_36px_rgba(16,185,129,0.18)] transition-shadow print:shadow-none print:border-emerald-200 print:bg-emerald-50"
+            >
+              {/* Decorative orb */}
+              <div className="pointer-events-none absolute -start-4 -bottom-4 h-24 w-24 rounded-full bg-emerald-200/30 blur-2xl print:hidden" aria-hidden="true" />
+              <div className="relative flex items-center gap-3 mb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 shadow-sm">
+                  <Star className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-500">שיאני הנוכחות</p>
+                  <p className="text-xs font-medium text-emerald-700">ללא חיסורים כל השנה</p>
+                </div>
+              </div>
+              <div className="relative flex flex-wrap gap-2">
+                {perfectAttendance.slice(0, 6).map((r) => (
+                  <span key={r.studentId} className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800 shadow-sm">
+                    {r.firstName} {r.lastName}
+                  </span>
+                ))}
+                {perfectAttendance.length > 6 && (
+                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-sm text-emerald-600">
+                    +{perfectAttendance.length - 6} נוספים
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </motion.div>
+      )}
+
+      {/* ── Performance bar chart ─────────────────────────────────────── */}
+      {chartData.length > 0 && (
+        <motion.div
+          initial={isPrinting ? false : { opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isPrinting ? 0 : 0.45, ease: EASE, duration: 0.4 }}
+          className="rounded-2xl border border-slate-200/80 bg-white/85 backdrop-blur-sm p-5 shadow-[0_4px_24px_rgba(15,23,42,0.07)] print:shadow-none print:border-slate-200 print:bg-white"
+          style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+        >
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <h2 className="text-sm font-bold text-slate-700">
+                ממוצע כיתתי לפי מבחן — השוואה בין מחצית א׳ למחצית ב׳
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-400">גבוה יותר = ביצועים טובים יותר</p>
+            </div>
+            {/* Custom legend pills */}
+            <div className="flex items-center gap-3 shrink-0 print:hidden">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-violet-700">
+                <span className="h-3 w-3 rounded-full bg-gradient-to-b from-violet-500 to-indigo-600 inline-block" />
+                מחצית א׳
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+                <span className="h-3 w-3 rounded-full bg-gradient-to-b from-emerald-400 to-green-600 inline-block" />
+                מחצית ב׳
+              </span>
+            </div>
+          </div>
+
+          {/* dir="ltr" keeps Recharts SVG rendering correct inside an RTL page */}
+          <div dir="ltr" className="relative mt-4 h-64">
+            {/* Hidden SVG — defines gradients used by BarShapeA / BarShapeB */}
+            <svg width="0" height="0" aria-hidden="true" style={{ position: 'absolute', overflow: 'hidden' }}>
+              <defs>
+                <linearGradient id="barGradA" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor="#7c3aed" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#4338ca" stopOpacity={0.88} />
+                </linearGradient>
+                <linearGradient id="barGradB" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor="#10b981" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#059669" stopOpacity={0.88} />
+                </linearGradient>
+              </defs>
+            </svg>
+
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 44 }} barCategoryGap="32%">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                <XAxis
+                  dataKey="nameHe"
+                  tick={{ fontSize: 10, fill: '#64748b' }}
+                  angle={-35}
+                  textAnchor="end"
+                  interval={0}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tick={{ fontSize: 10, fill: '#94a3b8' }}
+                  width={28}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(value: number, name: string) => [
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{value}</span>,
+                    name === 'semA' ? "מחצית א'" : "מחצית ב'",
+                  ]}
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 12,
+                    direction: 'rtl',
+                    border: '1px solid rgba(226,232,240,0.9)',
+                    boxShadow: '0 12px 32px rgba(15,23,42,0.15)',
+                    backdropFilter: 'blur(8px)',
+                    background: 'rgba(255,255,255,0.96)',
+                  }}
+                  cursor={{ fill: 'rgba(99,102,241,0.05)', radius: 6 }}
+                />
+                {/* Legend is replaced by custom pills above — hide built-in */}
+                <Legend wrapperStyle={{ display: 'none' }} />
+                <Bar dataKey="semA" shape={<BarShapeA />} maxBarSize={26} name="semA" />
+                <Bar dataKey="semB" shape={<BarShapeB />} maxBarSize={26} name="semB" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── Comparative table ─────────────────────────────────────────── */}
+      <motion.div
+        initial={isPrinting ? false : { opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: isPrinting ? 0 : 0.58, ease: EASE, duration: 0.4 }}
+      >
+      {merged.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 py-14 text-center">
+          <BookOpen className="h-8 w-8 text-slate-300" aria-hidden="true" />
+          <p className="font-semibold text-slate-600">אין נתוני שנה שלמה להצגה</p>
+          <p className="text-sm text-slate-400">יש לוודא שנרשמו ציונים במחצית א׳ ו/או ב׳</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm overflow-hidden shadow-[0_4px_20px_rgba(15,23,42,0.06)] print:shadow-none">
+          <table className="w-full text-sm" dir="rtl">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/80 print:bg-slate-100">
+                <th className="py-3 ps-5 pe-3 text-start font-semibold text-slate-600">#</th>
+                <th className="py-3 px-3 text-start font-semibold text-slate-700">שם תלמיד/ה</th>
+                <th className="py-3 px-3 text-center font-semibold text-violet-600">מבחנים מחצית א׳</th>
+                <th className="py-3 px-3 text-center font-semibold text-emerald-600">מבחנים מחצית ב׳</th>
+                <th className="py-3 px-3 text-center font-semibold text-slate-600">מגמה</th>
+                <th className="py-3 ps-3 pe-5 text-center font-semibold text-slate-700">ציון מומלץ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {merged.map((row, idx) => {
+                const recommended = row.semB?.recommendedFinalGrade ?? row.semA?.recommendedFinalGrade ?? 0;
+                return (
+                  <motion.tr
+                    key={row.studentId}
+                    initial={isPrinting ? false : { opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: isPrinting ? 0 : 0.65 + idx * 0.025, ease: EASE, duration: 0.28 }}
+                    className={cn(
+                      'border-b border-slate-100 hover:bg-indigo-50/40 transition-colors duration-150',
+                      idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
+                    )}
+                  >
+                    <td className="py-3 ps-5 pe-3 text-slate-400 text-xs tabular-nums">{idx + 1}</td>
+                    <td className="py-3 px-3 font-semibold text-slate-800">
+                      {row.firstName} {row.lastName}
+                    </td>
+                    <td className="py-3 px-3 text-center tabular-nums">
+                      {row.semA !== null
+                        ? <span className={cn('font-bold', gradeColor(row.semA.fitnessAvg))}>{row.semA.fitnessAvg}</span>
+                        : <span className="text-slate-300 text-xs">אין נתון</span>
+                      }
+                    </td>
+                    <td className="py-3 px-3 text-center tabular-nums">
+                      {row.semB !== null
+                        ? <span className={cn('font-bold', gradeColor(row.semB.fitnessAvg))}>{row.semB.fitnessAvg}</span>
+                        : <span className="text-slate-300 text-xs">אין נתון</span>
+                      }
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <TrendIndicator delta={row.delta} />
+                    </td>
+                    <td className="py-3 ps-3 pe-5 text-center">
+                      <span className={cn(
+                        'inline-flex items-center justify-center rounded-xl px-2.5 py-0.5 text-sm font-extrabold tabular-nums',
+                        recommended >= 90 ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                          : recommended >= 75 ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+                          : recommended >= 60 ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+                          : 'bg-red-50 text-red-700 ring-1 ring-red-200',
+                      )}>
+                        {recommended}
+                      </span>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReportsPage(): React.JSX.Element {
+  // Sidebar is boss — read active semester from context
+  const { semesterFilter, activeSemester } = useSemester();
+  // Local "שנה שלמה" override — teacher can widen to full year on this page
+  const [showFullYear, setShowFullYear] = useState(false);
+
   const [selectedClassId, setSelectedClassId] = useState('');
   const [activeTab, setActiveTab] = useState<TabId>('grades');
   const [localEdits, setLocalEdits] = useState<EditMap>(new Map());
@@ -859,18 +1466,33 @@ export default function ReportsPage(): React.JSX.Element {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('alpha');
 
+  // 'YEAR' toggle overrides sidebar; otherwise sidebar semesterFilter is the source of truth
+  const semesterParam = showFullYear ? undefined : semesterFilter;
+
   const { data: classes, isLoading: classesLoading } = useClasses();
-  const { data: rows, isLoading: reportLoading, mutate: mutateReport } = useClassReport(selectedClassId);
+  const { data: rows, isLoading: reportLoading, mutate: mutateReport } = useClassReport(selectedClassId, semesterParam);
   const { data: bank = [] } = useCommentsBank();
 
+  // Full-year parallel fetches — only active when showFullYear is toggled on
+  const fullYearClassId = showFullYear ? selectedClassId : '';
+  const { data: rowsA = [], isLoading: loadingA } = useClassReport(fullYearClassId, 'A');
+  const { data: rowsB = [], isLoading: loadingB } = useClassReport(fullYearClassId, 'B');
+
   const selectedClass = classes?.find((c) => c.id === selectedClassId);
+
+  // Sidebar is the source of truth: switching A↔B collapses the Full Year view.
+  // This prevents the state lock where the page stays in Full Year after the
+  // teacher selects a specific semester in the sidebar.
+  useEffect(() => {
+    setShowFullYear(false);
+  }, [activeSemester]);
 
   // Initialise local edits whenever new report data arrives
   useEffect(() => {
     if (rows) setLocalEdits(buildInitialEdits(rows));
   }, [rows]);
 
-  // Auto-select first class
+  // Auto-select first class when the class list loads or changes
   useEffect(() => {
     if (!selectedClassId && classes && classes.length > 0 && classes[0]) {
       setSelectedClassId(classes[0].id);
@@ -883,6 +1505,13 @@ export default function ReportsPage(): React.JSX.Element {
   }, [selectedClassId]);
 
   const reportRows = rows ?? [];
+
+  // Merged rows for full-year Excel export — kept at page level so the
+  // export button can call downloadFullYearCSV without drilling into FullYearView.
+  const mergedForExport = useMemo(
+    () => (showFullYear ? buildMergedRows(rowsA, rowsB) : []),
+    [showFullYear, rowsA, rowsB],
+  );
 
   /** Rows sorted by teacher's chosen sort, or by custom Mashov order */
   const sortedRows = useMemo<ReportRow[]>(() => {
@@ -983,15 +1612,162 @@ export default function ReportsPage(): React.JSX.Element {
       {/* ── Print styles ──────────────────────────────────────────────────── */}
       <style>{`
         @media print {
+          /* ── 1. Force exact color rendering (charts, badges, grade colours) ── */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* ── 2. Reset ancestor containers that clip to one viewport height ── */
+          html, body, #__next, main,
+          div[class*="h-screen"], div[class*="overflow-hidden"], div[class*="overflow-auto"] {
+            height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+
+          /* ── 3. Isolate the print area ─────────────────────────────────── */
           body * { visibility: hidden; }
           .print-area, .print-area * { visibility: visible; }
-          .print-area { position: fixed; inset: 0; padding: 24px; font-size: 12px; }
-          button, select { display: none !important; }
-          @page { margin: 16mm; }
+          .print-area {
+            position: absolute;
+            top: 0;
+            inset-inline-start: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 297mm;
+            margin: 0 auto;
+            padding: 0 6mm;
+            font-size: 10px;
+            color: #000;
+            direction: rtl;
+          }
+
+          /* ── 4. Force visibility — belt-and-suspenders on top of the JS fix ──
+             The JS isPrinting hook already removes initial:{opacity:0} props,
+             but this CSS acts as a second safety net in case any element still
+             carries an inline opacity/transform (e.g. exit animations mid-flight). */
+          .print-area * {
+            opacity: 1 !important;
+            transform: none !important;
+            animation: none !important;
+            transition: none !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            text-shadow: none !important;
+            overflow: visible !important;     /* don't clip content in print */
+            max-height: none !important;      /* no fixed-height containers hiding rows */
+          }
+
+          /* Recharts SVG: force all text and paths to be visible */
+          .print-area .recharts-text,
+          .print-area .recharts-cartesian-axis-tick-value,
+          .print-area text { fill: #334155 !important; color: #334155 !important; }
+          .print-area .recharts-cartesian-grid line { stroke: #e2e8f0 !important; }
+
+          /* Force ALL text to be readable — prevents white-on-white in any renderer */
+          .print-area { color: #0f172a; }
+
+          /* Force critical text colours so nothing renders white-on-white */
+          .print-area .text-slate-800,
+          .print-area .text-slate-900 { color: #0f172a !important; }
+          .print-area .text-slate-700 { color: #334155 !important; }
+          .print-area .text-slate-600 { color: #475569 !important; }
+          .print-area .text-slate-500 { color: #64748b !important; }
+          .print-area .text-slate-400 { color: #94a3b8 !important; }
+
+          /* Glassmorphism large-card backgrounds → white */
+          .print-area .bg-white\\/80,
+          .print-area .bg-white\\/70,
+          .print-area .bg-white\\/90 { background: white !important; }
+
+          /* ── 5. Preserve grade colour coding ────────────────────────────── */
+          .print-area .text-emerald-600 { color: #059669 !important; }
+          .print-area .text-blue-600    { color: #2563eb !important; }
+          .print-area .text-amber-600   { color: #d97706 !important; }
+          .print-area .text-red-600     { color: #dc2626 !important; }
+          .print-area .text-violet-600  { color: #7c3aed !important; }
+          .print-area .text-indigo-700  { color: #4338ca !important; }
+          .print-area .text-emerald-700 { color: #047857 !important; }
+          .print-area .text-amber-700   { color: #b45309 !important; }
+
+          /* ── 6. Preserve semantic background colours (stat cards, insights) */
+          .print-area [class~="bg-indigo-50"]   { background-color: #eef2ff !important; }
+          .print-area [class~="bg-violet-50"]   { background-color: #f5f3ff !important; }
+          .print-area [class~="bg-emerald-50"]  { background-color: #ecfdf5 !important; }
+          .print-area [class~="bg-amber-50"]    { background-color: #fffbeb !important; }
+          .print-area [class~="bg-amber-100"]   { background-color: #fef3c7 !important; }
+          .print-area [class~="bg-emerald-100"] { background-color: #d1fae5 !important; }
+          .print-area [class~="bg-slate-50"]    { background-color: #f8fafc !important; }
+          .print-area [class~="bg-slate-100"]   { background-color: #f1f5f9 !important; }
+
+          /* ── 6b. Preserve insight card gradient backgrounds ──────────────── */
+          .print-area [class*="from-amber-50"]   { background: linear-gradient(135deg, #fffbeb, #fff7ed) !important; }
+          .print-area [class*="from-emerald-50"] { background: linear-gradient(135deg, #ecfdf5, #f0fdfa) !important; }
+          /* Ring colours on recommended grade pills */
+          .print-area [class*="ring-emerald"] { outline: 1px solid #6ee7b7 !important; }
+          .print-area [class*="ring-blue"]    { outline: 1px solid #93c5fd !important; }
+          .print-area [class*="ring-amber"]   { outline: 1px solid #fcd34d !important; }
+          .print-area [class*="ring-red"]     { outline: 1px solid #fca5a5 !important; }
+
+          /* ── 7. Fix gradient text (bg-clip-text) → solid indigo ─────────── */
+          .print-area .bg-clip-text {
+            -webkit-text-fill-color: #4338ca !important;
+            background: none !important;
+          }
+
+          /* ── 8. Charts: never break across pages ─────────────────────────── */
+          .print-area .recharts-wrapper,
+          .print-area .recharts-responsive-container,
+          .print-area .h-64,
+          .print-area .h-56 {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* Insight cards: keep together */
+          .print-area .rounded-2xl { break-inside: avoid; page-break-inside: avoid; }
+
+          /* ── 9. Tables: header repeats, rows intact ──────────────────────── */
+          .print-area table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+          }
+          .print-area thead { display: table-header-group; }
+          .print-area tr    { break-inside: avoid; page-break-inside: avoid; }
+          .print-area td, .print-area th { padding: 5px 8px !important; font-size: 9px !important; }
+
+          /* ── 10. Symmetric grid columns in print ─────────────────────────── */
+          .print-area .sm\\:grid-cols-4 { grid-template-columns: repeat(4, 1fr) !important; }
+          .print-area .sm\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr) !important; }
+          .print-area .grid-cols-2     { grid-template-columns: repeat(2, 1fr) !important; }
+
+          /* ── 11. Hide interactive / decorative UI ────────────────────────── */
+          button, select, input[type="number"], input[type="text"], textarea {
+            display: none !important;
+          }
+
+          @page { margin: 15mm; size: A4 landscape; }
         }
       `}</style>
 
       <div className="space-y-6 print-area">
+        {/* ── Print-only class header — hidden in Full Year mode (FullYearView has its own) ── */}
+        {!showFullYear && (
+          <div className="hidden print:block border-b border-slate-300 pb-4 mb-6 text-center" dir="rtl">
+            <h1 className="text-2xl font-bold text-slate-900">
+              דוח ציונים כיתתי — {selectedClass?.name ?? ''}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {TAB_LABELS[activeTab]} &bull; {new Date().toLocaleDateString('he-IL')}
+            </p>
+          </div>
+        )}
+
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -1003,23 +1779,27 @@ export default function ReportsPage(): React.JSX.Element {
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2 print:hidden">
-            {/* Export Excel */}
+            {/* Export Excel — flat comparison table in Full Year mode; per-semester table otherwise */}
             <Button
               type="button"
               variant="outline"
-              disabled={sortedRows.length === 0}
-              onClick={() => downloadCSV(sortedRows, localEdits, selectedClass?.name ?? '')}
+              disabled={showFullYear ? mergedForExport.length === 0 : sortedRows.length === 0}
+              onClick={() =>
+                showFullYear
+                  ? downloadFullYearCSV(mergedForExport, selectedClass?.name ?? '')
+                  : downloadCSV(sortedRows, localEdits, selectedClass?.name ?? '')
+              }
               className="gap-2 rounded-xl border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 shadow-sm"
             >
               <Download className="h-4 w-4" aria-hidden="true" />
               ייצא לאקסל
             </Button>
 
-            {/* PDF */}
+            {/* PDF — prints FullYearView (with chart + insights) in Full Year mode */}
             <Button
               type="button"
               variant="outline"
-              disabled={sortedRows.length === 0}
+              disabled={showFullYear ? mergedForExport.length === 0 : sortedRows.length === 0}
               onClick={handlePrintPDF}
               className="gap-2 rounded-xl border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 shadow-sm"
             >
@@ -1100,6 +1880,45 @@ export default function ReportsPage(): React.JSX.Element {
               </Button>
             </motion.div>
           </div>
+        </div>
+
+        {/* ── Scope indicator — sidebar controls A/B; page adds "שנה שלמה" override ── */}
+        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 shadow-[0_2px_12px_rgba(15,23,42,0.06)] print:hidden flex items-center gap-4 flex-wrap">
+          {/* Active semester badge — always reflects the sidebar; never says שנה שלמה */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">
+              מחצית פעילה
+            </span>
+            <span
+              className="rounded-full px-3 py-1 text-[13px] font-bold"
+              style={{
+                background: activeSemester === 'A' ? 'rgba(139,92,246,0.12)' : 'rgba(34,197,94,0.12)',
+                color:      activeSemester === 'A' ? 'rgba(109,40,217,0.95)' : 'rgba(22,163,74,0.95)',
+                border: `1px solid ${activeSemester === 'A' ? 'rgba(139,92,246,0.28)' : 'rgba(34,197,94,0.28)'}`,
+              }}
+            >
+              {activeSemester === 'A' ? "מחצית א'" : "מחצית ב'"}
+            </span>
+          </div>
+
+          {/* Vertical divider */}
+          <div className="h-5 w-px bg-slate-200 shrink-0" aria-hidden="true" />
+
+          {/* ONE שנה שלמה toggle — the only place this label appears */}
+          <button
+            type="button"
+            onClick={() => setShowFullYear((v) => !v)}
+            className={cn(
+              'flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-bold transition-all duration-200',
+              showFullYear
+                ? 'bg-indigo-50 border border-indigo-200 text-indigo-700 shadow-[0_0_12px_rgba(99,102,241,0.15)]'
+                : 'border border-black/[0.08] bg-black/[0.04] text-slate-500 hover:bg-black/[0.07] hover:text-slate-700',
+            )}
+            aria-pressed={showFullYear}
+          >
+            <span>שנה שלמה ✦</span>
+            {showFullYear && <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+          </button>
         </div>
 
         {/* ── Prominent Class Selector ─────────────────────────────────────── */}
@@ -1216,46 +2035,56 @@ export default function ReportsPage(): React.JSX.Element {
           )}
         </AnimatePresence>
 
-        {/* ── Tabs ───────────────────────────────────────────────────────── */}
-        <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1 print:hidden">
-          {TAB_IDS.map((tab) => {
-            const Icon = TAB_ICONS[tab];
-            const active = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all duration-200',
-                  active
-                    ? 'bg-white shadow-sm text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-800',
-                )}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* ── Tabs — hidden in Full Year mode ────────────────────────────── */}
+        {!showFullYear && (
+          <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1 print:hidden">
+            {TAB_IDS.map((tab) => {
+              const Icon = TAB_ICONS[tab];
+              const active = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all duration-200',
+                    active
+                      ? 'bg-white shadow-sm text-indigo-700'
+                      : 'text-slate-600 hover:text-slate-800',
+                  )}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* ── Tab content ────────────────────────────────────────────────── */}
+        {/* ── Full Year View / Tab content ────────────────────────────── */}
         {!selectedClassId ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 py-14 text-center">
             <BookOpen className="h-8 w-8 text-slate-300" aria-hidden="true" />
             <p className="font-semibold text-slate-600">בחר כיתה להצגת הדוח</p>
           </div>
+        ) : showFullYear ? (
+          <FullYearView
+            rowsA={rowsA}
+            rowsB={rowsB}
+            isLoading={loadingA || loadingB}
+            classLabel={selectedClass?.name ?? ''}
+            printMode={printMode}
+          />
         ) : reportLoading ? (
           <ReportSkeleton />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
+              initial={printMode ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
+              exit={printMode ? undefined : { opacity: 0, y: -8 }}
               transition={{ ease: EASE, duration: 0.3 }}
             >
               {activeTab === 'grades' && (

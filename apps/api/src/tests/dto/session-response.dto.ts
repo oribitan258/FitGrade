@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Semester } from '@prisma/client';
 
 export class SessionResponseDto {
   @ApiProperty()
@@ -9,6 +10,9 @@ export class SessionResponseDto {
 
   @ApiProperty()
   testTypeId!: string;
+
+  @ApiProperty({ enum: Semester })
+  semester!: Semester;
 
   @ApiProperty()
   conductedAt!: Date;

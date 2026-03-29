@@ -36,6 +36,12 @@ enum AttendanceStatus {
   EXCUSED
 }
 
+enum ClassGenderType {
+  BOYS
+  GIRLS
+  MIXED
+}
+
 enum AuditAction {
   GRADE_OVERRIDE
   GRADE_ENTRY
@@ -44,6 +50,13 @@ enum AuditAction {
   STUDENT_ENROLLED
   STUDENT_REMOVED
   TALMIDAUT_ENTRY
+}
+
+enum TestCategory {
+  ENDURANCE      // סיבולת  — ריצות, מבחן ביפ
+  STRENGTH       // כוח     — כפיפות בטן, מתח, שכיבות סמיכה, תלייה, כדור כוח
+  SPEED_AGILITY  // מהירות וזריזות — ריצת 60מ, הלוך ושוב 4×10, קפיצה לרוחק
+  FLEXIBILITY    // גמישות  — כפיפת גו לפנים
 }
 
 // ─────────────────────────────────────────────
@@ -82,6 +95,13 @@ model Class {
   joinCodeExpiresAt DateTime? // null = never expires
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  /// Composition of the class: BOYS-only, GIRLS-only, or MIXED. Drives gender-split norm lookups.
+  genderType ClassGenderType @default(MIXED)
+
+  /// School grade level 1–12. Used to render "recommended" badges in the test picker.
+  /// null = legacy class created before this field was added.
+  gradeLevel Int?
 
   // ── Final-grade weights (must sum to 100) ─────────────────────────────
   // testWeight: percentage of the grade derived from physical fitness tests (0–100)
@@ -164,6 +184,15 @@ model FitnessTestType {
   // The GradingService uses this to correctly interpret NormTable minValue/maxValue bands.
   higherIsBetter Boolean         @default(false)
 
+  /// Logical grouping for the UI test picker (category tabs + icons).
+  category TestCategory @default(ENDURANCE)
+
+  /// Recommended minimum school grade (1–12). Display metadata only — never used to filter tests.
+  minGrade Int?
+
+  /// Recommended maximum school grade (1–12). Display metadata only — never used to filter tests.
+  maxGrade Int?
+
   createdAt DateTime @default(now())
 
   normTables NormTable[]
@@ -202,6 +231,7 @@ model NormTable {
 
 model TestSession {
   id          String    @id @default(cuid())
+  semester    Semester  @default(A) // Semester this session belongs to (A = first, B = second)
   conductedAt DateTime  @default(now())
   notes       String?
   isStopwatch Boolean   @default(false) // true = stopwatch mode was used
@@ -253,6 +283,7 @@ model AttendanceRecord {
   id                 String           @id @default(cuid())
   date               DateTime
   status             AttendanceStatus @default(PRESENT)
+  semester           Semester         @default(A) // Which semester this record belongs to
   notes              String?
   exemptionReason    String?          // Free-text reason; populated when status = EXCUSED
   exemptionExpiresAt DateTime?        // null = no automatic expiry
@@ -270,6 +301,7 @@ model AttendanceRecord {
 
   @@unique([classId, studentId, date])
   @@index([classId, date])
+  @@index([classId, semester])
   @@map("attendance_records")
 }
 
@@ -409,6 +441,7 @@ model ScheduleEntry {
   dayOfWeek Int      // 0–6 (0 = Sunday)
   period    Int      // 0-based period index
   startTime String   // "HH:MM" — denormalised for fast status computation
+  semester  Semester @default(A) // Which semester this timetable belongs to
 
   teacherId String
   teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
@@ -419,8 +452,8 @@ model ScheduleEntry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([teacherId, dayOfWeek, period])
-  @@index([teacherId, dayOfWeek])
+  @@unique([teacherId, dayOfWeek, period, semester])
+  @@index([teacherId, dayOfWeek, semester])
   @@map("schedule_entries")
 }
 

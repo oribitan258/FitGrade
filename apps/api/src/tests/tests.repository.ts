@@ -15,6 +15,9 @@ const TEST_TYPE_SELECT = {
   unit: true,
   isGlobal: true,
   higherIsBetter: true,
+  category: true,
+  minGrade: true,
+  maxGrade: true,
   createdAt: true,
 } as const;
 
@@ -22,6 +25,7 @@ const SESSION_SELECT = {
   id: true,
   classId: true,
   testTypeId: true,
+  semester: true,
   conductedAt: true,
   notes: true,
   isStopwatch: true,
@@ -86,6 +90,7 @@ export class TestsRepository {
     notes: string | undefined,
     isStopwatch: boolean,
     conductedAt?: Date,
+    semester?: import('@prisma/client').Semester,
   ): Promise<SessionResponseDto> {
     return this.prisma.testSession.create({
       data: {
@@ -94,6 +99,7 @@ export class TestsRepository {
         notes,
         isStopwatch,
         ...(conductedAt !== undefined ? { conductedAt } : {}),
+        ...(semester !== undefined ? { semester } : {}),
       },
       select: SESSION_SELECT,
     });

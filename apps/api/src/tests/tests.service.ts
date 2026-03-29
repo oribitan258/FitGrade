@@ -50,6 +50,7 @@ export class TestsService {
       dto.notes,
       dto.isStopwatch ?? false,
       dto.conductedAt !== undefined ? new Date(dto.conductedAt) : undefined,
+      dto.semester,
     );
 
     this.logger.log(

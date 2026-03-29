@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface RawScheduleEntry {
@@ -22,13 +22,16 @@ export class ScheduleRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns all schedule entries for the teacher on a given day of week,
+   * Returns all schedule entries for the teacher on a given day of week and semester,
    * ordered by period ascending. Joins with Class to get the class name.
-   * Run `pnpm exec prisma migrate dev` to activate the ScheduleEntry model.
    */
-  async findEntriesForDay(teacherId: string, dayOfWeek: number): Promise<RawScheduleEntry[]> {
+  async findEntriesForDay(
+    teacherId: string,
+    dayOfWeek: number,
+    semester: Semester = 'A',
+  ): Promise<RawScheduleEntry[]> {
     const entries = await this.db.findMany({
-      where: { teacherId, dayOfWeek },
+      where: { teacherId, dayOfWeek, semester },
       orderBy: { period: 'asc' },
       select: {
         period: true,
@@ -47,7 +50,7 @@ export class ScheduleRepository {
   }
 
   /**
-   * Upserts a single schedule slot (teacher + dayOfWeek + period is unique).
+   * Upserts a single schedule slot (teacher + dayOfWeek + period + semester is unique).
    * Creates a new entry or replaces the classId/startTime of an existing one.
    */
   async upsertEntry(
@@ -56,20 +59,26 @@ export class ScheduleRepository {
     period: number,
     startTime: string,
     classId: string,
+    semester: Semester = 'A',
   ): Promise<void> {
     await this.db.upsert({
-      where: { teacherId_dayOfWeek_period: { teacherId, dayOfWeek, period } },
+      where: { teacherId_dayOfWeek_period_semester: { teacherId, dayOfWeek, period, semester } },
       update: { classId, startTime },
-      create: { teacherId, dayOfWeek, period, startTime, classId },
+      create: { teacherId, dayOfWeek, period, startTime, classId, semester },
     });
   }
 
   /**
-   * Deletes a single schedule slot. No-ops if the slot was empty.
+   * Deletes a single schedule slot for the given semester. No-ops if the slot was empty.
    */
-  async deleteEntry(teacherId: string, dayOfWeek: number, period: number): Promise<void> {
+  async deleteEntry(
+    teacherId: string,
+    dayOfWeek: number,
+    period: number,
+    semester: Semester = 'A',
+  ): Promise<void> {
     await this.db.deleteMany({
-      where: { teacherId, dayOfWeek, period },
+      where: { teacherId, dayOfWeek, period, semester },
     });
   }
 }

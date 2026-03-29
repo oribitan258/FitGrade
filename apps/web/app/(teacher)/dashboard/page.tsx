@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import CountUp from 'react-countup';
 import type {
   BelowNormItem,
   ClassData,
-  DashboardClassStat,
+  ClassGenderType,
   DashboardStats,
   EventData,
   MissingResultItem,
   RecentSession,
   TopAchievementItem,
 } from '@fitgrade/types';
+import { formatClassWithGender } from '@/lib/class-utils';
 import { useClasses } from '@/hooks/use-classes';
 import { useDashboardStats } from '@/hooks/use-dashboard-stats';
 import { useTopAchievements } from '@/hooks/use-top-achievements';
@@ -58,10 +59,16 @@ import {
 import { useCurrentTeacher } from '@/hooks/use-current-teacher';
 import { useTodaySchedule } from '@/hooks/use-today-schedule';
 import type { TodayScheduleItem } from '@/hooks/use-today-schedule';
+import { useClassAverages } from '@/hooks/use-class-averages';
+import type { MonthlyClassAverage } from '@/hooks/use-class-averages';
+import { SemesterPanel } from '@/components/ui/semester-panel';
 import { apiRequest } from '@/lib/api-client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getHebrewGradeLabel } from '@fitgrade/types';
 import { TopResultsTicker } from '@/components/ui/top-results-ticker';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
+import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -108,11 +115,19 @@ function useTilt(maxDeg = 10): {
   const rawY  = useMotionValue(0);
   const rotateY = useSpring(useTransform(rawX, [-0.5, 0.5], [-maxDeg, maxDeg]), { stiffness: 300, damping: 28 });
   const rotateX = useSpring(useTransform(rawY, [-0.5, 0.5], [maxDeg, -maxDeg]), { stiffness: 300, damping: 28 });
+  const rafRef  = useRef<number | null>(null);
 
   function onMouseMove(e: React.MouseEvent<HTMLDivElement>): void {
-    const rect = e.currentTarget.getBoundingClientRect();
-    rawX.set((e.clientX - rect.left) / rect.width  - 0.5);
-    rawY.set((e.clientY - rect.top)  / rect.height - 0.5);
+    // Throttle to one update per animation frame — prevents saturating the JS
+    // main thread with mousemove callbacks at ~120Hz on high-refresh displays.
+    if (rafRef.current !== null) return;
+    const { clientX, clientY, currentTarget } = e;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const rect = currentTarget.getBoundingClientRect();
+      rawX.set((clientX - rect.left) / rect.width  - 0.5);
+      rawY.set((clientY - rect.top)  / rect.height - 0.5);
+    });
   }
   function onMouseLeave(): void { rawX.set(0); rawY.set(0); }
 
@@ -1112,19 +1127,26 @@ function AddStudentModal({
 
 // ─── Add Class Modal ──────────────────────────────────────────────────────────
 
-const GRADE_OPTIONS = ["ז'", "ח'", "ט'", "י'", 'י"א', 'י"ב'] as const;
+const GRADE_OPTIONS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ז'", "ח'", "ט'", "י'", 'י"א', 'י"ב'] as const;
 type GradeOption = typeof GRADE_OPTIONS[number];
+
+/** Maps the Hebrew grade label to its numeric school grade level (1–12). */
+const GRADE_OPTION_TO_INT: Record<GradeOption, number> = {
+  "א'": 1, "ב'": 2, "ג'": 3, "ד'": 4, "ה'": 5, "ו'": 6,
+  "ז'": 7, "ח'": 8, "ט'": 9, "י'": 10, 'י"א': 11, 'י"ב': 12,
+};
 
 function AddClassModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
   const router = useRouter();
-  const [grade, setGrade]           = useState<GradeOption>("ז'");
+  const [grade, setGrade]           = useState<GradeOption>("א'");
   const [classNumber, setClassNumber] = useState('1');
   const [semester, setSemester]     = useState<'A' | 'B'>('A');
+  const [genderType, setGenderType] = useState<ClassGenderType>('MIXED');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
   function reset(): void {
-    setGrade("ז'"); setClassNumber('1'); setSemester('A'); setError(null);
+    setGrade("א'"); setClassNumber('1'); setSemester('A'); setGenderType('MIXED'); setError(null);
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
@@ -1136,7 +1158,7 @@ function AddClassModal({ open, onClose }: { open: boolean; onClose: () => void }
     const academicYear = now.getMonth() >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
     const name = `כיתה ${grade} ${classNumber}`;
     try {
-      await apiRequest('/classes', { method: 'POST', body: JSON.stringify({ name, academicYear, semester }) });
+      await apiRequest('/classes', { method: 'POST', body: JSON.stringify({ name, academicYear, semester, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }) });
       router.refresh();
       onClose();
       reset();
@@ -1174,20 +1196,31 @@ function AddClassModal({ open, onClose }: { open: boolean; onClose: () => void }
             </div>
           </div>
 
-          {/* Semester */}
-          <div>
-            <label className={LABEL_CLS}>סמסטר</label>
-            <select value={semester} onChange={(e) => setSemester(e.target.value as 'A' | 'B')}
-              required className={INPUT_CLS}>
-              <option value="A">סמסטר א'</option>
-              <option value="B">סמסטר ב'</option>
-            </select>
+          {/* Semester + Gender row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={LABEL_CLS}>סמסטר</label>
+              <select value={semester} onChange={(e) => setSemester(e.target.value as 'A' | 'B')}
+                required className={INPUT_CLS}>
+                <option value="A">סמסטר א'</option>
+                <option value="B">סמסטר ב'</option>
+              </select>
+            </div>
+            <div>
+              <label className={LABEL_CLS}>הרכב מגדרי</label>
+              <select value={genderType} onChange={(e) => setGenderType(e.target.value as ClassGenderType)}
+                required className={INPUT_CLS}>
+                <option value="MIXED">מעורב</option>
+                <option value="BOYS">בנים</option>
+                <option value="GIRLS">בנות</option>
+              </select>
+            </div>
           </div>
 
           {/* Name preview */}
           <div className="rounded-xl px-4 py-2.5 text-xs font-bold text-violet-700"
             style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.14)' }}>
-            שם הכיתה: <span className="font-black">כיתה {grade} {classNumber}</span>
+            שם הכיתה: <span className="font-black">{formatClassWithGender(`כיתה ${grade} ${classNumber}`, genderType)}</span>
           </div>
 
           {error !== null && (
@@ -1310,7 +1343,8 @@ function AttentionPanel({ onAddReminder }: AttentionPanelProps): React.JSX.Eleme
       className="flex flex-col gap-2.5 rounded-2xl p-3 flex-1"
       style={{
         background: 'rgba(255,255,255,0.75)',
-        border: '1px solid rgba(226,232,240,0.80)',
+        border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
+        transition: 'border-color 0.7s ease',
         boxShadow: '0 4px 16px rgba(15,23,42,0.07)',
       }}
     >
@@ -1445,13 +1479,10 @@ function AddReminderModal({ open, onClose }: { open: boolean; onClose: () => voi
 
 // ─── Hero Banner ──────────────────────────────────────────────────────────────
 
-interface HeroBannerProps {
-  classAverages: { className: string; avgScore: number }[];
-}
-
-function HeroBanner({ classAverages: _classAverages }: HeroBannerProps): React.JSX.Element {
+function HeroBanner(): React.JSX.Element {
   const { teacher } = useCurrentTeacher();
-  const { lessons, isLoading: scheduleLoading } = useTodaySchedule();
+  const { activeSemester } = useSemester();
+  const { lessons, isLoading: scheduleLoading } = useTodaySchedule(activeSemester);
   const { data: classesData } = useClasses();
 
   const [isAddStudentOpen,  setIsAddStudentOpen]  = useState(false);
@@ -1490,7 +1521,8 @@ function HeroBanner({ classAverages: _classAverages }: HeroBannerProps): React.J
           background: 'rgba(255,255,255,0.55)',
           backdropFilter: 'blur(16px) saturate(140%)',
           WebkitBackdropFilter: 'blur(16px) saturate(140%)',
-          border: '1px solid rgba(226,232,240,0.60)',
+          border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
+          transition: 'border-color 0.7s ease',
           boxShadow: '0 8px 32px rgba(15,23,42,0.08)',
         }}
       >
@@ -1645,6 +1677,39 @@ function HeroBanner({ classAverages: _classAverages }: HeroBannerProps): React.J
                 <HebrewDate />
               </span>
             </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSemester}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="flex items-center justify-center gap-1.5 mt-1.5"
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{
+                    background: activeSemester === 'A'
+                      ? 'rgba(139,92,246,0.85)'
+                      : 'rgba(34,197,94,0.85)',
+                    boxShadow: activeSemester === 'A'
+                      ? '0 0 6px rgba(139,92,246,0.50)'
+                      : '0 0 6px rgba(34,197,94,0.50)',
+                  }}
+                  aria-hidden="true"
+                />
+                <span
+                  className="text-[0.68rem] font-bold tracking-wide"
+                  style={{
+                    color: activeSemester === 'A'
+                      ? 'rgba(109,40,217,0.80)'
+                      : 'rgba(22,163,74,0.85)',
+                  }}
+                >
+                  {activeSemester === 'A' ? 'מחצית א׳ פעילה' : 'מחצית ב׳ פעילה'}
+                </span>
+              </motion.div>
+            </AnimatePresence>
           </motion.div>
 
           {/* ── Schedule panel — fills remaining height, no dead space ── */}
@@ -1655,7 +1720,8 @@ function HeroBanner({ classAverages: _classAverages }: HeroBannerProps): React.J
               flex: 1,
               padding: '16px 16px',
               background: 'rgba(255,255,255,0.72)',
-              border: '1px solid rgba(226,232,240,0.70)',
+              border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
+              transition: 'border-color 0.7s ease',
               boxShadow: '0 4px 16px rgba(15,23,42,0.06)',
             }}
           >
@@ -1761,33 +1827,6 @@ const LEVEL_CONFIG: Record<FitnessLevel, { label: string; bg: string; text: stri
   below:   { label: 'מתחת לנורמה', bg: 'bg-red-100',      text: 'text-red-700',     dot: 'bg-red-500'     },
 };
 
-const CLASS_STRIPES = [
-  'from-indigo-500  to-indigo-700',
-  'from-teal-500    to-teal-700',
-  'from-violet-600  to-violet-800',
-  'from-emerald-500 to-emerald-700',
-  'from-orange-500  to-orange-700',
-  'from-blue-500    to-blue-700',
-] as const;
-
-/** Matching liquid-wave glow colour per class stripe — used for hover ripple */
-const CLASS_GLOW_COLORS = [
-  'rgba(79,70,229,0.22)',   // indigo
-  'rgba(20,184,166,0.22)',  // teal
-  'rgba(124,58,237,0.24)',  // violet
-  'rgba(16,185,129,0.22)',  // emerald
-  'rgba(249,115,22,0.22)',  // orange
-  'rgba(59,130,246,0.22)',  // blue
-] as const;
-
-/** Cycling athlete assets for the ghost watermark in each class card. */
-const GHOST_ATHLETES = [
-  'hero-male.png',
-  'hero-female.png',
-  'hero-male-2.png',
-  'hero-female-2.png',
-] as const;
-
 const SEMESTER_LABELS: Record<'A' | 'B', string> = { A: "סמסטר א'", B: "סמסטר ב'" };
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'] as const;
@@ -1845,12 +1884,6 @@ const MOCK_UPCOMING_EVENT: EventData = {
   updatedAt:   '2026-03-01T00:00:00.000Z',
 };
 
-const MOCK_CLASSES: ClassData[] = [
-  { id: 'cls-1', name: "י'1 — חינוך גופני", academicYear: '2025-2026', semester: 'B', joinCode: 'ABC123', joinCodeExpiresAt: null, studentCount: 28, createdAt: '2025-09-01T00:00:00.000Z' },
-  { id: 'cls-2', name: "י'2 — חינוך גופני", academicYear: '2025-2026', semester: 'B', joinCode: 'DEF456', joinCodeExpiresAt: null, studentCount: 22, createdAt: '2025-09-01T00:00:00.000Z' },
-  { id: 'cls-3', name: "ט'1 — חינוך גופני", academicYear: '2025-2026', semester: 'B', joinCode: 'GHI789', joinCodeExpiresAt: null, studentCount: 17, createdAt: '2025-09-01T00:00:00.000Z' },
-];
-
 // ─── SWR fetcher ──────────────────────────────────────────────────────────────
 
 function apiFetcher<T>(path: string): Promise<T> {
@@ -1860,8 +1893,9 @@ function apiFetcher<T>(path: string): Promise<T> {
 // ─── Missing Results Modal ────────────────────────────────────────────────────
 
 function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
+  const { activeSemester } = useSemester();
   const { data, isLoading } = useSWR<MissingResultItem[]>(
-    open ? '/dashboard/missing-results' : null,
+    open ? `/dashboard/missing-results?semester=${activeSemester}` : null,
     apiFetcher,
     { revalidateOnFocus: false },
   );
@@ -1878,7 +1912,9 @@ function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => 
               <ClipboardX className="h-4 w-4 text-amber-600" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-amber-900">תוצאות חסרות</DialogTitle>
+              <DialogTitle className="text-base font-bold text-amber-900">
+                {`תוצאות חסרות — מחצית ${activeSemester === 'A' ? 'א׳' : 'ב׳'}`}
+              </DialogTitle>
               <p className="text-xs text-amber-700/70">תלמידים שלא ניגשו למבחן</p>
             </div>
           </div>
@@ -1937,8 +1973,9 @@ function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => 
 // ─── Below Norm Modal ─────────────────────────────────────────────────────────
 
 function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
+  const { activeSemester } = useSemester();
   const { data, isLoading } = useSWR<BelowNormItem[]>(
-    open ? '/dashboard/below-norm-details' : null,
+    open ? `/dashboard/below-norm-details?semester=${activeSemester}` : null,
     apiFetcher,
     { revalidateOnFocus: false },
   );
@@ -1955,7 +1992,9 @@ function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void 
               <AlertTriangle className="h-4 w-4 text-red-600" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-red-900">תלמידים לטיפול</DialogTitle>
+              <DialogTitle className="text-base font-bold text-red-900">
+                {`תלמידים לטיפול — מחצית ${activeSemester === 'A' ? 'א׳' : 'ב׳'}`}
+              </DialogTitle>
               <p className="text-xs text-red-600/70">ציון מתחת לנורמה ({data?.[0]?.normThreshold ?? 57})</p>
             </div>
           </div>
@@ -2031,6 +2070,11 @@ function KpiCard({
 }: KpiCardProps): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
   const { motionStyle, onMouseMove, onMouseLeave } = useTilt(8);
+  const { activeSemester: cardSemester } = useSemester();
+  const semHoverShadow = cardSemester === 'A'
+    ? `0 0 0 1px rgba(139,92,246,0.22), 0 28px 52px -12px rgba(109,40,217,0.22), 0 0 44px rgba(0,212,255,0.10)`
+    : `0 0 0 1px rgba(34,197,94,0.22), 0 28px 52px -12px rgba(22,163,74,0.22), 0 0 44px rgba(0,212,255,0.10)`;
+  const semLinkColor = cardSemester === 'A' ? '#7c3aed' : '#15803d';
 
   return (
     <motion.div
@@ -2042,12 +2086,12 @@ function KpiCard({
       whileHover={{
         y: -6,
         scale: 1.01,
-        boxShadow: `0 0 0 1px rgba(139,92,246,0.22), 0 28px 52px -12px rgba(109,40,217,0.22), 0 0 44px rgba(0,212,255,0.10)`,
+        boxShadow: semHoverShadow,
         transition: { type: 'spring', stiffness: 280, damping: 20 },
       }}
       whileTap={{ scale: 0.98, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
       onClick={onClick}
-      className={`relative flex flex-col gap-3 overflow-hidden rounded-3xl p-4 md:p-5 border border-white/50 shadow-[0_8px_32px_rgba(31,38,135,0.13)] ${onClick ? 'cursor-pointer select-none' : 'cursor-default'}`}
+      className={`relative flex flex-col gap-3 overflow-hidden rounded-3xl p-4 md:p-5 border border-[var(--semester-border,rgba(139,92,246,0.20))] transition-[border-color] duration-700 shadow-[0_8px_32px_rgba(31,38,135,0.13)] ${onClick ? 'cursor-pointer select-none' : 'cursor-default'}`}
     >
       {/* Top accent gradient bar */}
       <div
@@ -2101,7 +2145,7 @@ function KpiCard({
       </div>
 
       {onClick && (
-        <p className="relative z-10 flex items-center gap-1 text-[10px] font-semibold text-violet-600 tracking-wide -mt-1">
+        <p className="relative z-10 flex items-center gap-1 text-[10px] font-semibold tracking-wide -mt-1" style={{ color: semLinkColor }}>
           לחץ לפרטים
           <ChevronLeft className="h-3 w-3" aria-hidden="true" />
         </p>
@@ -2112,16 +2156,9 @@ function KpiCard({
 
 // ─── Class Average Trend Chart ────────────────────────────────────────────────
 
-const TREND_MOCK = [
-  { month: 'ספט׳', z1: 68, z2: 72, h1: 75, avg: 71 },
-  { month: 'אוק׳',  z1: 71, z2: 73, h1: 77, avg: 73 },
-  { month: 'נוב׳',  z1: 73, z2: 76, h1: 79, avg: 76 },
-  { month: 'דצמ׳',  z1: 75, z2: 78, h1: 81, avg: 78 },
-  { month: 'ינו׳',  z1: 78, z2: 80, h1: 83, avg: 80 },
-  { month: 'פבר׳',  z1: 82, z2: 83, h1: 86, avg: 84 },
+const CHART_LINE_COLORS = [
+  '#7c3aed', '#10b981', '#06b6d4', '#f59e0b', '#e11d48', '#6366f1',
 ] as const;
-
-type TrendRow = typeof TREND_MOCK[number];
 
 interface TrendTooltipProps {
   active?: boolean;
@@ -2148,13 +2185,56 @@ function TrendTooltip({ active, payload, label }: TrendTooltipProps): React.JSX.
   );
 }
 
-function ClassAverageTrendChart(): React.JSX.Element {
-  const LINES: ReadonlyArray<{ key: keyof TrendRow; label: string; color: string; gradId: string }> = [
-    { key: 'h1',  label: 'כיתה ח׳ 1',    color: '#10b981', gradId: 'grad-emerald' },
-    { key: 'z2',  label: 'כיתה ז׳ 2',    color: '#06b6d4', gradId: 'grad-cyan'    },
-    { key: 'z1',  label: 'כיתה ז׳ 1',    color: '#7c3aed', gradId: 'grad-violet'  },
-    { key: 'avg', label: 'ממוצע כללי',    color: '#f59e0b', gradId: 'grad-amber'   },
-  ] as const;
+/** Format "YYYY-MM" → short Hebrew month label e.g. "ספט׳" */
+function formatMonthLabel(yyyyMm: string): string {
+  const LABELS: Record<string, string> = {
+    '01': 'ינו׳', '02': 'פבר׳', '03': 'מרץ׳', '04': 'אפר׳',
+    '05': 'מאי',  '06': 'יוני', '07': 'יול׳', '08': 'אוג׳',
+    '09': 'ספט׳', '10': 'אוק׳', '11': 'נוב׳', '12': 'דצמ׳',
+  };
+  const mm = yyyyMm.slice(5, 7);
+  return LABELS[mm] ?? mm;
+}
+
+/**
+ * Pivot flat MonthlyClassAverage rows into wide Recharts rows.
+ * Input:  [{ month: '2025-09', className: 'כיתה ז 1', avg: 78 }, ...]
+ * Output: [{ month: 'ספט׳', 'כיתה ז 1': 78, ... }, ...]
+ */
+function pivotToChartRows(
+  rows: MonthlyClassAverage[],
+): Array<Record<string, string | number>> {
+  const monthMap = new Map<string, Record<string, string | number>>();
+  for (const row of rows) {
+    const label = formatMonthLabel(row.month);
+    if (!monthMap.has(row.month)) {
+      monthMap.set(row.month, { month: label });
+    }
+    monthMap.get(row.month)![row.className] = row.avg;
+  }
+  return Array.from(monthMap.values());
+}
+
+interface ClassAverageTrendChartProps {
+  semester: import('@fitgrade/types').Semester;
+}
+
+function ClassAverageTrendChart({ semester }: ClassAverageTrendChartProps): React.JSX.Element {
+  const { data: rawRows, isLoading } = useClassAverages(semester);
+
+  const { chartRows, classNames } = useMemo(() => {
+    if (!rawRows || rawRows.length === 0) return { chartRows: [], classNames: [] };
+    const pivoted = pivotToChartRows(rawRows);
+    const names = Array.from(new Set(rawRows.map((r) => r.className))).slice(0, 6);
+    return { chartRows: pivoted, classNames: names };
+  }, [rawRows]);
+
+  const lines = classNames.map((name, i) => ({
+    key:    name,
+    label:  name,
+    color:  CHART_LINE_COLORS[i % CHART_LINE_COLORS.length] ?? '#7c3aed',
+    gradId: `grad-cls-${i}`,
+  }));
 
   return (
     <motion.div
@@ -2164,11 +2244,12 @@ function ClassAverageTrendChart(): React.JSX.Element {
         background:           'rgba(255,255,255,0.38)',
         backdropFilter:       'blur(28px) saturate(190%)',
         WebkitBackdropFilter: 'blur(28px) saturate(190%)',
-        border:               '1px solid rgba(255,255,255,0.52)',
+        border:               '1px solid var(--semester-border, rgba(139,92,246,0.20))',
+        transition:           'border-color 0.7s ease',
         boxShadow:            '0 0 80px rgba(109,40,217,0.13), 0 0 40px rgba(79,70,229,0.09), 0 8px 32px rgba(31,38,135,0.12)',
       }}
     >
-      {/* Ambient violet-to-blue halo — sits behind content */}
+      {/* Ambient halo */}
       <div
         className="pointer-events-none absolute inset-0 rounded-3xl"
         aria-hidden="true"
@@ -2202,208 +2283,82 @@ function ClassAverageTrendChart(): React.JSX.Element {
           <p className="text-[10px] text-slate-500 mt-0.5">ביצועים לפי חודש</p>
         </div>
         {/* Legend pills */}
-        <div className="flex flex-col gap-1 items-end">
-          {LINES.map((l) => (
-            <div key={l.key} className="flex items-center gap-1.5">
-              <span className="text-[9px] font-semibold text-slate-600">{l.label}</span>
-              <span className="h-1.5 w-4 rounded-full" style={{ background: l.color }} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="relative flex-1 min-h-0 px-2 pb-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={TREND_MOCK as unknown as Record<string, unknown>[]}
-            margin={{ top: 10, right: 10, left: -22, bottom: 0 }}
-          >
-            <defs>
-              {LINES.map((l) => (
-                <linearGradient key={l.gradId} id={l.gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor={l.color} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={l.color} stopOpacity={0}    />
-                </linearGradient>
-              ))}
-            </defs>
-
-            <CartesianGrid
-              stroke="rgba(109,40,217,0.07)"
-              strokeDasharray="0"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="month"
-              tick={{ fill: 'rgba(30,20,60,0.52)', fontSize: 10, fontWeight: 600 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              domain={[60, 95]}
-              tick={{ fill: 'rgba(30,20,60,0.42)', fontSize: 9 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              content={<TrendTooltip />}
-              cursor={{ stroke: 'rgba(109,40,217,0.18)', strokeWidth: 1 }}
-            />
-
-            {LINES.map((l) => (
-              <Area
-                key={l.key}
-                type="monotone"
-                dataKey={l.key}
-                name={l.label}
-                stroke={l.color}
-                strokeWidth={2.5}
-                fill={`url(#${l.gradId})`}
-                dot={{ r: 3.5, fill: l.color, strokeWidth: 0 }}
-                activeDot={{ r: 6, fill: l.color, strokeWidth: 2, stroke: 'rgba(255,255,255,0.3)' }}
-                isAnimationActive
-                animationDuration={1200}
-                animationEasing="ease-out"
-              />
+        {lines.length > 0 && (
+          <div className="flex flex-col gap-1 items-end">
+            {lines.map((l) => (
+              <div key={l.key} className="flex items-center gap-1.5">
+                <span className="text-[9px] font-semibold text-slate-600">{l.label}</span>
+                <span className="h-1.5 w-4 rounded-full" style={{ background: l.color }} />
+              </div>
             ))}
-          </AreaChart>
-        </ResponsiveContainer>
+          </div>
+        )}
       </div>
-    </motion.div>
-  );
-}
 
-// ─── Class Summary Card — Mode A white surface ────────────────────────────────
-
-interface ClassSummaryCardProps {
-  cls:   ClassData;
-  stats: DashboardClassStat;
-  index: number;
-}
-
-function ClassSummaryCard({ cls, stats, index }: ClassSummaryCardProps): React.JSX.Element {
-  const stripe    = CLASS_STRIPES[index % CLASS_STRIPES.length]!;
-  const glowColor = CLASS_GLOW_COLORS[index % CLASS_GLOW_COLORS.length]!;
-  const level     = fitnessLevel(stats.fitnessAvg);
-  const levelCfg  = LEVEL_CONFIG[level];
-  const normDelta  = stats.fitnessAvg - MINISTRY_NORM;
-  const [hovered, setHovered] = useState(false);
-  const { motionStyle, onMouseMove, onMouseLeave } = useTilt(6);
-
-  return (
-    <motion.div
-      variants={ITEM}
-      style={motionStyle}
-      onMouseMove={onMouseMove}
-      onHoverStart={() => setHovered(true)}
-      onHoverEnd={() => { setHovered(false); onMouseLeave(); }}
-      whileHover={{
-        y: -6,
-        scale: 1.01,
-        boxShadow: `0 0 0 1px rgba(139,92,246,0.20), 0 28px 52px -12px rgba(109,40,217,0.18), 0 0 36px rgba(0,212,255,0.08)`,
-        transition: { type: 'spring', stiffness: 280, damping: 20 },
-      }}
-      whileTap={{ scale: 0.98, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
-    >
-      <Link
-        href={`/classes/${cls.id}`}
-        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 rounded-3xl"
-      >
-        <article
-          className="group relative overflow-hidden rounded-3xl border border-white/50 shadow-[0_8px_32px_rgba(31,38,135,0.13)] transition-shadow duration-300"
-          style={{ background: 'rgba(255,255,255,0.40)', backdropFilter: 'blur(25px) saturate(180%)', WebkitBackdropFilter: 'blur(25px) saturate(180%)' }}
-        >
-
-          {/* Inline-start (right in RTL) vertical accent stripe */}
-          <div className={`absolute inset-y-0 start-0 w-1.5 bg-gradient-to-b ${stripe} rounded-s-3xl`} />
-
-          {/* Liquid-wave bottom-bloom ripple */}
-          <motion.div
-            className="pointer-events-none absolute inset-0 rounded-3xl"
-            animate={{ opacity: hovered ? 1 : 0 }}
-            transition={{ duration: 0.42, ease: 'easeOut' }}
-            aria-hidden="true"
-            style={{
-              background: `radial-gradient(ellipse at 50% 115%, ${glowColor} 0%, transparent 62%)`,
-              zIndex: 0,
-            }}
-          />
-
-          {/* Ghost athlete watermark — faded, grayscale, bleed from the end side */}
-          <div
-            className="pointer-events-none select-none absolute inset-y-0 end-0 w-1/2 overflow-hidden"
-            aria-hidden="true"
-            style={{ zIndex: 0 }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/models_photo/${GHOST_ATHLETES[index % GHOST_ATHLETES.length]}`}
-              alt=""
-              className="absolute bottom-0 end-0 h-[115%] w-auto object-contain object-bottom"
-              style={{ filter: 'grayscale(100%) sepia(10%)', opacity: 0.07 }}
-            />
+      {/* Chart or empty state */}
+      <div className="relative flex-1 min-h-0 px-2 pb-4">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-violet-400" aria-hidden="true" />
           </div>
-
-          <div className="relative z-10 p-5 ps-7">
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="font-black text-slate-900 leading-tight">{cls.name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {cls.academicYear} · {SEMESTER_LABELS[cls.semester]}
-                </p>
-              </div>
-              <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${levelCfg.bg} ${levelCfg.text}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${levelCfg.dot}`} />
-                {levelCfg.label}
-              </span>
-            </div>
-
-            {/* Stats grid */}
-            <div className="grid grid-cols-2 gap-2.5 mb-4">
-              <div className="rounded-2xl bg-slate-50/80 border border-slate-200/60 px-3 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">ממוצע כושר</p>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-2xl font-extrabold tabular-nums ${level === 'above' ? 'text-emerald-600' : level === 'below' ? 'text-red-500' : 'text-amber-600'}`}>
-                    {stats.fitnessAvg}
-                  </span>
-                  <span className={`text-xs font-bold ${normDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {normDelta >= 0 ? '+' : ''}{normDelta}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-0.5">נורמה: {MINISTRY_NORM}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50/80 border border-slate-200/60 px-3 py-2.5">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">נוכחות</p>
-                <div className="text-2xl font-extrabold text-slate-900 tabular-nums">{stats.attendancePct}%</div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${stats.attendancePct >= 90 ? 'bg-emerald-500' : stats.attendancePct >= 75 ? 'bg-amber-500' : 'bg-red-500'}`}
-                    style={{ width: `${stats.attendancePct}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                <span className="text-xs text-slate-500">{cls.studentCount} תלמידים</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {stats.belowNormCount > 0 && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-xs font-semibold text-red-600">
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                    {stats.belowNormCount}
-                  </span>
-                )}
-                <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-violet-600 transition-colors" aria-hidden="true" />
-              </div>
-            </div>
+        ) : chartRows.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center px-4">
+            <BookOpen className="h-8 w-8 text-slate-300" aria-hidden="true" />
+            <p className="text-sm font-semibold text-slate-500">אין עדיין נתונים למחצית זו</p>
+            <p className="text-xs text-slate-400">הגרף יתעדכן לאחר רישום תוצאות מבחן</p>
           </div>
-        </article>
-      </Link>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={chartRows}
+              margin={{ top: 10, right: 10, left: -22, bottom: 0 }}
+            >
+              <defs>
+                {lines.map((l) => (
+                  <linearGradient key={l.gradId} id={l.gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor={l.color} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={l.color} stopOpacity={0}    />
+                  </linearGradient>
+                ))}
+              </defs>
+
+              <CartesianGrid stroke="rgba(109,40,217,0.07)" strokeDasharray="0" vertical={false} />
+              <XAxis
+                dataKey="month"
+                tick={{ fill: 'rgba(30,20,60,0.52)', fontSize: 10, fontWeight: 600 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                domain={[50, 100]}
+                tick={{ fill: 'rgba(30,20,60,0.42)', fontSize: 9 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                content={<TrendTooltip />}
+                cursor={{ stroke: 'rgba(109,40,217,0.18)', strokeWidth: 1 }}
+              />
+              {lines.map((l) => (
+                <Area
+                  key={l.key}
+                  type="monotone"
+                  dataKey={l.key}
+                  name={l.label}
+                  stroke={l.color}
+                  strokeWidth={2.5}
+                  fill={`url(#${l.gradId})`}
+                  dot={{ r: 3.5, fill: l.color, strokeWidth: 0 }}
+                  activeDot={{ r: 6, fill: l.color, strokeWidth: 2, stroke: 'rgba(255,255,255,0.3)' }}
+                  isAnimationActive
+                  animationDuration={1200}
+                  animationEasing="ease-out"
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -2411,36 +2366,24 @@ function ClassSummaryCard({ cls, stats, index }: ClassSummaryCardProps): React.J
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage(): React.JSX.Element {
-  const { data: classes,      isLoading: classesLoading, error: classesError } = useClasses();
-  const { data: stats,        isLoading: statsLoading,   error: statsError   } = useDashboardStats();
-  const { achievements: topAchievements } = useTopAchievements();
+  const { activeSemester } = useSemester();
+  // useDeferredValue lets React deprioritize the data-hook re-renders triggered
+  // by a semester change, so the sidebar toggle feels instant while the mass
+  // SWR refetch is scheduled as low-priority work — eliminating the freeze.
+  const deferredSemester = useDeferredValue(activeSemester);
+  const { data: stats,        isLoading: statsLoading,   error: statsError   } = useDashboardStats(deferredSemester);
+  const { achievements: topAchievements } = useTopAchievements(deferredSemester);
   const { data: upcomingEvent, isLoading: eventLoading } = useUpcomingEvent();
 
   const [missingOpen,   setMissingOpen]   = useState(false);
   const [belowNormOpen, setBelowNormOpen] = useState(false);
 
-  const isLoading = classesLoading || statsLoading;
-  const hasError  = classesError   || statsError;
+  const isLoading = statsLoading;
 
   const hasRealData           = Boolean(stats && stats.totalStudents > 0);
   const effectiveStats        = hasRealData ? stats! : MOCK_STATS;
-  const effectiveTopAchievements = (topAchievements && topAchievements.length > 0) ? topAchievements : MOCK_TOP_ACHIEVEMENTS;
+  const effectiveTopAchievements = topAchievements ?? [];
   const effectiveEvent        = upcomingEvent ?? MOCK_UPCOMING_EVENT;
-  const effectiveClasses      = (classes && classes.length > 0) ? classes : MOCK_CLASSES;
-
-  const statsByClassId = useMemo(
-    () => new Map<string, DashboardClassStat>(effectiveStats.classStats.map((s) => [s.classId, s])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [effectiveStats.classStats],
-  );
-
-  const classAverages = useMemo(
-    () => effectiveClasses.map((cls) => ({
-      className: (cls.name.split(' — ')[0] ?? cls.name).trim(),
-      avgScore:  statsByClassId.get(cls.id)?.fitnessAvg ?? 0,
-    })),
-    [effectiveClasses, statsByClassId],
-  );
 
   const fitnessAvg     = effectiveStats.overallFitnessAvg;
   const attendancePct  = effectiveStats.overallAttendancePct;
@@ -2550,8 +2493,13 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
 
           {/* ── 1. HERO CARD ──────────────────────────────────────────────── */}
-          <HeroBanner classAverages={classAverages} />
+          <HeroBanner />
 
+          <SemesterEmptyBanner
+            visible={activeSemester === 'B' && stats !== undefined && stats.recentSessions.length === 0}
+          />
+
+          <SemesterTransitionWrapper activeSemester={activeSemester}>
           {/* ── 2. KPI STATS ROW — 4 white Tier-2 cards ──────────────────── */}
           <motion.div variants={STAGGER} className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <KpiCard
@@ -2571,10 +2519,10 @@ export default function DashboardPage(): React.JSX.Element {
               valueSuffix="%"
               sub="יציב לאורך הסמסטר"
               icon={Users}
-              iconBg="bg-violet-600"
-              valueColor="text-violet-600"
-              accentGrad="from-violet-500 to-purple-600"
-              glowColor="rgba(124,58,237,0.26)"
+              iconBg={activeSemester === 'A' ? 'bg-violet-600' : 'bg-emerald-600'}
+              valueColor={activeSemester === 'A' ? 'text-violet-600' : 'text-emerald-600'}
+              accentGrad={activeSemester === 'A' ? 'from-violet-500 to-purple-600' : 'from-emerald-500 to-green-600'}
+              glowColor={activeSemester === 'A' ? 'rgba(124,58,237,0.26)' : 'rgba(34,197,94,0.26)'}
               trend="neutral"
             />
             <KpiCard
@@ -2605,19 +2553,23 @@ export default function DashboardPage(): React.JSX.Element {
 
           {/* ── 3. TOP RESULTS TICKER — live feed of record achievements ── */}
           <motion.div variants={ITEM}>
-            <TopResultsTicker items={effectiveTopAchievements} />
+            <TopResultsTicker
+              items={effectiveTopAchievements}
+              fallbackText="לא הוזנו עדיין נתונים מצטיינים למחצית זו"
+              semester={activeSemester}
+            />
           </motion.div>
 
           {/* ── 3b. UPCOMING EVENT ────────────────────────────────────────── */}
           <motion.div
             variants={ITEM}
             whileHover={{ y: -6, scale: 1.01, boxShadow: '0 28px 52px -12px rgba(109,40,217,0.30)', filter: 'saturate(160%) brightness(1.02)', transition: { type: 'spring', stiffness: 280, damping: 20 } }}
-            className="relative overflow-hidden rounded-3xl border border-white/50 shadow-[0_8px_32px_rgba(31,38,135,0.13)] p-5"
+            className="relative overflow-hidden rounded-3xl border border-[var(--semester-border,rgba(139,92,246,0.20))] transition-[border-color] duration-700 shadow-[0_8px_32px_rgba(31,38,135,0.13)] p-5"
             style={{ background: 'rgba(255,255,255,0.40)', backdropFilter: 'blur(25px) saturate(180%)', WebkitBackdropFilter: 'blur(25px) saturate(180%)' }}
           >
             <div className="flex items-center gap-3 mb-4">
               <motion.div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-600"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${activeSemester === 'A' ? 'bg-violet-600' : 'bg-emerald-600'}`}
                 whileHover={{ rotate: 12 }}
                 transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
               >
@@ -2642,9 +2594,9 @@ export default function DashboardPage(): React.JSX.Element {
               const monthYear = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric' }).format(new Date(effectiveEvent.eventDate));
               return (
                 <>
-                  <div className="rounded-2xl bg-violet-50 border border-violet-200/60 p-4">
+                  <div className={`rounded-2xl p-4 ${activeSemester === 'A' ? 'bg-violet-50 border border-violet-200/60' : 'bg-emerald-50 border border-emerald-200/60'}`}>
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white text-sm font-extrabold">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white text-sm font-extrabold ${activeSemester === 'A' ? 'bg-violet-600' : 'bg-emerald-600'}`}>
                         {new Date(effectiveEvent.eventDate).getDate()}
                       </span>
                       <div className="text-start">
@@ -2654,7 +2606,7 @@ export default function DashboardPage(): React.JSX.Element {
                         </p>
                       </div>
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300/50 px-2.5 py-0.5 text-xs font-semibold text-violet-700">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${activeSemester === 'A' ? 'bg-violet-100 border border-violet-300/50 text-violet-700' : 'bg-emerald-100 border border-emerald-300/50 text-emerald-700'}`}>
                       {dayLabel}
                     </span>
                   </div>
@@ -2664,7 +2616,7 @@ export default function DashboardPage(): React.JSX.Element {
 
             <Link
               href="/events"
-              className="mt-3 flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-800 transition-colors"
+              className={`mt-3 flex items-center gap-1 text-xs font-semibold transition-colors ${activeSemester === 'A' ? 'text-violet-600 hover:text-violet-800' : 'text-emerald-600 hover:text-emerald-800'}`}
             >
               <ChevronLeft className="h-3 w-3" aria-hidden="true" />
               לכל האירועים
@@ -2679,17 +2631,15 @@ export default function DashboardPage(): React.JSX.Element {
           >
 
             {/* ── LEFT: דורש טיפול (col-span-3) ────────────────────────── */}
-            <motion.div
-              variants={ITEM}
-              className="lg:col-span-3 flex flex-col gap-3 rounded-3xl p-5"
-              style={{
-                background:           'rgba(255,255,255,0.32)',
-                backdropFilter:       'blur(22px) saturate(170%)',
-                WebkitBackdropFilter: 'blur(22px) saturate(170%)',
-                border:               '1px solid rgba(255,255,255,0.42)',
-                boxShadow:            '0 8px 32px rgba(31,38,135,0.10)',
-              }}
-            >
+            <motion.div variants={ITEM} className="lg:col-span-3">
+              <SemesterPanel className="flex flex-col gap-3 p-5 h-full"
+                style={{
+                  backdropFilter:       'blur(22px) saturate(170%)',
+                  WebkitBackdropFilter: 'blur(22px) saturate(170%)',
+                  boxShadow:            '0 8px 32px rgba(31,38,135,0.10)',
+                  background:           'rgba(255,255,255,0.32)',
+                } as React.CSSProperties}
+              >
               <div className="flex items-center gap-2.5 mb-1">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-500 shrink-0">
                   <AlertTriangle className="h-4 w-4 text-white" aria-hidden="true" />
@@ -2747,25 +2697,24 @@ export default function DashboardPage(): React.JSX.Element {
                   <p className="mt-1.5 text-xs font-semibold text-emerald-600/80">תלמידים פעילים סה&quot;כ</p>
                 </div>
               </div>
+              </SemesterPanel>
             </motion.div>
 
             {/* ── CENTER: Class Averages Trend Chart (col-span-6) ────────── */}
             <div className="lg:col-span-6 flex flex-col">
-              <ClassAverageTrendChart />
+              <ClassAverageTrendChart semester={deferredSemester} />
             </div>
 
             {/* ── RIGHT: מפגשי מבחן אחרונים (col-span-3) ──────────────── */}
-            <motion.div
-              variants={ITEM}
-              className="lg:col-span-3 flex flex-col rounded-3xl p-5"
-              style={{
-                background:           'rgba(255,255,255,0.32)',
-                backdropFilter:       'blur(22px) saturate(170%)',
-                WebkitBackdropFilter: 'blur(22px) saturate(170%)',
-                border:               '1px solid rgba(255,255,255,0.42)',
-                boxShadow:            '0 8px 32px rgba(31,38,135,0.10)',
-              }}
-            >
+            <motion.div variants={ITEM} className="lg:col-span-3">
+              <SemesterPanel className="flex flex-col p-5 h-full"
+                style={{
+                  backdropFilter:       'blur(22px) saturate(170%)',
+                  WebkitBackdropFilter: 'blur(22px) saturate(170%)',
+                  boxShadow:            '0 8px 32px rgba(31,38,135,0.10)',
+                  background:           'rgba(255,255,255,0.32)',
+                } as React.CSSProperties}
+              >
               <div className="flex items-center gap-2.5 mb-3">
                 <motion.div
                   className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-600 shrink-0"
@@ -2822,82 +2771,11 @@ export default function DashboardPage(): React.JSX.Element {
                   })}
                 </ol>
               )}
+              </SemesterPanel>
             </motion.div>
 
           </motion.div>
-
-          {/* ── 5. MY CLASSES ────────────────────────────────────────────── */}
-          <motion.div variants={ITEM}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2
-                  className="text-xl font-black tracking-tight"
-                  style={{
-                    background: 'linear-gradient(135deg, #1e1b4b 0%, #4c1d95 70%, #6d28d9 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}
-                >הכיתות שלי</h2>
-                <p className="text-xs text-slate-500/80 mt-0.5">לחץ על כיתה לפרטים ולניהול מלא</p>
-              </div>
-              <motion.div whileHover={{ x: -2 }} whileTap={{ scale: 0.98 }}>
-                <Link
-                  href="/classes"
-                  className="flex items-center gap-1 text-sm text-violet-600 hover:text-violet-800 font-semibold transition-colors"
-                >
-                  כל הכיתות
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                </Link>
-              </motion.div>
-            </div>
-
-            {hasError && (
-              <div className="rounded-3xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
-                לא ניתן לטעון את הנתונים — נסה לרענן את הדף.
-              </div>
-            )}
-
-            {!hasError && effectiveClasses.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.5 }}
-                className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-violet-300/50 bg-white/50 py-14 text-center"
-              >
-                <motion.div
-                  className="p-3 rounded-2xl bg-violet-100"
-                  animate={{ scale: [1, 1.08, 1] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                >
-                  <BookOpen className="h-7 w-7 text-violet-600" aria-hidden="true" />
-                </motion.div>
-                <div>
-                  <p className="font-semibold text-slate-700">אין כיתות עדיין</p>
-                  <Link
-                    href="/classes"
-                    className="text-sm text-violet-600 hover:text-violet-800 hover:underline mt-1 block underline-offset-4 transition-colors"
-                  >
-                    לחץ כאן ליצירת כיתה ראשונה
-                  </Link>
-                </div>
-              </motion.div>
-            )}
-
-            {!hasError && effectiveClasses.length > 0 && (
-              <motion.div variants={STAGGER} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {effectiveClasses.slice(0, 6).map((cls, i) => {
-                  const classStat = statsByClassId.get(cls.id) ?? {
-                    classId: cls.id,
-                    fitnessAvg: 0,
-                    attendancePct: 0,
-                    belowNormCount: 0,
-                  };
-                  return <ClassSummaryCard key={cls.id} cls={cls} stats={classStat} index={i} />;
-                })}
-              </motion.div>
-            )}
-          </motion.div>
+          </SemesterTransitionWrapper>
 
         </motion.div>
       </AnimatePresence>

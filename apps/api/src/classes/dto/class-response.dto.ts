@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Semester } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ClassGenderType, Semester } from '@prisma/client';
 
 export class ClassResponseDto {
   @ApiProperty()
@@ -14,6 +14,9 @@ export class ClassResponseDto {
   @ApiProperty({ enum: Semester })
   semester!: Semester;
 
+  @ApiProperty({ enum: ClassGenderType, description: 'Gender composition: BOYS | GIRLS | MIXED' })
+  genderType!: ClassGenderType;
+
   @ApiProperty({ example: 'AB3X7Q' })
   joinCode!: string;
 
@@ -26,4 +29,11 @@ export class ClassResponseDto {
 
   @ApiProperty()
   createdAt!: Date;
+
+  /**
+   * School grade level 1–12. Display metadata used by the test picker to render
+   * recommended badges. null for legacy classes created before this field existed.
+   */
+  @ApiPropertyOptional({ nullable: true, example: 10 })
+  gradeLevel!: number | null;
 }

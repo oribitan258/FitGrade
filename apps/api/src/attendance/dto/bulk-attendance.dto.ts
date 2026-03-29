@@ -1,6 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsOptional, ValidateNested } from 'class-validator';
+import { Semester } from '@prisma/client';
 import { AttendanceEntryDto } from './attendance-entry.dto';
 
 export class BulkAttendanceDto {
@@ -10,6 +11,15 @@ export class BulkAttendanceDto {
   })
   @IsDateString()
   date!: string;
+
+  @ApiPropertyOptional({
+    enum: Semester,
+    default: Semester.A,
+    description: 'Semester this attendance belongs to. Defaults to A if omitted.',
+  })
+  @IsOptional()
+  @IsEnum(Semester)
+  semester?: Semester;
 
   @ApiProperty({
     type: [AttendanceEntryDto],

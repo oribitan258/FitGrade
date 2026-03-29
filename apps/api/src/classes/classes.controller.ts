@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -15,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import { CreateClassDto } from './dto/create-class.dto';
+import { SemesterQueryDto } from './dto/semester-query.dto';
 import { ClassResponseDto } from './dto/class-response.dto';
 import { ClassDetailsResponseDto } from './dto/class-details-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -28,6 +30,7 @@ export class ClassesController {
 
   /**
    * Returns all classes belonging to the authenticated teacher.
+   * Classes are year-round entities — no semester filtering.
    * Ordered newest-first.
    */
   @Get()
@@ -68,9 +71,10 @@ export class ClassesController {
   @ApiResponse({ status: 404, description: 'Class not found' })
   async getClassDetails(
     @Param('id') classId: string,
+    @Query() query: SemesterQueryDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<ClassDetailsResponseDto> {
-    return this.classesService.getClassDetails(classId, user.sub);
+    return this.classesService.getClassDetails(classId, user.sub, query.semester);
   }
 
   /**

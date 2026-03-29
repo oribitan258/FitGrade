@@ -46,7 +46,7 @@ export class AttendanceService {
       exemptionExpiresAt: r.exemptionExpiresAt ? new Date(r.exemptionExpiresAt) : undefined,
     }));
 
-    const result = await this.attendanceRepository.upsertMany(classId, date, records);
+    const result = await this.attendanceRepository.upsertMany(classId, date, records, dto.semester);
 
     this.logger.log(
       `Attendance saved: class=${classId} date=${dto.date} records=${dto.records.length} teacher=${teacherId}`,

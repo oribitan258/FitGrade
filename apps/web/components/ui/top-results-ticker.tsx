@@ -3,14 +3,19 @@
 /**
  * TopResultsTicker — shared sports-broadcast ticker strip.
  *
- * Visual design: purple "תוצאות מובילות" badge pinned to the RTL-start side,
- * seamless Framer Motion horizontal scroll showing real top achievements.
+ * Visual design: purple/emerald "תוצאות מובילות" badge pinned to the RTL-start
+ * side, seamless Framer Motion horizontal scroll showing real top achievements.
+ *
+ * Item format (per design spec):
+ *   [Icon] [Student Name] • [ClassName + Gender] • [Test Name] • [Physical Result]
+ *   e.g.  ▶ דניאל לוי • ז' 2 בנים • ריצת 2000 • 7:04 דקות
  *
  * Sorting contract (enforced by the backend):
- *   Results are ordered by calculatedGrade DESC (0–100 int). Because the
- *   grading system normalises all test types to this scale, lower sprint
- *   times already map to higher scores, and higher rep/distance counts
- *   also map to higher scores — so "highest score" always equals "best result".
+ *   Results are ordered by calculatedGrade DESC (0–100 int).
+ *
+ * Fallback behaviour:
+ *   When items is empty and fallbackText is provided, the fallback text
+ *   scrolls inside the same marquee (repeated 3× with star separators).
  */
 
 import { motion } from 'framer-motion';
@@ -22,8 +27,8 @@ import {
   Trophy,
   Zap,
 } from 'lucide-react';
-import type { TopAchievementItem } from '@fitgrade/types';
-import { getHebrewGradeLabel } from '@fitgrade/types';
+import type { TopAchievementItem, Semester } from '@fitgrade/types';
+import { formatClassWithGender, formatRawValue } from '@/lib/class-utils';
 
 // ─── Icon + colour mapping keyed on examName patterns ────────────────────────
 
@@ -57,14 +62,26 @@ function resolveColor(examName: string): string {
 
 export interface TopResultsTickerProps {
   items: TopAchievementItem[];
+  /** Text to scroll in the marquee when items is empty. */
+  fallbackText?: string;
+  /** Active semester — drives the badge colour. Defaults to A (violet). */
+  semester?: Semester;
 }
 
-export function TopResultsTicker({ items }: TopResultsTickerProps): React.JSX.Element {
-  if (items.length === 0) return <></>;
+/** Number of times the fallback text is repeated per marquee group. */
+const FALLBACK_REPEAT = 3;
 
-  // Scroll duration scales with content length so very short lists don't
-  // fly past and very long ones don't crawl.
-  const scrollDuration = Math.max(18, items.length * 6);
+export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopResultsTickerProps): React.JSX.Element {
+  const isEmpty     = items.length === 0;
+  const badgeBg     = semester === 'B' ? 'rgba(34,197,94,0.13)'  : 'rgba(109,40,217,0.13)';
+  const badgeBorder = semester === 'B' ? 'rgba(34,197,94,0.20)'  : 'rgba(109,40,217,0.20)';
+  const trophyCls   = semester === 'B' ? 'text-emerald-600'      : 'text-violet-600';
+  const badgeText   = semester === 'B' ? 'text-emerald-700'      : 'text-violet-700';
+
+  if (isEmpty && !fallbackText) return <></>;
+
+  // Fallback scrolls at a calm fixed pace; real items scale with content length.
+  const scrollDuration = isEmpty ? 22 : Math.max(18, items.length * 6);
 
   return (
     <div
@@ -76,14 +93,14 @@ export function TopResultsTicker({ items }: TopResultsTickerProps): React.JSX.El
       <div
         className="absolute start-0 top-0 bottom-0 z-10 flex items-center gap-1.5 px-4 shrink-0 rounded-s-2xl"
         style={{
-          background:           'rgba(109,40,217,0.13)',
+          background:           badgeBg,
           backdropFilter:       'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          borderInlineEnd:      '1px solid rgba(109,40,217,0.20)',
+          borderInlineEnd:      `1px solid ${badgeBorder}`,
         }}
       >
-        <Trophy className="w-3.5 h-3.5 text-violet-600 shrink-0" aria-hidden="true" />
-        <span className="text-[11.5px] font-black tracking-tight text-violet-700 whitespace-nowrap select-none">
+        <Trophy className={`w-3.5 h-3.5 ${trophyCls} shrink-0`} aria-hidden="true" />
+        <span className={`text-[11.5px] font-black tracking-tight ${badgeText} whitespace-nowrap select-none`}>
           תוצאות מובילות
         </span>
       </div>
@@ -115,64 +132,105 @@ export function TopResultsTicker({ items }: TopResultsTickerProps): React.JSX.El
               className="flex items-center justify-around min-w-full shrink-0 h-full"
               aria-hidden={groupKey === 'b' ? true : undefined}
             >
-              {items.map(({ studentName, examName, score }, i) => {
-                const Icon  = resolveIcon(examName);
-                const color = resolveColor(examName);
-                return (
+              {isEmpty ? (
+                /* ── Fallback: scroll the placeholder text 3× with star separators ── */
+                Array.from({ length: FALLBACK_REPEAT }, (_, i) => (
                   <span
-                    key={`${groupKey}-${i}`}
+                    key={`${groupKey}-fallback-${i}`}
                     style={{
-                      display:    'inline-flex',
-                      alignItems: 'center',
-                      gap:        8,
-                      paddingLeft:  16,
-                      paddingRight: 16,
-                      flexShrink: 0,
+                      display:     'inline-flex',
+                      alignItems:  'center',
+                      gap:         12,
+                      paddingLeft:  28,
+                      paddingRight: 28,
+                      flexShrink:  0,
                     }}
                   >
-                    {/* Sport icon */}
-                    <Icon
-                      className="w-3.5 h-3.5 shrink-0"
-                      style={{ color }}
+                    <Trophy
+                      className="w-3.5 h-3.5 shrink-0 text-violet-300"
                       aria-hidden="true"
                     />
-
-                    {/* Student name — coloured glow */}
-                    <span
-                      className="text-[13px] font-bold text-slate-900 whitespace-nowrap"
-                      style={{ textShadow: `0 0 12px ${color}55` }}
-                    >
-                      {studentName}
+                    <span className="text-[13px] font-semibold text-slate-500 whitespace-nowrap">
+                      {fallbackText}
                     </span>
-
-                    <span className="text-slate-300 text-[11px]" aria-hidden="true">•</span>
-
-                    {/* Test name */}
-                    <span className="text-[13px] font-medium text-slate-700 whitespace-nowrap">
-                      {examName}
-                    </span>
-
-                    <span className="text-slate-300 text-[11px]" aria-hidden="true">•</span>
-
-                    {/* Hebrew grade label */}
-                    <span
-                      className="text-[12px] font-semibold whitespace-nowrap"
-                      style={{ color }}
-                    >
-                      {getHebrewGradeLabel(score)}
-                    </span>
-
-                    {/* Divider */}
-                    <span
-                      className="text-slate-200 text-[15px] font-thin"
-                      style={{ marginLeft: 12 }}
-                      aria-hidden="true"
-                    >
-                      |
-                    </span>
+                    <span className="text-violet-200 text-[12px]" aria-hidden="true">★</span>
                   </span>
-                );
-              })}
+                ))
+              ) : (
+                /* ── Real items ─────────────────────────────────────────────── */
+                items.map(({ studentName, examName, score, className, classGenderType, rawValue, unit }, i) => {
+                  const Icon        = resolveIcon(examName);
+                  const color       = resolveColor(examName);
+                  const classLabel  = formatClassWithGender(className, classGenderType);
+                  const physicalStr = formatRawValue(rawValue, examName, unit);
+
+                  return (
+                    <span
+                      key={`${groupKey}-${i}`}
+                      style={{
+                        display:    'inline-flex',
+                        alignItems: 'center',
+                        gap:        8,
+                        paddingLeft:  16,
+                        paddingRight: 16,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/* Sport icon */}
+                      <Icon
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color }}
+                        aria-hidden="true"
+                      />
+
+                      {/* Student name */}
+                      <span
+                        className="text-[13px] font-bold text-slate-900 whitespace-nowrap"
+                        style={{ textShadow: `0 0 12px ${color}55` }}
+                      >
+                        {studentName}
+                      </span>
+
+                      <span className="text-slate-300 text-[11px]" aria-hidden="true">•</span>
+
+                      {/* Class + gender label */}
+                      <span className="text-[12px] font-medium text-slate-500 whitespace-nowrap">
+                        {classLabel}
+                      </span>
+
+                      <span className="text-slate-300 text-[11px]" aria-hidden="true">•</span>
+
+                      {/* Test name */}
+                      <span className="text-[13px] font-medium text-slate-700 whitespace-nowrap">
+                        {examName}
+                      </span>
+
+                      {physicalStr && (
+                        <>
+                          <span className="text-slate-300 text-[11px]" aria-hidden="true">•</span>
+
+                          {/* Physical result */}
+                          <span
+                            className="text-[12px] font-semibold whitespace-nowrap"
+                            style={{ color }}
+                          >
+                            {physicalStr}
+                          </span>
+                        </>
+                      )}
+
+                      {/* Divider */}
+                      <span
+                        className="text-slate-200 text-[15px] font-thin"
+                        style={{ marginLeft: 12 }}
+                        aria-hidden="true"
+                      >
+                        |
+                      </span>
+                    </span>
+                  );
+                })
+              )}
             </div>
           ))}
         </motion.div>

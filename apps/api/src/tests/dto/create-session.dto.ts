@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { Semester } from '@prisma/client';
 
 export class CreateSessionDto {
   @ApiProperty({ description: 'ID of the FitnessTestType to use for this session' })
@@ -25,4 +26,12 @@ export class CreateSessionDto {
   @IsOptional()
   @IsDateString()
   conductedAt?: string;
+
+  @ApiPropertyOptional({
+    enum: Semester,
+    description: 'Which semester this session belongs to (defaults to A)',
+  })
+  @IsOptional()
+  @IsEnum(Semester)
+  semester?: Semester;
 }

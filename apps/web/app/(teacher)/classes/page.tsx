@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { createClassSchema, type CreateClassInput, type ClassData } from '@fitgrade/types';
 import type { TopAchievementItem } from '@fitgrade/types';
+import { formatClassWithGender } from '@/lib/class-utils';
 import { ApiError } from '@fitgrade/types';
 import { useClasses } from '@/hooks/use-classes';
 import { useTopAchievements } from '@/hooks/use-top-achievements';
@@ -39,6 +40,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
+import { SemesterPanel } from '@/components/ui/semester-panel';
 
 // ─── Animation presets ───────────────────────────────────────────────────────
 
@@ -131,11 +135,11 @@ const SELECT_STYLES =
 // ─── Fallback ticker items (shown before real data arrives) ──────────────────
 
 const MOCK_TOP_ACHIEVEMENTS: TopAchievementItem[] = [
-  { rank: 1, studentId: 'stu-1', studentName: 'אורי ברק',    classId: 'cls-1', className: "י'1",  examName: 'ריצת 2000 מטר',   score: 95 },
-  { rank: 2, studentId: 'stu-2', studentName: 'שירה אבידן',  classId: 'cls-1', className: "י'1",  examName: 'שכיבות סמיכה',   score: 92 },
-  { rank: 3, studentId: 'stu-3', studentName: 'דניאל לוי',   classId: 'cls-2', className: "ט'2",  examName: 'קפיצה למרחק',    score: 90 },
-  { rank: 4, studentId: 'stu-4', studentName: 'מיכל כהן',    classId: 'cls-2', className: "ט'2",  examName: 'מתח',             score: 88 },
-  { rank: 5, studentId: 'stu-5', studentName: 'יוסי פרץ',    classId: 'cls-3', className: "ח'1",  examName: "ריצת 60 מטר",    score: 86 },
+  { rank: 1, studentId: 'stu-1', studentName: 'אורי ברק',   classId: 'cls-1', className: "י' 1", classGenderType: 'BOYS',  examName: 'ריצת 2000 מטר', score: 95, rawValue: 424,  unit: null },
+  { rank: 2, studentId: 'stu-2', studentName: 'שירה אבידן', classId: 'cls-1', className: "י' 1", classGenderType: 'GIRLS', examName: 'שכיבות סמיכה', score: 92, rawValue: 38,   unit: null },
+  { rank: 3, studentId: 'stu-3', studentName: 'דניאל לוי',  classId: 'cls-2', className: "ט' 2", classGenderType: 'BOYS',  examName: 'קפיצה למרחק',  score: 90, rawValue: 182,  unit: 'ס"מ' },
+  { rank: 4, studentId: 'stu-4', studentName: 'מיכל כהן',   classId: 'cls-2', className: "ט' 2", classGenderType: 'GIRLS', examName: 'מתח',           score: 88, rawValue: 12,   unit: null },
+  { rank: 5, studentId: 'stu-5', studentName: 'יוסי פרץ',   classId: 'cls-3', className: "ח' 1", classGenderType: 'MIXED', examName: 'ריצת 100 מטר', score: 86, rawValue: 13.8, unit: null },
 ];
 
 // ─── Floating debris config ──────────────────────────────────────────────────
@@ -340,6 +344,22 @@ interface CreateClassDialogProps {
   onSuccess: () => void;
 }
 
+/** Hebrew grade labels ordered א'–י"ב, with their numeric equivalents. */
+const CLASS_GRADE_OPTIONS = [
+  { label: "א'",  value: 1  },
+  { label: "ב'",  value: 2  },
+  { label: "ג'",  value: 3  },
+  { label: "ד'",  value: 4  },
+  { label: "ה'",  value: 5  },
+  { label: "ו'",  value: 6  },
+  { label: "ז'",  value: 7  },
+  { label: "ח'",  value: 8  },
+  { label: "ט'",  value: 9  },
+  { label: "י'",  value: 10 },
+  { label: 'י"א', value: 11 },
+  { label: 'י"ב', value: 12 },
+] as const;
+
 function CreateClassDialog({
   open,
   onOpenChange,
@@ -348,10 +368,14 @@ function CreateClassDialog({
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
     reset,
     setError,
-  } = useForm<CreateClassInput>({ resolver: zodResolver(createClassSchema) });
+  } = useForm<CreateClassInput>({
+    resolver: zodResolver(createClassSchema),
+    defaultValues: { genderType: 'MIXED' },
+  });
 
   async function onSubmit(data: CreateClassInput): Promise<void> {
     try {
@@ -427,6 +451,40 @@ function CreateClassDialog({
             )}
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="cls-gender" className="text-slate-700 font-medium">הרכב כיתה</Label>
+            <select
+              id="cls-gender"
+              className={cn(SELECT_STYLES)}
+              {...register('genderType')}
+            >
+              <option value="MIXED">מעורב (ברירת מחדל)</option>
+              <option value="BOYS">בנים</option>
+              <option value="GIRLS">בנות</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="cls-grade" className="text-slate-700 font-medium">
+              שכבה
+              <span className="ms-1 text-xs text-slate-400 font-normal">(אופציונלי — לתגיות המלצה)</span>
+            </Label>
+            <select
+              id="cls-grade"
+              className={cn(SELECT_STYLES)}
+              defaultValue=""
+              onChange={(e) => {
+                const v = e.target.value;
+                setValue('gradeLevel', v !== '' ? Number(v) : undefined);
+              }}
+            >
+              <option value="">לא ידוע</option>
+              {CLASS_GRADE_OPTIONS.map(({ label, value }) => (
+                <option key={value} value={value}>כיתה {label}</option>
+              ))}
+            </select>
+          </div>
+
           {errors.root && (
             <p className="rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200/50 px-3 py-2 text-sm text-red-700">
               {errors.root.message}
@@ -497,7 +555,8 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             background:           'rgba(255,255,255,0.40)',
             backdropFilter:       'blur(25px) saturate(180%)',
             WebkitBackdropFilter: 'blur(25px) saturate(180%)',
-            border:               '1px solid rgba(255,255,255,0.50)',
+            border:               '1px solid var(--semester-border, rgba(139,92,246,0.20))',
+            transition:           'border-color 0.7s ease',
             boxShadow: `0 8px 32px rgba(31,38,135,0.10), 0 0 0 1px ${theme.ring}, inset 0 1px 0 rgba(255,255,255,0.65)`,
           }}
         >
@@ -584,7 +643,7 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
             {/* Title block — pe-14 reserves space for the badge */}
             <div className="pe-14 mb-3">
               <h3 className="font-bold text-base leading-snug" style={{ color: theme.titleColor }}>
-                {cls.name}
+                {formatClassWithGender(cls.name, cls.genderType)}
               </h3>
               <p className="text-xs mt-0.5" style={{ color: theme.subColor }}>
                 {cls.academicYear} · {SEMESTER_LABELS[cls.semester]}
@@ -659,9 +718,10 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
 export default function ClassesPage(): React.JSX.Element {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery]   = useState('');
+  const { activeSemester } = useSemester();
   const { data: classes, error, isLoading, mutate } = useClasses();
-  const { achievements } = useTopAchievements();
-  const effectiveAchievements = (achievements && achievements.length > 0) ? achievements : MOCK_TOP_ACHIEVEMENTS;
+  const { achievements } = useTopAchievements(activeSemester);
+  const effectiveAchievements = achievements ?? [];
 
   /** Filter by class name (case-insensitive, strips diacritics) */
   const filteredClasses = useMemo(() => {
@@ -693,8 +753,12 @@ export default function ClassesPage(): React.JSX.Element {
           <PageHeader onCreateClick={() => { setIsCreateOpen(true); }} />
 
           {/* Top results ticker */}
-          <TopResultsTicker items={effectiveAchievements} />
+          <TopResultsTicker
+            items={effectiveAchievements}
+            fallbackText="לא הוזנו עדיין נתונים מצטיינים למחצית זו"
+          />
 
+          <SemesterTransitionWrapper activeSemester={activeSemester}>
           {/* ── Search bar — only shown when data is ready ───────────────── */}
           {!isLoading && !error && classes && classes.length > 0 && (
             <motion.div
@@ -736,8 +800,8 @@ export default function ClassesPage(): React.JSX.Element {
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ ease: EASE, duration: 0.5 }}
-              className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/60 bg-white/50 backdrop-blur-2xl py-20 text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)] ring-1 ring-white/20"
             >
+            <SemesterPanel className="flex flex-col items-center justify-center gap-4 py-20 text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
               <motion.div
                 className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100/80"
                 animate={{ scale: [1, 1.08, 1] }}
@@ -759,6 +823,7 @@ export default function ClassesPage(): React.JSX.Element {
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 הוסף כיתה ראשונה
               </motion.button>
+            </SemesterPanel>
             </motion.div>
           )}
 
@@ -770,8 +835,8 @@ export default function ClassesPage(): React.JSX.Element {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ ease: EASE, duration: 0.35 }}
-              className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl py-16 text-center"
             >
+            <SemesterPanel className="flex flex-col items-center justify-center gap-3 py-16 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100/70">
                 <Search className="h-5 w-5 text-violet-400" aria-hidden="true" />
               </div>
@@ -779,6 +844,7 @@ export default function ClassesPage(): React.JSX.Element {
               <p className="text-sm text-slate-400">
                 אין כיתות תואמות לחיפוש &ldquo;{searchQuery}&rdquo;
               </p>
+            </SemesterPanel>
             </motion.div>
           )}
 
@@ -798,6 +864,7 @@ export default function ClassesPage(): React.JSX.Element {
               </AnimatePresence>
             </motion.div>
           )}
+          </SemesterTransitionWrapper>
 
         </div>
 

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { Semester } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { StudentsRepository } from './students.repository';
 import type { CreateStudentDto } from './dto/create-student.dto';
@@ -10,6 +11,11 @@ import type {
   StudentTestHistoryDto,
   TalmidautRecordDto,
 } from './dto/student-profile-response.dto';
+import type {
+  ReportAttendanceDto,
+  ReportTestResultDto,
+  StudentReportResponseDto,
+} from './dto/student-report-response.dto';
 import type { FinalGradeResult } from './students.repository';
 
 /** Hebrew month labels for building per-student history points. */
@@ -53,12 +59,13 @@ export class StudentsService {
     studentId: string,
     classId: string,
     teacherId: string,
+    semester?: Semester,
   ): Promise<StudentProfileResponseDto> {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
     await this.studentsRepository.verifyStudentInClass(studentId, classId);
 
     const { student, results, attendanceTotal, attendancePresent, recentAttendance, talmidautRecords, classWeights } =
-      await this.studentsRepository.findRawStudentProfile(studentId, classId);
+      await this.studentsRepository.findRawStudentProfile(studentId, classId, semester);
 
     const attendancePct =
       attendanceTotal > 0
@@ -175,6 +182,152 @@ export class StudentsService {
       overallAvg,
       testHistories,
       talmidautRecords: talmidautDtos,
+      finalGrade,
+    };
+  }
+
+  /**
+   * Builds a formal student report for the given class + optional semester.
+   *
+   * - Verifies class ownership and student enrollment.
+   * - Aggregates test results, attendance, class benchmarks, and final grade
+   *   in a single repository call (5 parallel DB queries, no N+1).
+   * - Test results are sorted best-grade-first so PDF generators can present
+   *   highlights at the top of the report.
+   */
+  async getStudentReport(
+    studentId: string,
+    classId: string,
+    teacherId: string,
+    semester?: Semester,
+  ): Promise<StudentReportResponseDto> {
+    await this.studentsRepository.verifyClassOwnership(classId, teacherId);
+
+    const { student, cls, studentResults, attendanceCounts, classResults, talmidautRecords } =
+      await this.studentsRepository.findReportData(studentId, classId, semester);
+
+    // ── Class-wide benchmark map: testTypeId → average effective grade ─────────
+    interface BenchmarkAcc { sum: number; count: number }
+    const benchmarkMap = new Map<string, BenchmarkAcc>();
+
+    for (const r of classResults) {
+      const grade = r.gradeOverride ?? r.calculatedGrade ?? 0;
+      const testTypeId = r.session.testTypeId;
+      const acc = benchmarkMap.get(testTypeId) ?? { sum: 0, count: 0 };
+      acc.sum   += grade;
+      acc.count += 1;
+      benchmarkMap.set(testTypeId, acc);
+    }
+
+    const classAvgFor = (testTypeId: string): number => {
+      const acc = benchmarkMap.get(testTypeId);
+      if (!acc || acc.count === 0) return 0;
+      return Math.round(acc.sum / acc.count);
+    };
+
+    // ── Group student results by testTypeId, keeping the most recent ──────────
+    interface TestAcc {
+      nameHe: string;
+      unit: string | null;
+      inputType: string;
+      latestConductedAt: Date;
+      latestGrade: number;
+      latestRawValue: number | null;
+      count: number;
+    }
+
+    const testMap = new Map<string, TestAcc>();
+
+    // Results arrive oldest-first from the repository; later entries overwrite earlier ones.
+    for (const r of studentResults) {
+      const { testTypeId, conductedAt, testType } = r.session;
+      const grade = r.gradeOverride ?? r.calculatedGrade ?? 0;
+
+      const existing = testMap.get(testTypeId);
+      testMap.set(testTypeId, {
+        nameHe:           testType.nameHe,
+        unit:             testType.unit,
+        inputType:        testType.inputType,
+        latestConductedAt: conductedAt,
+        latestGrade:      grade,
+        latestRawValue:   r.rawValue !== null ? Number(r.rawValue) : null,
+        count:            (existing?.count ?? 0) + 1,
+      });
+    }
+
+    // Sort best grade first — natural order for a formal report
+    const testResults: ReportTestResultDto[] = [...testMap.entries()]
+      .map(([testTypeId, acc]): ReportTestResultDto => ({
+        testTypeId,
+        nameHe:       acc.nameHe,
+        unit:         acc.unit,
+        inputType:    acc.inputType,
+        conductedAt:  acc.latestConductedAt.toISOString(),
+        grade:        acc.latestGrade,
+        rawValue:     acc.latestRawValue,
+        classAvg:     classAvgFor(testTypeId),
+        sessionCount: acc.count,
+      }))
+      .sort((a, b) => b.grade - a.grade);
+
+    // ── Attendance ─────────────────────────────────────────────────────────────
+    const present = attendanceCounts['PRESENT']  ?? 0;
+    const absent  = attendanceCounts['ABSENT']   ?? 0;
+    const excused = attendanceCounts['EXCUSED']  ?? 0;
+    const total   = present + absent + excused;
+
+    const attendance: ReportAttendanceDto = {
+      total,
+      present,
+      absent,
+      excused,
+      pct: total > 0 ? Math.round((present / total) * 100) : 0,
+    };
+
+    // ── Final grade ────────────────────────────────────────────────────────────
+    const fitnessAvg =
+      testResults.length > 0
+        ? Math.round(testResults.reduce((s, t) => s + t.grade, 0) / testResults.length)
+        : 0;
+
+    const talmidautAvg =
+      talmidautRecords.length > 0
+        ? Math.round(
+            talmidautRecords.reduce(
+              (s, r) => s + (r.participation + r.uniform + r.behavior) / 3,
+              0,
+            ) / talmidautRecords.length,
+          )
+        : 0;
+
+    const finalGrade: FinalGradeDto = {
+      fitnessAvg,
+      talmidautAvg,
+      recommendedGrade: Math.round(
+        fitnessAvg    * (cls.testWeight     / 100) +
+        talmidautAvg  * (cls.talmidautWeight / 100),
+      ),
+      testWeight:      cls.testWeight,
+      talmidautWeight: cls.talmidautWeight,
+    };
+
+    this.logger.log(
+      `Report generated: student=${studentId} class=${classId} semester=${semester ?? 'all'} tests=${testResults.length}`,
+    );
+
+    return {
+      studentId:   student.id,
+      firstName:   student.firstName,
+      lastName:    student.lastName,
+      gender:      student.gender,
+      dateOfBirth: student.dateOfBirth,
+      studentCode: student.studentCode,
+      className:   cls.name,
+      gradeLevel:  cls.gradeLevel,
+      semester:    semester ?? null,
+      generatedAt: new Date().toISOString(),
+      testResults,
+      attendance,
       finalGrade,
     };
   }

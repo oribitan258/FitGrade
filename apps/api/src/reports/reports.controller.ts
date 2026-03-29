@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Patch,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -16,6 +17,7 @@ import {
 import { ReportsService } from './reports.service';
 import { SaveReportGradesDto } from './dto/save-report-grades.dto';
 import { ReportRowDto } from './dto/report-row.dto';
+import { SemesterQueryDto } from '../classes/dto/semester-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
@@ -36,9 +38,10 @@ export class ReportsController {
   @ApiResponse({ status: 404, description: 'Class not found' })
   async getClassReport(
     @Param('classId') classId: string,
+    @Query() query: SemesterQueryDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<ReportRowDto[]> {
-    return this.reportsService.getClassReport(classId, user.sub);
+    return this.reportsService.getClassReport(classId, user.sub, query.semester);
   }
 
   /**

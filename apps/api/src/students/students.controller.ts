@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -15,10 +16,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { StudentsService } from './students.service';
+import { SemesterQueryDto } from '../classes/dto/semester-query.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { CreateTalmidautDto } from './dto/create-talmidaut.dto';
 import { StudentResponseDto } from './dto/student-response.dto';
 import { StudentProfileResponseDto } from './dto/student-profile-response.dto';
+import { StudentReportResponseDto } from './dto/student-report-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { FinalGradeResult } from './students.repository';
@@ -62,9 +65,39 @@ export class StudentsController {
   async getStudentProfile(
     @Param('classId') classId: string,
     @Param('studentId') studentId: string,
+    @Query() query: SemesterQueryDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<StudentProfileResponseDto> {
-    return this.studentsService.getStudentProfile(studentId, classId, user.sub);
+    return this.studentsService.getStudentProfile(studentId, classId, user.sub, query.semester);
+  }
+
+  /**
+   * Returns a formal student report aggregating test results, class benchmarks,
+   * attendance metrics, and the recommended final grade.
+   *
+   * Optionally scoped to a single semester via ?semester=A|B.
+   * When omitted, the report covers all semesters.
+   */
+  @Get(':studentId/report')
+  @ApiOperation({ summary: 'Generate formal student report with class benchmarks' })
+  @ApiParam({ name: 'classId',   description: 'Class ID' })
+  @ApiParam({ name: 'studentId', description: 'Student ID' })
+  @ApiResponse({ status: 200, type: StudentReportResponseDto })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Class does not belong to this teacher' })
+  @ApiResponse({ status: 404, description: 'Class or student not found' })
+  async getStudentReport(
+    @Param('classId')   classId:   string,
+    @Param('studentId') studentId: string,
+    @Query() query:     SemesterQueryDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<StudentReportResponseDto> {
+    return this.studentsService.getStudentReport(
+      studentId,
+      classId,
+      user.sub,
+      query.semester,
+    );
   }
 
   /**

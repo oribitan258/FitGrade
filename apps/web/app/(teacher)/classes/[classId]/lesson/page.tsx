@@ -39,6 +39,7 @@ import { useTestTypes } from '@/hooks/use-test-types';
 import type { TestType } from '@/hooks/use-test-types';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
+import { useSemester } from '@/contexts/semester-context';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -311,6 +312,7 @@ export default function LessonPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
   const router = useRouter();
 
+  const { activeSemester } = useSemester();
   const { data: students, isLoading: studentsLoading } = useStudents(classId);
   const { data: testTypes, isLoading: testTypesLoading } = useTestTypes();
 
@@ -473,7 +475,7 @@ export default function LessonPage(): React.JSX.Element {
     try {
       const res = await apiRequest<{ id: string }>(`/classes/${classId}/sessions`, {
         method: 'POST',
-        body:   JSON.stringify({ testTypeId: selectedTestTypeId, notes: '' }),
+        body:   JSON.stringify({ testTypeId: selectedTestTypeId, notes: '', semester: activeSemester }),
       });
       setSession({ id: res.id, testInputType: tt.inputType });
       setStep('active');
@@ -628,6 +630,17 @@ export default function LessonPage(): React.JSX.Element {
               </div>
             </div>
 
+            {/* Semester safety badge */}
+            <div className={cn(
+              'flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold border',
+              activeSemester === 'A'
+                ? 'bg-violet-50/80 text-violet-700 border-violet-200/70'
+                : 'bg-emerald-50/80 text-emerald-700 border-emerald-200/70',
+            )}>
+              <span aria-hidden="true">📌</span>
+              <span>שימו לב: ההזנה מתבצעת למחצית {activeSemester === 'A' ? 'א׳' : 'ב׳'}</span>
+            </div>
+
             {/* Test type picker */}
             <div>
               <p className="mb-3 text-sm font-bold text-slate-700">בחר סוג מבחן</p>
@@ -652,7 +665,9 @@ export default function LessonPage(): React.JSX.Element {
               className={cn(
                 'flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-base font-bold text-white transition-all',
                 selectedTestTypeId && step === 'select'
-                  ? 'bg-indigo-600 hover:bg-indigo-700 shadow-[0_4px_24px_rgba(99,102,241,0.35)]'
+                  ? activeSemester === 'A'
+                    ? 'bg-violet-600 hover:bg-violet-700 shadow-[0_4px_24px_rgba(124,58,237,0.35)]'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-[0_4px_24px_rgba(5,150,105,0.35)]'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed',
               )}
             >

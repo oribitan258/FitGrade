@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { Semester } from '@prisma/client';
+import type { ClassGenderType, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ClassResponseDto } from './dto/class-response.dto';
 
@@ -31,9 +31,11 @@ export interface CreateClassInput {
   name: string;
   academicYear: string;
   semester: Semester;
+  genderType: ClassGenderType;
   teacherId: string;
   joinCode: string;
   joinCodeExpiresAt: Date;
+  gradeLevel?: number;
 }
 
 /** The Prisma select used for all class queries — keeps the shape consistent. */
@@ -42,8 +44,10 @@ const CLASS_SELECT = {
   name: true,
   academicYear: true,
   semester: true,
+  genderType: true,
   joinCode: true,
   joinCodeExpiresAt: true,
+  gradeLevel: true,
   createdAt: true,
   _count: { select: { enrollments: true } },
 } as const;
@@ -57,8 +61,10 @@ function toClassResponse(
     name: raw.name,
     academicYear: raw.academicYear,
     semester: raw.semester,
+    genderType: raw.genderType,
     joinCode: raw.joinCode,
     joinCodeExpiresAt: raw.joinCodeExpiresAt,
+    gradeLevel: raw.gradeLevel,
     studentCount: raw._count.enrollments,
     createdAt: raw.createdAt,
   };
@@ -68,7 +74,11 @@ function toClassResponse(
 export class ClassesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Returns all classes owned by a teacher, ordered by newest first. */
+  /**
+   * Returns all classes owned by a teacher, ordered by newest first.
+   * Classes are year-round entities — no semester filtering applied here.
+   * Semester filtering is applied at the TestSession level in dashboard queries.
+   */
   async findAllByTeacher(teacherId: string): Promise<ClassResponseDto[]> {
     const rows = await this.prisma.class.findMany({
       where: { teacherId },
@@ -98,12 +108,16 @@ export class ClassesRepository {
 
   /**
    * Loads all test results and attendance counts for a class in parallel.
-   * Used to compute per-test summaries and attendance percentage for class details.
+   * Direct query on testResult filtered by session.classId (and optionally semester).
+   * Mirrors the dashboard pattern. When semester is omitted, returns all semesters.
+   * Attendance counts are not semester-filtered (they have no semester dimension).
    */
-  async findRawClassDetails(classId: string): Promise<RawClassDetails> {
+  async findRawClassDetails(classId: string, semester?: Semester): Promise<RawClassDetails> {
+    const semesterFilter = semester !== undefined ? { semester } : {};
+
     const [results, attendanceTotal, attendancePresent] = await Promise.all([
       this.prisma.testResult.findMany({
-        where: { session: { classId } },
+        where: { session: { classId, ...semesterFilter } },
         select: {
           studentId: true,
           calculatedGrade: true,
@@ -119,9 +133,10 @@ export class ClassesRepository {
         },
         orderBy: { session: { conductedAt: 'asc' } },
       }),
-      this.prisma.attendanceRecord.count({ where: { classId } }),
-      this.prisma.attendanceRecord.count({ where: { classId, status: 'PRESENT' } }),
+      this.prisma.attendanceRecord.count({ where: { classId, ...(semester !== undefined ? { semester } : {}) } }),
+      this.prisma.attendanceRecord.count({ where: { classId, status: 'PRESENT', ...(semester !== undefined ? { semester } : {}) } }),
     ]);
+
     return { results, attendanceTotal, attendancePresent };
   }
 
@@ -137,9 +152,11 @@ export class ClassesRepository {
           name: input.name,
           academicYear: input.academicYear,
           semester: input.semester,
+          genderType: input.genderType,
           teacherId: input.teacherId,
           joinCode: input.joinCode,
           joinCodeExpiresAt: input.joinCodeExpiresAt,
+          ...(input.gradeLevel !== undefined ? { gradeLevel: input.gradeLevel } : {}),
         },
         select: CLASS_SELECT,
       });

@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Semester } from '@prisma/client';
 import { ReportsRepository } from './reports.repository';
 import type { ReportRowDto, TestBreakdownDto } from './dto/report-row.dto';
 import type { GradeOverrideDto } from './dto/save-report-grades.dto';
@@ -113,9 +114,20 @@ export class ReportsService {
    * Returns the full class report: one row per student with computed grades,
    * conduct scores, recommended final grade, suggested comment, and any
    * teacher overrides that have been saved.
+   *
+   * When `semester` is provided, test results and attendance are scoped to
+   * that semester only. Talmidaut records are always year-wide (no semester column).
    */
-  async getClassReport(classId: string, teacherId: string): Promise<ReportRowDto[]> {
+  async getClassReport(classId: string, teacherId: string, semester?: Semester): Promise<ReportRowDto[]> {
     await this.reportsRepository.verifyClassOwnership(classId, teacherId);
+
+    // Guard: if a specific semester was requested but has NO sessions at all,
+    // return empty immediately. This prevents year-wide Talmidaut conduct scores
+    // from leaking into a semester that has zero test activity ("ghost data").
+    if (semester !== undefined) {
+      const sessionCount = await this.reportsRepository.countTestSessionsForSemester(classId, semester);
+      if (sessionCount === 0) return [];
+    }
 
     const students = await this.reportsRepository.findStudentsInClass(classId);
     if (students.length === 0) return [];
@@ -124,9 +136,9 @@ export class ReportsService {
 
     const [testResults, talmidautSummaries, attendanceStats, finalGradeOverrides] =
       await Promise.all([
-        this.reportsRepository.findAllTestResults(classId, studentIds),
+        this.reportsRepository.findAllTestResults(classId, studentIds, semester),
         this.reportsRepository.findAllTalmidautSummaries(classId, studentIds),
-        this.reportsRepository.findAttendanceStats(classId, studentIds),
+        this.reportsRepository.findAttendanceStats(classId, studentIds, semester),
         this.reportsRepository.findFinalGradeOverrides(classId, studentIds),
       ]);
 

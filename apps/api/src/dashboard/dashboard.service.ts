@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Semester } from '@prisma/client';
 import { DashboardRepository, PASS_GRADE_THRESHOLD, TOP_ACHIEVEMENTS_LIMIT, TOP_STUDENTS_LIMIT } from './dashboard.repository';
 import type { ClassAttendanceStat } from './dashboard.repository';
 import type {
@@ -10,6 +11,7 @@ import type {
   TopStudentItemDto,
   TopAchievementItemDto,
   TopStudentPerClassItemDto,
+  MonthlyClassAverageDto,
 } from './dto/dashboard-stats-response.dto';
 
 @Injectable()
@@ -21,16 +23,17 @@ export class DashboardService {
     return classes.map((c) => c.id);
   }
 
-  async getStats(teacherId: string): Promise<DashboardStatsResponseDto> {
+  async getStats(teacherId: string, semester?: Semester): Promise<DashboardStatsResponseDto> {
+    // Classes are year-round; fetch all, then filter transactional data by session.semester.
     const classes = await this.dashboardRepository.findTeacherClassMeta(teacherId);
     const classIds = classes.map((c) => c.id);
 
     const [rawResults, attendanceStats, rawSessions, pendingResultsCount] =
       await Promise.all([
-        this.dashboardRepository.findResultsForTeacher(classIds),
-        this.dashboardRepository.findAttendanceStatsByClass(classIds),
-        this.dashboardRepository.findRecentSessions(classIds),
-        this.dashboardRepository.findPendingResultsCount(classIds),
+        this.dashboardRepository.findResultsForTeacher(classIds, semester),
+        this.dashboardRepository.findAttendanceStatsByClass(classIds, semester),
+        this.dashboardRepository.findRecentSessions(classIds, semester),
+        this.dashboardRepository.findPendingResultsCount(classIds, semester),
       ]);
 
     const attendanceByClass = new Map<string, ClassAttendanceStat>(
@@ -100,9 +103,9 @@ export class DashboardService {
     };
   }
 
-  async getMissingResults(teacherId: string): Promise<MissingResultItemDto[]> {
+  async getMissingResults(teacherId: string, semester?: Semester): Promise<MissingResultItemDto[]> {
     const classIds = await this.getTeacherClassIds(teacherId);
-    const items = await this.dashboardRepository.findMissingResultDetails(classIds);
+    const items = await this.dashboardRepository.findMissingResultDetails(classIds, semester);
     return items.map((item) => ({
       studentId: item.studentId,
       studentName: item.studentName,
@@ -114,27 +117,32 @@ export class DashboardService {
     }));
   }
 
-  async getBelowNormDetails(teacherId: string): Promise<BelowNormItemDto[]> {
+  async getBelowNormDetails(teacherId: string, semester?: Semester): Promise<BelowNormItemDto[]> {
     const classIds = await this.getTeacherClassIds(teacherId);
-    return this.dashboardRepository.findBelowNormDetails(classIds, PASS_GRADE_THRESHOLD);
+    return this.dashboardRepository.findBelowNormDetails(classIds, PASS_GRADE_THRESHOLD, semester);
   }
 
-  async getTopStudents(teacherId: string, testTypeId?: string): Promise<TopStudentItemDto[]> {
+  async getTopStudents(teacherId: string, testTypeId?: string, semester?: Semester): Promise<TopStudentItemDto[]> {
     const classIds = await this.getTeacherClassIds(teacherId);
     const students = testTypeId
-      ? await this.dashboardRepository.findTopStudentsByTestType(classIds, testTypeId, TOP_STUDENTS_LIMIT)
-      : await this.dashboardRepository.findTopStudents(classIds, TOP_STUDENTS_LIMIT);
+      ? await this.dashboardRepository.findTopStudentsByTestType(classIds, testTypeId, TOP_STUDENTS_LIMIT, semester)
+      : await this.dashboardRepository.findTopStudents(classIds, TOP_STUDENTS_LIMIT, semester);
     return students.map((s, i) => ({ rank: i + 1, ...s }));
   }
 
-  async getTopAchievements(teacherId: string): Promise<TopAchievementItemDto[]> {
+  async getTopAchievements(teacherId: string, semester?: Semester): Promise<TopAchievementItemDto[]> {
     const classIds = await this.getTeacherClassIds(teacherId);
-    const items = await this.dashboardRepository.findTopAchievements(classIds, TOP_ACHIEVEMENTS_LIMIT);
+    const items = await this.dashboardRepository.findTopAchievements(classIds, TOP_ACHIEVEMENTS_LIMIT, semester);
     return items.map((item, i) => ({ rank: i + 1, ...item }));
   }
 
-  async getTopStudentsPerClass(teacherId: string): Promise<TopStudentPerClassItemDto[]> {
+  async getTopStudentsPerClass(teacherId: string, semester?: Semester): Promise<TopStudentPerClassItemDto[]> {
     const classIds = await this.getTeacherClassIds(teacherId);
-    return this.dashboardRepository.findTopStudentsPerClass(classIds);
+    return this.dashboardRepository.findTopStudentsPerClass(classIds, semester);
+  }
+
+  async getClassAverages(teacherId: string, semester?: Semester): Promise<MonthlyClassAverageDto[]> {
+    const classIds = await this.getTeacherClassIds(teacherId);
+    return this.dashboardRepository.findMonthlyClassAverages(classIds, semester);
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { AttendanceStatus } from '@prisma/client';
+import type { AttendanceStatus, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AttendanceResponseDto } from './dto/attendance-response.dto';
 
@@ -85,6 +85,7 @@ export class AttendanceRepository {
       exemptionReason?: string;
       exemptionExpiresAt?: Date;
     }>,
+    semester: Semester = 'A',
   ): Promise<AttendanceResponseDto[]> {
     await this.prisma.$transaction(
       records.map((r) =>
@@ -96,12 +97,14 @@ export class AttendanceRepository {
             classId,
             studentId: r.studentId,
             date,
+            semester,
             status: r.status,
             notes: r.notes,
             exemptionReason: r.exemptionReason,
             exemptionExpiresAt: r.exemptionExpiresAt,
           },
           update: {
+            semester,
             status: r.status,
             notes: r.notes,
             exemptionReason: r.exemptionReason ?? null,

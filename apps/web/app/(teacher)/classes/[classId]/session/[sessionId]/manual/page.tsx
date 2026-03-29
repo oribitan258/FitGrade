@@ -8,6 +8,7 @@ import { ArrowRight, Check, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
+import { useSemester } from '@/contexts/semester-context';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -161,6 +162,7 @@ function PassFailToggle({
 export default function ManualSessionPage(): React.JSX.Element {
   const { classId, sessionId } = useParams<{ classId: string; sessionId: string }>();
   const router = useRouter();
+  const { activeSemester } = useSemester();
 
   const { data: session, isLoading, error: sessionError } = useTestSession(sessionId, false);
 
@@ -339,6 +341,17 @@ export default function ManualSessionPage(): React.JSX.Element {
           הזנה ידנית
         </span>
       </nav>
+
+      {/* ── Semester safety badge ─────────────────────────────── */}
+      <div className={cn(
+        'flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold border',
+        activeSemester === 'A'
+          ? 'bg-violet-50/80 text-violet-700 border-violet-200/70'
+          : 'bg-emerald-50/80 text-emerald-700 border-emerald-200/70',
+      )}>
+        <span aria-hidden="true">📌</span>
+        <span>שימו לב: ההזנה מתבצעת למחצית {activeSemester === 'A' ? 'א׳' : 'ב׳'}</span>
+      </div>
 
       {/* ── Header card ───────────────────────────────────────── */}
       <motion.div
@@ -544,7 +557,9 @@ export default function ManualSessionPage(): React.JSX.Element {
             'flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-white transition-colors',
             allDone
               ? 'bg-emerald-600 hover:bg-emerald-700 shadow-[0_4px_20px_rgba(16,185,129,0.35)]'
-              : 'bg-indigo-600 hover:bg-indigo-700 shadow-[0_4px_20px_rgba(99,102,241,0.30)]',
+              : activeSemester === 'A'
+                ? 'bg-violet-600 hover:bg-violet-700 shadow-[0_4px_20px_rgba(124,58,237,0.30)]'
+                : 'bg-emerald-600 hover:bg-emerald-700 shadow-[0_4px_20px_rgba(16,185,129,0.30)]',
             isEndingRef.current && 'opacity-70 cursor-not-allowed',
           )}
         >

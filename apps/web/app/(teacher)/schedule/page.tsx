@@ -12,6 +12,8 @@ import {
 import { useClasses } from '@/hooks/use-classes';
 import type { ClassData } from '@fitgrade/types';
 import { cn } from '@/lib/utils';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -220,6 +222,7 @@ function ScheduleCell({ cls, accent, onOpen, onRemove, onAdd }: CellProps): Reac
 
 export default function SchedulePage(): React.JSX.Element {
   const router = useRouter();
+  const { activeSemester } = useSemester();
   const { data: classes, isLoading } = useClasses();
 
   /** key = "dayIndex-periodIndex" → classId */
@@ -319,6 +322,7 @@ export default function SchedulePage(): React.JSX.Element {
         </motion.div>
       </div>
 
+      <SemesterTransitionWrapper activeSemester={activeSemester}>
       {/* ── Legend ──────────────────────────────────────────────────── */}
       {!isLoading && classes && classes.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
@@ -446,6 +450,8 @@ export default function SchedulePage(): React.JSX.Element {
           </div>
         </motion.div>
       )}
+
+      </SemesterTransitionWrapper>
 
       {/* ── Class picker modal ────────────────────────────────────────── */}
       <AnimatePresence>

@@ -9,6 +9,7 @@ import { getHebrewGradeLabel } from '@fitgrade/types';
 import type { FinalGrade, ProgressPoint, StudentTestHistory, TalmidautRecord } from '@fitgrade/types';
 import { useClass, useClassDetails } from '@/hooks/use-classes';
 import { useStudentProfile } from '@/hooks/use-student-profile';
+import { useSemester } from '@/contexts/semester-context';
 import { apiRequest } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -990,10 +991,11 @@ function StudentProfileSkeleton(): React.JSX.Element {
 
 export default function StudentProfilePage(): React.JSX.Element {
   const { classId, studentId } = useParams<{ classId: string; studentId: string }>();
+  const { activeSemester } = useSemester();
 
   const { data: cls }                                     = useClass(classId);
-  const { data: profile, isLoading, error, mutate }       = useStudentProfile(classId, studentId);
-  const { data: classDetails }                            = useClassDetails(classId);
+  const { data: profile, isLoading, error, mutate }       = useStudentProfile(classId, studentId, activeSemester);
+  const { data: classDetails }                            = useClassDetails(classId, activeSemester);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);

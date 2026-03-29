@@ -413,6 +413,63 @@
     0%   { transform: translateX(0); }
     100% { transform: translateX(-50%); }
   }
+
+  /* ── Background Canvas CSS Animations ──────────────────────────────────────
+   * Replaces continuous Framer Motion loops on background elements.
+   * Runs on the GPU compositor thread — zero JS cost during idle.            */
+
+  @keyframes bg-icon-float {
+    0%, 100% { transform: translateY(0)    rotate(var(--fi-r0, 0deg)); }
+    50%       { transform: translateY(-16px) rotate(var(--fi-r1, 6deg)); }
+  }
+
+  @keyframes bg-orb-y {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50%       { transform: translateY(var(--orb-y, 20px)) scale(var(--orb-s, 1.1)); }
+  }
+
+  @keyframes bg-orb-x {
+    0%, 100% { transform: translateX(0) scale(1); }
+    50%       { transform: translateX(var(--orb-x, 20px)) scale(var(--orb-s, 1.08)); }
+  }
+
+  @keyframes bg-liquid-wave {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  .bg-icon-float {
+    animation: bg-icon-float var(--fi-dur, 14s) ease-in-out infinite;
+    animation-delay: var(--fi-delay, 0s);
+  }
+
+  .bg-orb-y {
+    animation: bg-orb-y var(--orb-dur, 20s) ease-in-out infinite;
+    animation-delay: var(--orb-delay, 0s);
+  }
+
+  .bg-orb-x {
+    animation: bg-orb-x var(--orb-dur, 24s) ease-in-out infinite;
+    animation-delay: var(--orb-delay, 0s);
+  }
+
+  .bg-liquid-wave {
+    animation: bg-liquid-wave 120s linear infinite;
+  }
+}
+
+/* ── Semester-aware card borders ─────────────────────────────────────────────
+ * Set data-semester="A" or "B" on the teacher layout root div.
+ * SemesterPanel components inherit --semester-border without prop-drilling.   */
+
+[data-semester='A'] {
+  --semester-border:       rgba(139, 92, 246, 0.20);
+  --semester-border-hover: rgba(139, 92, 246, 0.35);
+}
+
+[data-semester='B'] {
+  --semester-border:       rgba(34, 197, 94, 0.20);
+  --semester-border-hover: rgba(34, 197, 94, 0.35);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

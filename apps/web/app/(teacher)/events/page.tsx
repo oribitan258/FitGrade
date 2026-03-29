@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterBadge } from '@/components/ui/semester-badge';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -286,6 +289,7 @@ function DeleteConfirmDialog({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EventsPage(): React.JSX.Element {
+  const { activeSemester } = useSemester();
   const { data: events, isLoading, mutate } = useEvents();
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -342,9 +346,11 @@ export default function EventsPage(): React.JSX.Element {
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           הוסף אירוע
+          <SemesterBadge />
         </Button>
       </div>
 
+      <SemesterTransitionWrapper activeSemester={activeSemester}>
       {isLoading ? (
         <PageSkeleton />
       ) : (
@@ -398,6 +404,7 @@ export default function EventsPage(): React.JSX.Element {
           )}
         </div>
       )}
+      </SemesterTransitionWrapper>
 
       <AddEventDialog
         open={addOpen}

@@ -3,9 +3,54 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AttendanceStatus, Gender, Prisma } from '@prisma/client';
+import { AttendanceStatus, Gender, Prisma, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StudentResponseDto } from './dto/student-response.dto';
+
+// ─── Report raw types ─────────────────────────────────────────────────────────
+
+/** One test result row for the student being reported. */
+export interface RawReportResult {
+  rawValue: Prisma.Decimal | null;
+  calculatedGrade: number | null;
+  gradeOverride: number | null;
+  session: {
+    testTypeId: string;
+    conductedAt: Date;
+    testType: { nameHe: string; unit: string | null; inputType: string };
+  };
+}
+
+/** Lightweight result row for computing class-wide benchmarks. */
+export interface RawBenchmarkResult {
+  calculatedGrade: number | null;
+  gradeOverride: number | null;
+  session: { testTypeId: string };
+}
+
+/** All raw data needed to build StudentReportResponseDto. */
+export interface RawReportData {
+  student: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    gender: Gender;
+    dateOfBirth: Date;
+    studentCode: string;
+  };
+  cls: {
+    name: string;
+    gradeLevel: number | null;
+    testWeight: number;
+    talmidautWeight: number;
+  };
+  studentResults: RawReportResult[];
+  /** Aggregated attendance counts keyed by AttendanceStatus. */
+  attendanceCounts: Record<string, number>;
+  /** All results for every student in the class — used for class-average benchmarks. */
+  classResults: RawBenchmarkResult[];
+  talmidautRecords: { participation: number; uniform: number; behavior: number }[];
+}
 
 /** Raw test result row used by findRawStudentProfile. */
 export interface RawStudentResult {
@@ -145,11 +190,15 @@ export class StudentsRepository {
 
   /**
    * Loads all raw data needed to build a student profile in a single round-trip.
+   * When `semester` is provided, test results are scoped to that semester only
+   * (via the nested TestSession.semester field). Attendance and Talmidaut records
+   * are not semester-filtered (they are date-stamped or class-scoped).
    * Throws NotFoundException if the student doesn't exist.
    */
   async findRawStudentProfile(
     studentId: string,
     classId: string,
+    semester?: Semester,
   ): Promise<RawStudentProfile> {
     const [student, results, attendanceTotal, attendancePresent, recentAttendance, talmidautRecords, classData] =
       await Promise.all([
@@ -165,7 +214,7 @@ export class StudentsRepository {
           },
         }),
         this.prisma.testResult.findMany({
-          where: { studentId, session: { classId } },
+          where: { studentId, session: { classId, ...(semester !== undefined ? { semester } : {}) } },
           select: {
             rawValue: true,
             calculatedGrade: true,
@@ -301,6 +350,122 @@ export class StudentsRepository {
       recommendedGrade,
       testWeight: cls.testWeight,
       talmidautWeight: cls.talmidautWeight,
+    };
+  }
+
+  /**
+   * Loads all raw data required to build a formal student report in one round-trip.
+   *
+   * Five parallel queries:
+   *  1. Student + class metadata
+   *  2. Student's test results for the class (semester-filtered when provided)
+   *  3. Attendance counts grouped by status (single query)
+   *  4. All class-wide test results for benchmark averages (semester-filtered)
+   *  5. Talmidaut records for final-grade calculation
+   *
+   * Throws NotFoundException if the student does not exist.
+   */
+  async findReportData(
+    studentId: string,
+    classId: string,
+    semester?: Semester,
+  ): Promise<RawReportData> {
+    const semesterFilter = semester !== undefined ? { semester } : {};
+
+    const [studentAndClass, studentResults, rawAttendance, classResults, talmidautRecords] =
+      await Promise.all([
+        // ── 1. Student + class in a single join ────────────────────────────────
+        this.prisma.classEnrollment.findFirst({
+          where: { studentId, classId },
+          select: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                gender: true,
+                dateOfBirth: true,
+                studentCode: true,
+              },
+            },
+            class: {
+              select: {
+                name: true,
+                gradeLevel: true,
+                testWeight: true,
+                talmidautWeight: true,
+              },
+            },
+          },
+        }),
+
+        // ── 2. Student's own test results ──────────────────────────────────────
+        this.prisma.testResult.findMany({
+          where: {
+            studentId,
+            session: { classId, ...semesterFilter },
+          },
+          select: {
+            rawValue: true,
+            calculatedGrade: true,
+            gradeOverride: true,
+            session: {
+              select: {
+                testTypeId: true,
+                conductedAt: true,
+                testType: { select: { nameHe: true, unit: true, inputType: true } },
+              },
+            },
+          },
+          orderBy: { session: { conductedAt: 'asc' } },
+        }),
+
+        // ── 3. Attendance counts — one query via groupBy ───────────────────────
+        this.prisma.attendanceRecord.groupBy({
+          by: ['status'],
+          where: { studentId, classId, ...semesterFilter },
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          _count: { status: true },
+        }),
+
+        // ── 4. Class-wide results for benchmark averages ───────────────────────
+        this.prisma.testResult.findMany({
+          where: {
+            session: { classId, ...semesterFilter },
+          },
+          select: {
+            calculatedGrade: true,
+            gradeOverride: true,
+            session: { select: { testTypeId: true } },
+          },
+        }),
+
+        // ── 5. Talmidaut records — NOT semester-filtered by design ────────────
+        // TalmidautRecord has no semester column; the entire year's talmidaut
+        // average is always included in every semester view (as per spec).
+        this.prisma.talmidautRecord.findMany({
+          where: { studentId, classId },
+          select: { participation: true, uniform: true, behavior: true },
+        }),
+      ]);
+
+    if (studentAndClass === null) {
+      throw new NotFoundException(`תלמיד ${studentId} אינו רשום לכיתה זו`);
+    }
+
+    // Collapse groupBy rows into a plain Record<status, count>
+    const attendanceCounts: Record<string, number> = {};
+    for (const row of rawAttendance) {
+      attendanceCounts[row.status] = row._count.status;
+    }
+
+    return {
+      student: studentAndClass.student,
+      cls: studentAndClass.class,
+      studentResults,
+      attendanceCounts,
+      classResults,
+      talmidautRecords,
     };
   }
 

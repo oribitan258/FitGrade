@@ -28,7 +28,10 @@ export {
 export type {
   Semester,
   Gender,
+  ClassGenderType,
+  TestCategory,
   ClassData,
+  TestTypeData,
   StudentData,
   CreateClassInput,
   CreateStudentInput,
@@ -57,6 +60,9 @@ export type {
   CreateEventInput,
   ReportRow,
   ReportTestBreakdown,
+  ReportTestResult,
+  ReportAttendance,
+  StudentReport,
 } from './schemas';
 export type {
   CopilotSSEEventType,

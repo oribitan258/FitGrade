@@ -10,7 +10,11 @@ function apiFetcher<T>(path: string): Promise<T> {
   return apiRequest<T>(path);
 }
 
-/** Fetches the authenticated teacher's class list. */
+/**
+ * Fetches the authenticated teacher's class list.
+ * Classes are year-round entities — no semester filtering.
+ * The SWR key is always `/classes`; the cache is shared across semesters.
+ */
 export function useClasses(): ReturnType<typeof useSWR<ClassData[]>> {
   return useSWR<ClassData[]>('/classes', apiFetcher, {
     revalidateOnFocus: false,
@@ -33,10 +37,10 @@ export function useStudents(classId: string): ReturnType<typeof useSWR<StudentDa
   );
 }
 
-/** Fetches aggregated class details (per-test summaries, attendance %). Pauses when classId is falsy. */
-export function useClassDetails(classId: string): ReturnType<typeof useSWR<ClassDetails>> {
+/** Fetches aggregated class details scoped to a semester. Pauses when classId is falsy. */
+export function useClassDetails(classId: string, semester: string): ReturnType<typeof useSWR<ClassDetails>> {
   return useSWR<ClassDetails>(
-    classId ? `/classes/${classId}/details` : null,
+    classId ? `/classes/${classId}/details?semester=${semester}` : null,
     apiFetcher,
     { revalidateOnFocus: false },
   );

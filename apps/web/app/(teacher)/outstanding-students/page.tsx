@@ -9,6 +9,8 @@ import type { TopStudentItem } from '@fitgrade/types';
 import { useTopStudents, useTopStudentsByTest } from '@/hooks/use-top-students';
 import { useClasses } from '@/hooks/use-classes';
 import { useTestTypes } from '@/hooks/use-test-types';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 import { cn } from '@/lib/utils';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
@@ -292,8 +294,9 @@ export default function OutstandingStudentsPage(): React.JSX.Element {
   const [selectedTestId, setSelectedTestId] = useState<string>('');
   const [testDropOpen, setTestDropOpen]     = useState(false);
 
-  const { data: topStudents, isLoading: topLoading }   = useTopStudents();
-  const { data: testStudents, isLoading: testLoading } = useTopStudentsByTest(selectedTestId || null);
+  const { activeSemester } = useSemester();
+  const { data: topStudents, isLoading: topLoading }   = useTopStudents(activeSemester);
+  const { data: testStudents, isLoading: testLoading } = useTopStudentsByTest(selectedTestId || null, activeSemester);
   const { data: classes }                              = useClasses();
   const { data: testTypes }                            = useTestTypes();
 
@@ -346,6 +349,7 @@ export default function OutstandingStudentsPage(): React.JSX.Element {
           </Link>
         </motion.div>
 
+        <SemesterTransitionWrapper activeSemester={activeSemester}>
         {/* ── School MVPs — gender split ───────────────────────────────── */}
         {!selectedTestId && (maleTop.length > 0 || femaleTop.length > 0) && (
           <motion.div variants={ITEM}>
@@ -520,8 +524,19 @@ export default function OutstandingStudentsPage(): React.JSX.Element {
             className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-slate-200 bg-white/50 py-20 text-center"
           >
             <Trophy className="h-10 w-10 text-slate-200" aria-hidden="true" />
-            <p className="font-semibold text-slate-500">אין תלמידים להצגה</p>
-            <p className="text-sm text-slate-400">נסה לשנות את הסינון או להוסיף תוצאות מבחן</p>
+            {search === '' && classFilter === 'all' && !selectedTestId ? (
+              <>
+                <p className="font-semibold text-slate-500">
+                  {`אין עדיין תוצאות למחצית ${activeSemester === 'A' ? 'א׳' : 'ב׳'}`}
+                </p>
+                <p className="text-sm text-slate-400">הגרף יתעדכן לאחר רישום תוצאות מבחן</p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-slate-500">אין תלמידים להצגה</p>
+                <p className="text-sm text-slate-400">נסה לשנות את הסינון</p>
+              </>
+            )}
           </motion.div>
         )}
 
@@ -596,6 +611,7 @@ export default function OutstandingStudentsPage(): React.JSX.Element {
               : 'מדורג לפי ממוצע ציוני כושר'}
           </motion.p>
         )}
+        </SemesterTransitionWrapper>
       </motion.div>
     </AnimatePresence>
   );

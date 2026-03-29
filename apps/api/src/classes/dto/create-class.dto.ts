@@ -1,6 +1,7 @@
-import { IsEnum, IsNotEmpty, IsString, Matches } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import { Semester } from '@prisma/client';
+import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ClassGenderType, Semester } from '@prisma/client';
 
 export class CreateClassDto {
   @ApiProperty({ example: "כיתה י' 1" })
@@ -22,4 +23,22 @@ export class CreateClassDto {
   @ApiProperty({ enum: Semester, enumName: 'Semester', example: Semester.A })
   @IsEnum(Semester)
   semester!: Semester;
+
+  /** Gender composition of the class — defaults to MIXED when omitted. */
+  @ApiPropertyOptional({ enum: ClassGenderType, enumName: 'ClassGenderType', default: ClassGenderType.MIXED })
+  @IsOptional()
+  @IsEnum(ClassGenderType)
+  genderType?: ClassGenderType;
+
+  /**
+   * School grade level 1–12. Display metadata for the test picker recommended badges.
+   * Optional — omit for legacy classes or when grade level is unknown.
+   */
+  @ApiPropertyOptional({ example: 10, description: 'School grade level 1–12. Display metadata only.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gradeLevel?: number;
 }

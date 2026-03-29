@@ -10,6 +10,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Activity,
+  AlertTriangle,
+  BarChart2,
   Brain,
   CalendarDays,
   CheckCircle2,
@@ -46,6 +48,8 @@ import {
 } from '@fitgrade/types';
 import { ApiError } from '@fitgrade/types';
 import { useClass, useClassDetails, useStudents } from '@/hooks/use-classes';
+import { useComparisonAvailability } from '@/hooks/use-comparison';
+import { useSemester } from '@/contexts/semester-context';
 import { useTestTypes, type TestType } from '@/hooks/use-test-types';
 import {
   Area,
@@ -75,6 +79,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn, formatRawValue } from '@/lib/utils';
+import { formatClassWithGender } from '@/lib/class-utils';
+import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
+import { SemesterPanel } from '@/components/ui/semester-panel';
+import { TestTypePicker } from '@/components/tests/test-type-picker';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -406,6 +414,7 @@ function ExemptionDialog({
   onOpenChange,
   onSuccess,
 }: ExemptionDialogProps): React.JSX.Element {
+  const { activeSemester } = useSemester();
   const [reason, setReason]     = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [loading, setLoading]   = useState(false);
@@ -426,6 +435,7 @@ function ExemptionDialog({
         method: 'POST',
         body: JSON.stringify({
           date: today,
+          semester: activeSemester,
           records: [{
             studentId,
             status: 'EXCUSED',
@@ -457,6 +467,15 @@ function ExemptionDialog({
             </div>
           </div>
         </DialogHeader>
+        <div className={cn(
+          'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold border',
+          activeSemester === 'A'
+            ? 'bg-violet-50 text-violet-700 border-violet-200/70'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+        )}>
+          <span aria-hidden="true">📌</span>
+          <span>שימו לב: ההזנה מתבצעת למחצית {activeSemester === 'A' ? 'א׳' : 'ב׳'}</span>
+        </div>
         <form onSubmit={(e) => { void handleSubmit(e); }} noValidate className="space-y-4 pt-1">
           <div className="space-y-1.5">
             <Label htmlFor="ex-reason" className="text-slate-700 font-medium">סיבת פטור <span className="text-red-500">*</span></Label>
@@ -497,7 +516,12 @@ function ExemptionDialog({
               <Button
                 type="submit"
                 disabled={loading || reason.trim().length < 2}
-                className="gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 shadow-sm"
+                className={cn(
+                  'gap-2 rounded-xl shadow-sm',
+                  activeSemester === 'A'
+                    ? 'bg-violet-600 hover:bg-violet-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700',
+                )}
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ShieldAlert className="h-4 w-4" aria-hidden="true" />}
                 {loading ? 'שומר...' : 'אשר פטור'}
@@ -531,6 +555,7 @@ function AbsenceDialog({
   onOpenChange,
   onSuccess,
 }: AbsenceDialogProps): React.JSX.Element {
+  const { activeSemester } = useSemester();
   const [date, setDate]       = useState(today);
   const [reason, setReason]   = useState('');
   const [loading, setLoading] = useState(false);
@@ -551,6 +576,7 @@ function AbsenceDialog({
         method: 'POST',
         body: JSON.stringify({
           date,
+          semester: activeSemester,
           records: [{
             studentId,
             status: 'ABSENT',
@@ -581,6 +607,15 @@ function AbsenceDialog({
             </div>
           </div>
         </DialogHeader>
+        <div className={cn(
+          'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold border',
+          activeSemester === 'A'
+            ? 'bg-violet-50 text-violet-700 border-violet-200/70'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+        )}>
+          <span aria-hidden="true">📌</span>
+          <span>שימו לב: ההזנה מתבצעת למחצית {activeSemester === 'A' ? 'א׳' : 'ב׳'}</span>
+        </div>
         <form onSubmit={(e) => { void handleSubmit(e); }} noValidate className="space-y-4 pt-1">
           <div className="space-y-1.5">
             <Label htmlFor="abs-date" className="flex items-center gap-1.5 text-slate-700 font-medium">
@@ -622,7 +657,12 @@ function AbsenceDialog({
               <Button
                 type="submit"
                 disabled={loading}
-                className="gap-2 rounded-xl bg-red-500 hover:bg-red-600 shadow-sm"
+                className={cn(
+                  'gap-2 rounded-xl shadow-sm',
+                  activeSemester === 'A'
+                    ? 'bg-violet-600 hover:bg-violet-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700',
+                )}
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <UserMinus className="h-4 w-4" aria-hidden="true" />}
                 {loading ? 'שומר...' : 'אשר חיסור'}
@@ -818,10 +858,12 @@ interface CreateSessionModalProps {
   classId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  gradeLevel?: number | null;
 }
 
-function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalProps): React.JSX.Element {
+function CreateSessionModal({ classId, open, onOpenChange, gradeLevel }: CreateSessionModalProps): React.JSX.Element {
   const router = useRouter();
+  const { activeSemester } = useSemester();
   const { data: testTypes, isLoading: typesLoading } = useTestTypes();
 
   const [testTypeId, setTestTypeId]   = useState('');
@@ -858,13 +900,15 @@ function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalP
         `/classes/${classId}/sessions`,
         {
           method: 'POST',
-          body: JSON.stringify({ testTypeId, conductedAt, isStopwatch }),
+          body: JSON.stringify({ testTypeId, conductedAt, isStopwatch, semester: activeSemester }),
         },
       );
 
       const isSprint10x4   = isStopwatch && (
         selectedType?.nameHe.includes('10X4') === true ||
         selectedType?.nameHe.includes('10x4') === true ||
+        selectedType?.nameHe.includes('4×10') === true ||
+        selectedType?.nameHe.includes('4x10') === true ||
         (selectedType?.nameHe.includes('10') === true && selectedType?.nameHe.includes('4') === true && selectedType?.nameHe.includes('שאטל') === true)
       );
       const isSprint60     = selectedType?.nameHe.includes('60') === true || selectedType?.nameHe.includes('ספרינט') === true;
@@ -907,28 +951,32 @@ function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalP
           </DialogDescription>
         </DialogHeader>
 
+        {/* Semester safety badge */}
+        <div className={cn(
+          'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold border',
+          activeSemester === 'A'
+            ? 'bg-violet-50 text-violet-700 border-violet-200/70'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+        )}>
+          <span aria-hidden="true">📌</span>
+          <span>שימו לב: ההזנה מתבצעת למחצית {activeSemester === 'A' ? 'א׳' : 'ב׳'}</span>
+        </div>
+
         <form onSubmit={(e) => { void handleSubmit(e); }} noValidate className="space-y-5 pt-1">
 
           {/* Test type selector */}
           <div className="space-y-1.5">
             <Label className="text-slate-700 font-semibold">סוג מבחן</Label>
             {typesLoading ? (
-              <div className="h-11 animate-pulse rounded-xl bg-slate-100" />
+              <div className="h-32 animate-pulse rounded-xl bg-slate-100" />
             ) : (
-              <select
+              <TestTypePicker
+                testTypes={testTypes ?? []}
                 value={testTypeId}
-                onChange={(e) => setTestTypeId(e.target.value)}
+                onChange={setTestTypeId}
+                gradeLevel={gradeLevel}
                 disabled={isSubmitting}
-                className={cn(SELECT_STYLES)}
-                aria-label="בחר סוג מבחן"
-              >
-                {(testTypes ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nameHe}
-                    {t.unit ? ` (${t.unit})` : ''}
-                  </option>
-                ))}
-              </select>
+              />
             )}
 
             {/* Input type badge */}
@@ -994,7 +1042,12 @@ function CreateSessionModal({ classId, open, onOpenChange }: CreateSessionModalP
               <Button
                 type="submit"
                 disabled={isSubmitting || typesLoading || !testTypeId}
-                className="gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 shadow-sm"
+                className={cn(
+                  'gap-2 rounded-xl shadow-sm',
+                  activeSemester === 'A'
+                    ? 'bg-violet-600 hover:bg-violet-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700',
+                )}
               >
                 {isSubmitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -2804,6 +2857,7 @@ function AiDispatchModal({
 
 export default function ClassDetailPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
+  const router = useRouter();
   const [isAddStudentOpen, setIsAddStudentOpen]               = useState(false);
   const [isCreateSessionOpen, setIsCreateSessionOpen]         = useState(false);
   const [isAiDispatchOpen, setIsAiDispatchOpen]               = useState(false);
@@ -2818,9 +2872,11 @@ export default function ClassDetailPage(): React.JSX.Element {
   const [absenceDialogStudentId, setAbsenceDialogStudentId] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState('');
 
-  const { data: cls,      error: classError,    isLoading: classLoading    } = useClass(classId);
-  const { data: students, error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
-  const { data: details,  isLoading: detailsLoading } = useClassDetails(classId);
+  const { activeSemester } = useSemester();
+  const { data: cls,          error: classError,    isLoading: classLoading    } = useClass(classId);
+  const { data: students,     error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
+  const { data: details,      isLoading: detailsLoading } = useClassDetails(classId, activeSemester);
+  const { data: availability }                            = useComparisonAvailability(classId);
   const { data: testTypes } = useTestTypes();
 
   // Fetch today's attendance to drive absent/exempt button states
@@ -3039,8 +3095,29 @@ export default function ClassDetailPage(): React.JSX.Element {
             הכיתות שלי
           </Link>
           <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
-          <span className="font-semibold text-slate-700">{cls.name}</span>
+          <span className="font-semibold text-slate-700">{formatClassWithGender(cls.name, cls.genderType)}</span>
         </motion.nav>
+
+        {/* ── Semester mismatch warning ───────────────────────────────── */}
+        {cls.semester !== activeSemester && (
+          <motion.div
+            variants={ITEM}
+            className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+            role="alert"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden="true" />
+            <p className="text-sm text-amber-800">
+              <span className="font-bold">שים לב:</span>{' '}
+              כיתה זו שייכת ל{SEMESTER_LABELS[cls.semester]}, אך המערכת מוגדרת כעת ל{SEMESTER_LABELS[activeSemester]}.
+              {' '}הנתונים נשמרים ל{SEMESTER_LABELS[cls.semester]}.
+            </p>
+          </motion.div>
+        )}
+
+        {/* ── Semester B empty banner ─────────────────────────────────── */}
+        <SemesterEmptyBanner
+          visible={activeSemester === 'B' && testSummaries.length === 0}
+        />
 
         {/* ── Bento header grid ──────────────────────────────────────── */}
         <motion.div variants={ITEM} className="grid grid-cols-1 gap-3 sm:grid-cols-3" style={{ perspective: 1200 }}>
@@ -3054,7 +3131,7 @@ export default function ClassDetailPage(): React.JSX.Element {
             <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
               {cls.academicYear} · {SEMESTER_LABELS[cls.semester]}
             </p>
-            <h1 className="mb-4 text-2xl font-extrabold leading-tight text-white">{cls.name}</h1>
+            <h1 className="mb-4 text-2xl font-extrabold leading-tight text-white">{formatClassWithGender(cls.name, cls.genderType)}</h1>
             <button
               type="button"
               onClick={() => { void copyJoinCode(); }}
@@ -3160,6 +3237,56 @@ export default function ClassDetailPage(): React.JSX.Element {
           </Link>
         </motion.div>
 
+        {/* ── Semester Comparison CTA ─────────────────────────────────── */}
+        <motion.div variants={ITEM}>
+          <motion.button
+            type="button"
+            onClick={() => { router.push(`/classes/${classId}/comparison`); }}
+            disabled={!availability?.hasSemesterBData}
+            whileHover={
+              availability?.hasSemesterBData
+                ? { y: -4, boxShadow: '0 20px 52px rgba(20,184,166,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }
+                : {}
+            }
+            whileTap={availability?.hasSemesterBData ? { scale: 0.98 } : {}}
+            className={cn(
+              'relative flex w-full cursor-pointer items-center gap-5 overflow-hidden rounded-3xl px-7 py-5 text-start shadow-[0_4px_28px_rgba(20,184,166,0.30)] transition-opacity',
+              availability?.hasSemesterBData
+                ? 'bg-gradient-to-br from-teal-500 to-cyan-600 opacity-100'
+                : 'cursor-not-allowed bg-gradient-to-br from-slate-400 to-slate-500 opacity-50',
+            )}
+            aria-disabled={!availability?.hasSemesterBData}
+            title={!availability?.hasSemesterBData ? "אין נתוני מחצית ב' עדיין" : undefined}
+          >
+            <div className="pointer-events-none absolute -end-10 -bottom-10 h-32 w-32 rounded-full bg-white/8" />
+            <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/5" />
+            <motion.div
+              animate={availability?.hasSemesterBData ? { rotate: [0, 6, -6, 0], scale: [1, 1.08, 1] } : {}}
+              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+            >
+              <BarChart2 className="h-6 w-6 text-white" aria-hidden="true" />
+            </motion.div>
+            <div className="flex-1 min-w-0">
+              <p className="text-lg font-extrabold text-white">השוואת מחציות</p>
+              <p className="mt-0.5 text-sm text-white/75">
+                {availability?.hasSemesterBData
+                  ? 'השווה ציונים בין מחצית א׳ למחצית ב׳ עם גרפים ופירוט לפי תלמיד'
+                  : "אין נתוני מחצית ב' עדיין — הכפתור יופעל לאחר הזנת ציונים"}
+              </p>
+            </div>
+            {availability?.hasSemesterBData && (
+              <motion.div
+                animate={{ x: [0, 4, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                className="shrink-0"
+              >
+                <ChevronRight className="h-6 w-6 text-white/70" aria-hidden="true" />
+              </motion.div>
+            )}
+          </motion.button>
+        </motion.div>
+
         {/* ── AI Dispatch banner ─────────────────────────────────────── */}
         {failingStudents.length > 0 && (
           <motion.div variants={ITEM}>
@@ -3245,8 +3372,8 @@ export default function ClassDetailPage(): React.JSX.Element {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.45 }}
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 py-14 text-center"
           >
+          <SemesterPanel className="flex flex-col items-center justify-center gap-3 py-14 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
               <Dumbbell className="h-6 w-6 text-indigo-400" aria-hidden="true" />
             </div>
@@ -3254,6 +3381,7 @@ export default function ClassDetailPage(): React.JSX.Element {
               <p className="font-semibold text-slate-700">טרם בוצע מבחן זה בכיתה</p>
               <p className="mt-1 text-sm text-slate-400">לחץ &ldquo;הוסף שיעור / מבחן&rdquo; כדי להתחיל מבחן ולרשום תוצאות</p>
             </div>
+          </SemesterPanel>
           </motion.div>
         )}
 
@@ -3430,15 +3558,16 @@ export default function ClassDetailPage(): React.JSX.Element {
             <motion.div
               initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.5 }}
-              className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 py-14 text-center"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
-                <Users className="h-6 w-6 text-indigo-400" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-700">אין תלמידים רשומים</p>
-                <p className="mt-1 text-sm text-slate-400">לחץ &ldquo;הוסף תלמיד&rdquo; כדי להתחיל</p>
-              </div>
+              <SemesterPanel className="flex flex-col items-center justify-center gap-3 border-dashed py-14 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
+                  <Users className="h-6 w-6 text-indigo-400" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-700">אין תלמידים רשומים</p>
+                  <p className="mt-1 text-sm text-slate-400">לחץ &ldquo;הוסף תלמיד&rdquo; כדי להתחיל</p>
+                </div>
+              </SemesterPanel>
             </motion.div>
           )}
 
@@ -3485,52 +3614,51 @@ export default function ClassDetailPage(): React.JSX.Element {
                         'grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] items-center gap-4 border-b border-slate-50 px-5 py-3.5 last:border-0 transition-colors group',
                         isExempt ? 'bg-orange-50/40' : 'hover:bg-indigo-50/40',
                       )}>
-                        {/* Name + avatar + score + gender + level — all wrapped in a link */}
-                        <Link href={`/classes/${classId}/student/${student.id}`} className="contents">
-                          {/* Name + avatar */}
-                          <div className="flex items-center gap-3">
-                            <motion.div
-                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}
-                              whileHover={{ scale: 1.18, rotate: -6, transition: { type: 'spring', stiffness: 500, damping: 14 } }}
+                        {/* Name + avatar */}
+                        <div className="flex items-center gap-3">
+                          <motion.div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${tint}`}
+                            whileHover={{ scale: 1.18, rotate: -6, transition: { type: 'spring', stiffness: 500, damping: 14 } }}
+                          >
+                            {initials}
+                          </motion.div>
+                          <div>
+                            <Link
+                              href={`/classes/${classId}/students/${student.id}/report`}
+                              className={cn(
+                                'text-sm font-medium underline underline-offset-2 transition-colors',
+                                isExempt ? 'text-orange-600 hover:text-orange-700' : 'text-blue-600 hover:text-blue-800',
+                              )}
                             >
-                              {initials}
-                            </motion.div>
-                            <div>
-                              <div className={cn(
-                                'text-sm font-semibold transition-colors',
-                                isExempt  ? 'text-orange-600' :
-                                'text-slate-800 group-hover:text-indigo-700',
-                              )}>
-                                {student.firstName} {student.lastName}
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
-                                {isAbsent && <span className="rounded-full bg-red-100 px-1.5 py-px text-[10px] font-bold text-red-600">חסר/ה</span>}
-                                {isExempt && <span className="rounded-full bg-orange-100 px-1.5 py-px text-[10px] font-bold text-orange-600">פטור/ה</span>}
-                              </div>
+                              {student.firstName} {student.lastName}
+                            </Link>
+                            <div className="flex items-center gap-1.5">
+                              <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
+                              {isAbsent && <span className="rounded-full bg-red-100 px-1.5 py-px text-[10px] font-bold text-red-600">חסר/ה</span>}
+                              {isExempt && <span className="rounded-full bg-orange-100 px-1.5 py-px text-[10px] font-bold text-orange-600">פטור/ה</span>}
                             </div>
                           </div>
-                          {/* Score */}
-                          <span className={`text-lg font-extrabold ${
-                            score === 0          ? 'text-slate-300'   :
-                            level === 'excellent' ? 'text-emerald-600' :
-                            level === 'good'      ? 'text-blue-600'    :
-                            level === 'pass'      ? 'text-amber-600'   : 'text-red-600'
-                          }`}>
-                            {score > 0 ? score : '—'}
+                        </div>
+                        {/* Score */}
+                        <span className={`text-lg font-extrabold ${
+                          score === 0          ? 'text-slate-300'   :
+                          level === 'excellent' ? 'text-emerald-600' :
+                          level === 'good'      ? 'text-blue-600'    :
+                          level === 'pass'      ? 'text-amber-600'   : 'text-red-600'
+                        }`}>
+                          {score > 0 ? score : '—'}
+                        </span>
+                        {/* Gender */}
+                        <span className="text-xs text-slate-500">{GENDER_LABELS[student.gender]}</span>
+                        {/* Level badge */}
+                        {score > 0 ? (
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ls.bg} ${ls.text} ${ls.border}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${ls.dot}`} />
+                            {ls.label}
                           </span>
-                          {/* Gender */}
-                          <span className="text-xs text-slate-500">{GENDER_LABELS[student.gender]}</span>
-                          {/* Level badge */}
-                          {score > 0 ? (
-                            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${ls.bg} ${ls.text} ${ls.border}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${ls.dot}`} />
-                              {ls.label}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400">אין ציון</span>
-                          )}
-                        </Link>
+                        ) : (
+                          <span className="text-xs text-slate-400">אין ציון</span>
+                        )}
                         {/* Absent + Exempt action buttons */}
                         <StudentRowActions
                           studentId={student.id}
@@ -3589,6 +3717,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         classId={classId}
         open={isCreateSessionOpen}
         onOpenChange={setIsCreateSessionOpen}
+        gradeLevel={cls?.gradeLevel}
       />
       {exemptDialogStudentId && (() => {
         const s = (students ?? []).find((st) => st.id === exemptDialogStudentId);

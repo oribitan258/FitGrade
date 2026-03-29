@@ -12,14 +12,25 @@
  *   useStudents(classId)                      → student names (joined client-side)
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Loader2, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  X,
+} from 'lucide-react';
 import { useClasses, useStudents } from '@/hooks/use-classes';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError } from '@fitgrade/types';
 import { cn } from '@/lib/utils';
+import { useSemester } from '@/contexts/semester-context';
+import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,15 +59,16 @@ interface ToastState { message: string; type: 'error' | 'success' }
 // ─── Class Exemptions Panel ───────────────────────────────────────────────────
 
 interface ClassPanelProps {
-  classId:   string;
-  className: string;
-  today:     string;
-  onToast:   (t: ToastState) => void;
+  classId:     string;
+  className:   string;
+  today:       string;
+  searchQuery: string;
+  onToast:     (t: ToastState) => void;
 }
 
-function ClassExemptionsPanel({ classId, className, today, onToast }: ClassPanelProps): React.JSX.Element {
-  const [expanded, setExpanded]     = useState(true);
-  const [revoking, setRevoking]     = useState<Set<string>>(new Set());
+function ClassExemptionsPanel({ classId, className, today, searchQuery, onToast }: ClassPanelProps): React.JSX.Element {
+  const [expanded, setExpanded] = useState(true);
+  const [revoking, setRevoking] = useState<Set<string>>(new Set());
 
   const { data: students }   = useStudents(classId);
   const { data: attendance, mutate, isLoading } = useSWR<AttendanceRecord[]>(
@@ -65,13 +77,21 @@ function ClassExemptionsPanel({ classId, className, today, onToast }: ClassPanel
     { revalidateOnFocus: false },
   );
 
-  // With activeOnly=true, all returned records are active EXCUSED ones — build a map for metadata
+  // With activeOnly=true, all returned records are active EXCUSED ones
   const exemptRecordMap = new Map<string, AttendanceRecord>(
     (attendance ?? []).map((r) => [r.studentId, r]),
   );
 
-  // Join with student names
+  // All exempt students for this class (unfiltered)
   const exemptStudents = (students ?? []).filter((s) => exemptRecordMap.has(s.id));
+
+  // Apply search query filter (case-insensitive substring match on full name)
+  const normQuery = searchQuery.trim().toLowerCase();
+  const filteredStudents = normQuery.length === 0
+    ? exemptStudents
+    : exemptStudents.filter((s) =>
+        `${s.firstName} ${s.lastName}`.toLowerCase().includes(normQuery),
+      );
 
   const exemptCount = isLoading ? null : exemptStudents.length;
 
@@ -161,14 +181,21 @@ function ClassExemptionsPanel({ classId, className, today, onToast }: ClassPanel
                   טוען נתוני נוכחות...
                 </div>
               ) : exemptStudents.length === 0 ? (
+                /* No exemptions at all in this class today */
                 <div className="flex items-center gap-2 py-5 text-sm text-emerald-600">
                   <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                   אין תלמידים פטורים בכיתה זו היום
                 </div>
+              ) : filteredStudents.length === 0 ? (
+                /* Exemptions exist but search query filters them all out */
+                <div className="flex items-center gap-2 py-5 text-sm text-slate-400">
+                  <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  לא נמצאו פטורים התואמים לחיפוש
+                </div>
               ) : (
                 <ul className="mt-2 space-y-2">
                   <AnimatePresence>
-                    {exemptStudents.map((student) => {
+                    {filteredStudents.map((student) => {
                       const initials   = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
                       const isRevoking = revoking.has(student.id);
                       const record     = exemptRecordMap.get(student.id);
@@ -286,15 +313,29 @@ function Toast({ toast, onDismiss }: ToastProps): React.JSX.Element {
 
 export default function ExemptionsPage(): React.JSX.Element {
   const today = todayIso();
+  const { activeSemester } = useSemester();
   const { data: classes, isLoading: classesLoading } = useClasses();
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const [toast, setToast]                   = useState<ToastState | null>(null);
+  const [searchQuery, setSearchQuery]       = useState('');
+  const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
 
   const handleToast = useCallback((t: ToastState) => { setToast(t); }, []);
+
+  // Apply class filter at the page level — hides non-matching panels entirely
+  const visibleClasses = useMemo(
+    () => selectedClassId === 'ALL'
+      ? (classes ?? [])
+      : (classes ?? []).filter((c) => c.id === selectedClassId),
+    [classes, selectedClassId],
+  );
+
+  const hasClasses = classes && classes.length > 0;
 
   if (classesLoading) {
     return (
       <div className="space-y-4" dir="rtl">
         <div className="h-8 w-48 animate-pulse rounded-xl bg-white/70" />
+        <div className="h-14 animate-pulse rounded-2xl bg-white/60" />
         <div className="h-36 animate-pulse rounded-3xl bg-white/50" />
         <div className="h-36 animate-pulse rounded-3xl bg-white/40" />
       </div>
@@ -324,7 +365,7 @@ export default function ExemptionsPage(): React.JSX.Element {
         </div>
 
         {/* ── No classes ────────────────────────────────────── */}
-        {(!classes || classes.length === 0) && (
+        {!hasClasses && (
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -336,24 +377,107 @@ export default function ExemptionsPage(): React.JSX.Element {
           </motion.div>
         )}
 
-        {/* ── Class panels ──────────────────────────────────── */}
-        <div className="space-y-3">
-          {(classes ?? []).map((cls, i) => (
-            <motion.div
-              key={cls.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, ease: [0.22, 1, 0.36, 1], duration: 0.45 }}
-            >
-              <ClassExemptionsPanel
-                classId={cls.id}
-                className={cls.name}
-                today={today}
-                onToast={handleToast}
+        {/* ── Search / Filter Bar ───────────────────────────── */}
+        {hasClasses && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.45, delay: 0.08 }}
+            className="flex flex-col gap-2 sm:flex-row"
+          >
+            {/* Search input */}
+            <div className="relative flex-1">
+              {/* Search icon — end side (right in RTL) */}
+              <Search
+                className="pointer-events-none absolute inset-y-0 end-0 my-auto me-3.5 h-4 w-4 text-slate-400"
+                aria-hidden="true"
               />
-            </motion.div>
-          ))}
-        </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); }}
+                placeholder="חיפוש לפי שם תלמיד..."
+                dir="rtl"
+                className={cn(
+                  'h-11 w-full rounded-2xl pe-10 text-sm text-slate-700 placeholder-slate-400',
+                  'outline-none transition-all duration-200',
+                  'focus:ring-2 focus:ring-orange-300/60',
+                  searchQuery ? 'ps-9' : 'ps-3.5',
+                )}
+                style={{
+                  background:           'rgba(255,255,255,0.68)',
+                  backdropFilter:       'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border:               '1px solid rgba(255,255,255,0.80)',
+                  boxShadow:            '0 4px 20px rgba(15,23,42,0.07)',
+                }}
+                aria-label="חיפוש לפי שם תלמיד"
+              />
+              {/* Clear button — start side (left in RTL) */}
+              <AnimatePresence>
+                {searchQuery && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.7 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.7 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={() => { setSearchQuery(''); }}
+                    className="absolute inset-y-0 start-0 my-auto ms-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-200/80 text-slate-500 hover:bg-slate-300/80 transition-colors"
+                    aria-label="נקה חיפוש"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Class filter dropdown */}
+            <div className="relative shrink-0 sm:w-52">
+              <select
+                value={selectedClassId}
+                onChange={(e) => { setSelectedClassId(e.target.value); }}
+                dir="rtl"
+                className="h-11 w-full cursor-pointer appearance-none rounded-2xl pe-4 ps-4 text-sm font-semibold text-slate-700 outline-none transition-all duration-200 focus:ring-2 focus:ring-orange-300/60"
+                style={{
+                  background:           'rgba(255,255,255,0.68)',
+                  backdropFilter:       'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border:               '1px solid rgba(255,255,255,0.80)',
+                  boxShadow:            '0 4px 20px rgba(15,23,42,0.07)',
+                }}
+                aria-label="סינון לפי כיתה"
+              >
+                <option value="ALL">כל הכיתות</option>
+                {(classes ?? []).map((cls) => (
+                  <option key={cls.id} value={cls.id}>{cls.name}</option>
+                ))}
+              </select>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Class panels ──────────────────────────────────── */}
+        <SemesterTransitionWrapper activeSemester={activeSemester}>
+          <div className="space-y-3">
+            {visibleClasses.map((cls, i) => (
+              <motion.div
+                key={cls.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06, ease: [0.22, 1, 0.36, 1], duration: 0.45 }}
+              >
+                <ClassExemptionsPanel
+                  classId={cls.id}
+                  className={cls.name}
+                  today={today}
+                  searchQuery={searchQuery}
+                  onToast={handleToast}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </SemesterTransitionWrapper>
       </motion.div>
 
       {/* ── Toast ─────────────────────────────────────────── */}

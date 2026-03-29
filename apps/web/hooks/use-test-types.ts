@@ -14,6 +14,12 @@ export interface TestType {
   inputType: 'TIME' | 'REPS' | 'PASS_FAIL' | 'GENERAL';
   unit: string | null;
   isGlobal: boolean;
+  /** Logical grouping for the categorized test picker. */
+  category: 'ENDURANCE' | 'STRENGTH' | 'SPEED_AGILITY' | 'FLEXIBILITY';
+  /** Recommended minimum school grade (1–12). Display metadata only. */
+  minGrade: number | null;
+  /** Recommended maximum school grade (1–12). Display metadata only. */
+  maxGrade: number | null;
 }
 
 function apiFetcher<T>(path: string): Promise<T> {

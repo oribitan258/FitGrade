@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import type { Semester } from '@prisma/client';
 import { ClassesRepository } from './classes.repository';
 import type { CreateClassDto } from './dto/create-class.dto';
 import type { ClassResponseDto } from './dto/class-response.dto';
@@ -36,7 +37,9 @@ export class ClassesService {
 
   constructor(private readonly classesRepository: ClassesRepository) {}
 
-  /** Returns all classes for the authenticated teacher. */
+  /**
+   * Returns all classes for the authenticated teacher (year-round, no semester filter).
+   */
   async getMyClasses(teacherId: string): Promise<ClassResponseDto[]> {
     return this.classesRepository.findAllByTeacher(teacherId);
   }
@@ -56,17 +59,19 @@ export class ClassesService {
    * Returns aggregated class details for the class detail page.
    * Includes per-test summaries (progress, distribution, per-student grades)
    * and the overall attendance percentage.
+   * When `semester` is provided, only test results from that semester are included.
    * Throws NotFoundException if classId doesn't belong to teacherId.
    */
   async getClassDetails(
     classId: string,
     teacherId: string,
+    semester?: Semester,
   ): Promise<ClassDetailsResponseDto> {
     // Ownership check — throws NotFoundException if class not found or wrong teacher
     await this.classesRepository.findOneByIdAndTeacher(classId, teacherId);
 
     const { results, attendanceTotal, attendancePresent } =
-      await this.classesRepository.findRawClassDetails(classId);
+      await this.classesRepository.findRawClassDetails(classId, semester);
 
     const attendancePct =
       attendanceTotal > 0
@@ -174,6 +179,9 @@ export class ClassesService {
       try {
         const created = await this.classesRepository.create({
           ...dto,
+          // genderType defaults to MIXED when not provided by the teacher.
+          // Uses string literal so this file compiles before `prisma generate` is run.
+          genderType: (dto.genderType ?? 'MIXED') as 'BOYS' | 'GIRLS' | 'MIXED',
           teacherId,
           joinCode,
           joinCodeExpiresAt,

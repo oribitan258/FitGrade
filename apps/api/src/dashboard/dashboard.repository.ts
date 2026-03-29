@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Grade threshold below which a student is flagged as "below norm". */
@@ -76,7 +77,13 @@ export interface RawTopAchievement {
   studentName: string;
   classId: string;
   className: string;
+  /** Gender composition of the class: BOYS | GIRLS | MIXED */
+  classGenderType: string;
   examName: string;
+  /** Unit label for the test type, e.g. "שניות", "מטר" — null for REPS/PASS_FAIL. */
+  unit: string | null;
+  /** Raw measurement value (seconds for TIME, reps for REPS, etc.) — null if not recorded. */
+  rawValue: number | null;
   score: number;
 }
 
@@ -86,12 +93,23 @@ export const TOP_STUDENTS_LIMIT = 20;
 /** Maximum achievements returned by the top-achievements endpoint. */
 export const TOP_ACHIEVEMENTS_LIMIT = 10;
 
+export interface MonthlyClassAverage {
+  /** ISO month string "YYYY-MM" — used for sorting and as the chart X-axis key. */
+  month: string;
+  classId: string;
+  className: string;
+  /** Rounded average grade (0–100). */
+  avg: number;
+}
+
 @Injectable()
 export class DashboardRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns all class IDs for the teacher with enrollment counts.
+   * Classes are year-round entities — no semester filter applied here.
+   * Semester filtering is applied at the TestSession level in downstream queries.
    */
   async findTeacherClassMeta(teacherId: string): Promise<ClassMeta[]> {
     const classes = await this.prisma.class.findMany({
@@ -108,13 +126,18 @@ export class DashboardRepository {
   }
 
   /**
-   * Returns all test results for the teacher's classes.
+   * Returns all test results for the teacher's classes, optionally scoped to a semester.
    * Used for in-memory aggregation of fitness stats.
    */
-  async findResultsForTeacher(classIds: string[]): Promise<RawResult[]> {
+  async findResultsForTeacher(classIds: string[], semester?: Semester): Promise<RawResult[]> {
     if (classIds.length === 0) return [];
     const results = await this.prisma.testResult.findMany({
-      where: { session: { classId: { in: classIds } } },
+      where: {
+        session: {
+          classId: { in: classIds },
+          ...(semester !== undefined ? { semester } : {}),
+        },
+      },
       select: {
         calculatedGrade: true,
         studentId: true,
@@ -130,13 +153,16 @@ export class DashboardRepository {
 
   /**
    * Returns per-class attendance totals using DB-level COUNT aggregation.
-   * Replaces the old full-row scan (N rows → 2 rows per class).
+   * Scoped to the given semester so A and B show independent attendance stats.
    */
-  async findAttendanceStatsByClass(classIds: string[]): Promise<ClassAttendanceStat[]> {
+  async findAttendanceStatsByClass(classIds: string[], semester?: Semester): Promise<ClassAttendanceStat[]> {
     if (classIds.length === 0) return [];
     const grouped = await this.prisma.attendanceRecord.groupBy({
       by: ['classId', 'status'],
-      where: { classId: { in: classIds } },
+      where: {
+        classId: { in: classIds },
+        ...(semester !== undefined ? { semester } : {}),
+      },
       _count: { status: true },
     });
 
@@ -156,12 +182,12 @@ export class DashboardRepository {
 
   /**
    * Returns the N most recent test sessions across all teacher classes,
-   * ordered newest-first.
+   * ordered newest-first. Optionally scoped to a semester.
    */
-  async findRecentSessions(classIds: string[]): Promise<RawSession[]> {
+  async findRecentSessions(classIds: string[], semester?: Semester): Promise<RawSession[]> {
     if (classIds.length === 0) return [];
     const sessions = await this.prisma.testSession.findMany({
-      where: { classId: { in: classIds } },
+      where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
       orderBy: { conductedAt: 'desc' },
       take: RECENT_SESSIONS_LIMIT,
       select: {
@@ -182,40 +208,69 @@ export class DashboardRepository {
   }
 
   /**
-   * Counts how many (session, student) pairs are missing a TestResult.
-   * Only counts sessions that already exist — not hypothetical future sessions.
+   * Counts missing results using a (classId, testTypeId) grouping.
+   *
+   * A student is "missing" for a test type if they have NO result across ALL
+   * sessions of that test type in that class — not once per session.
+   * This prevents duplicate counts when a teacher runs the same test multiple
+   * times for different sub-groups of students.
    */
-  async findPendingResultsCount(classIds: string[]): Promise<number> {
+  async findPendingResultsCount(classIds: string[], semester?: Semester): Promise<number> {
     if (classIds.length === 0) return 0;
+
     const sessions = await this.prisma.testSession.findMany({
-      where: { classId: { in: classIds } },
+      where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
       select: {
-        _count: { select: { results: true } },
+        classId: true,
+        testTypeId: true,
+        results: { select: { studentId: true } },
         class: { select: { _count: { select: { enrollments: true } } } },
       },
     });
-    return sessions.reduce((total, s) => {
-      return total + Math.max(0, s.class._count.enrollments - s._count.results);
-    }, 0);
+
+    // classId → testTypeId → Set of student IDs that have at least one result
+    const byClass = new Map<string, Map<string, Set<string>>>();
+    const enrollmentCount = new Map<string, number>();
+
+    for (const session of sessions) {
+      if (!byClass.has(session.classId)) byClass.set(session.classId, new Map());
+      const byType = byClass.get(session.classId)!;
+      if (!byType.has(session.testTypeId)) byType.set(session.testTypeId, new Set());
+      const done = byType.get(session.testTypeId)!;
+      for (const r of session.results) done.add(r.studentId);
+      enrollmentCount.set(session.classId, session.class._count.enrollments);
+    }
+
+    let total = 0;
+    for (const [classId, byType] of byClass) {
+      const count = enrollmentCount.get(classId) ?? 0;
+      for (const done of byType.values()) {
+        total += Math.max(0, count - done.size);
+      }
+    }
+    return total;
   }
 
   /**
-   * Returns every (student, session) pair where the student has no TestResult.
-   * Uses two parallel queries to avoid loading all enrollments per-session
-   * (which would duplicate enrollment rows N times — once per session in the class).
+   * Returns one missing-result item per (student, testType, class) combination.
+   *
+   * Groups sessions by (classId, testTypeId) so that a student who appears in
+   * ANY session of the same test type is not counted as missing — regardless of
+   * how many times the teacher opened that test mode for other students.
+   * The most recent session's ID and date are used as the representative reference.
    */
-  async findMissingResultDetails(classIds: string[]): Promise<MissingResultItem[]> {
+  async findMissingResultDetails(classIds: string[], semester?: Semester): Promise<MissingResultItem[]> {
     if (classIds.length === 0) return [];
 
-    // Fetch sessions (with result student IDs) and all enrollments in parallel
     const [sessions, enrollments] = await Promise.all([
       this.prisma.testSession.findMany({
-        where: { classId: { in: classIds } },
-        orderBy: { conductedAt: 'desc' },
+        where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
+        orderBy: { conductedAt: 'desc' }, // newest first — first encounter per combo = most recent
         select: {
           id: true,
           conductedAt: true,
           classId: true,
+          testTypeId: true,
           testType: { select: { nameHe: true } },
           class: { select: { name: true } },
           results: { select: { studentId: true } },
@@ -230,7 +285,7 @@ export class DashboardRepository {
       }),
     ]);
 
-    // Build a classId → students lookup so we iterate enrollments once
+    // classId → student list
     const studentsByClass = new Map<string, Array<{ id: string; firstName: string; lastName: string }>>();
     for (const e of enrollments) {
       const list = studentsByClass.get(e.classId) ?? [];
@@ -238,21 +293,49 @@ export class DashboardRepository {
       studentsByClass.set(e.classId, list);
     }
 
-    const items: MissingResultItem[] = [];
+    // classId → testTypeId → combo metadata
+    // First encounter (newest session) sets the representative sessionId/date.
+    interface ComboMeta {
+      sessionId: string;
+      className: string;
+      testNameHe: string;
+      sessionDate: Date;
+      done: Set<string>; // student IDs with at least one result in this combo
+    }
+    const combos = new Map<string, Map<string, ComboMeta>>();
+
     for (const session of sessions) {
-      const resultStudentIds = new Set(session.results.map((r: { studentId: string }) => r.studentId));
-      const classStudents = studentsByClass.get(session.classId) ?? [];
-      for (const student of classStudents) {
-        if (!resultStudentIds.has(student.id)) {
-          items.push({
-            studentId: student.id,
-            studentName: `${student.firstName} ${student.lastName}`,
-            classId: session.classId,
-            className: session.class.name,
-            sessionId: session.id,
-            testNameHe: session.testType.nameHe,
-            sessionDate: session.conductedAt,
-          });
+      if (!combos.has(session.classId)) combos.set(session.classId, new Map());
+      const byType = combos.get(session.classId)!;
+      if (!byType.has(session.testTypeId)) {
+        byType.set(session.testTypeId, {
+          sessionId: session.id,
+          className: session.class.name,
+          testNameHe: session.testType.nameHe,
+          sessionDate: session.conductedAt,
+          done: new Set(),
+        });
+      }
+      const meta = byType.get(session.testTypeId)!;
+      for (const r of session.results) meta.done.add(r.studentId);
+    }
+
+    const items: MissingResultItem[] = [];
+    for (const [classId, byType] of combos) {
+      const classStudents = studentsByClass.get(classId) ?? [];
+      for (const meta of byType.values()) {
+        for (const student of classStudents) {
+          if (!meta.done.has(student.id)) {
+            items.push({
+              studentId: student.id,
+              studentName: `${student.firstName} ${student.lastName}`,
+              classId,
+              className: meta.className,
+              sessionId: meta.sessionId,
+              testNameHe: meta.testNameHe,
+              sessionDate: meta.sessionDate,
+            });
+          }
         }
       }
     }
@@ -266,11 +349,15 @@ export class DashboardRepository {
   async findBelowNormDetails(
     classIds: string[],
     threshold: number,
+    semester?: Semester,
   ): Promise<BelowNormItem[]> {
     if (classIds.length === 0) return [];
     const results = await this.prisma.testResult.findMany({
       where: {
-        session: { classId: { in: classIds } },
+        session: {
+          classId: { in: classIds },
+          ...(semester !== undefined ? { semester } : {}),
+        },
         calculatedGrade: { lt: threshold },
       },
       orderBy: { calculatedGrade: 'asc' },
@@ -303,12 +390,12 @@ export class DashboardRepository {
    * Uses DB-level groupBy + _avg instead of loading all result rows into memory.
    * Students with no results are excluded.
    */
-  async findTopStudents(classIds: string[], limit: number): Promise<RawTopStudent[]> {
+  async findTopStudents(classIds: string[], limit: number, semester?: Semester): Promise<RawTopStudent[]> {
     if (classIds.length === 0) return [];
 
     // Step 1: Resolve session IDs for the teacher's classes (avoids nested-relation groupBy limitation)
     const sessions = await this.prisma.testSession.findMany({
-      where: { classId: { in: classIds } },
+      where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
       select: { id: true, classId: true },
     });
     if (sessions.length === 0) return [];
@@ -372,11 +459,12 @@ export class DashboardRepository {
     classIds: string[],
     testTypeId: string,
     limit: number,
+    semester?: Semester,
   ): Promise<RawTopStudent[]> {
     if (classIds.length === 0) return [];
 
     const sessions = await this.prisma.testSession.findMany({
-      where: { classId: { in: classIds }, testTypeId },
+      where: { classId: { in: classIds }, testTypeId, ...(semester !== undefined ? { semester } : {}) },
       select: { id: true, classId: true },
     });
     if (sessions.length === 0) return [];
@@ -434,26 +522,30 @@ export class DashboardRepository {
    * deduplicated by student (only the student's single best result is kept),
    * ordered by score descending.
    */
-  async findTopAchievements(classIds: string[], limit: number): Promise<RawTopAchievement[]> {
+  async findTopAchievements(classIds: string[], limit: number, semester?: Semester): Promise<RawTopAchievement[]> {
     if (classIds.length === 0) return [];
 
     // Fetch a wide set ordered by score desc; deduplicate in memory to ensure
     // each student appears at most once with their highest-scoring result.
     const results = await this.prisma.testResult.findMany({
       where: {
-        session: { classId: { in: classIds } },
+        session: {
+          classId: { in: classIds },
+          ...(semester !== undefined ? { semester } : {}),
+        },
         calculatedGrade: { not: null },
       },
       orderBy: { calculatedGrade: 'desc' },
       take: limit * 10,
       select: {
         calculatedGrade: true,
+        rawValue: true,
         student: { select: { id: true, firstName: true, lastName: true } },
         session: {
           select: {
             classId: true,
-            class: { select: { name: true } },
-            testType: { select: { nameHe: true } },
+            class: { select: { name: true, genderType: true } },
+            testType: { select: { nameHe: true, unit: true } },
           },
         },
       },
@@ -469,7 +561,10 @@ export class DashboardRepository {
         studentName: `${r.student.firstName} ${r.student.lastName}`,
         classId: r.session.classId,
         className: r.session.class.name,
+        classGenderType: r.session.class.genderType,
         examName: r.session.testType.nameHe,
+        unit: r.session.testType.unit,
+        rawValue: r.rawValue !== null ? Number(r.rawValue) : null,
         score: r.calculatedGrade ?? 0,
       });
       if (deduped.length === limit) break;
@@ -481,12 +576,12 @@ export class DashboardRepository {
    * Returns the top 3 students per class by average calculatedGrade.
    * Aggregates in memory: sessions → results → group by classId+studentId → avg → top-3 per class.
    */
-  async findTopStudentsPerClass(classIds: string[]): Promise<RawTopStudentPerClass[]> {
+  async findTopStudentsPerClass(classIds: string[], semester?: Semester): Promise<RawTopStudentPerClass[]> {
     if (classIds.length === 0) return [];
 
     // Step 1: sessions with classId for the teachers' classes
     const sessions = await this.prisma.testSession.findMany({
-      where: { classId: { in: classIds } },
+      where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
       select: { id: true, classId: true },
     });
     if (sessions.length === 0) return [];
@@ -565,5 +660,72 @@ export class DashboardRepository {
       });
     }
     return output;
+  }
+
+  /**
+   * Returns average test grades grouped by class and calendar month for charting.
+   * Aggregates coalesce(gradeOverride, calculatedGrade) per (classId, YYYY-MM month).
+   * Results are sorted by month ascending so chart lines render left-to-right.
+   * Uses in-memory grouping to stay within the no-raw-SQL rule.
+   */
+  async findMonthlyClassAverages(
+    classIds: string[],
+    semester?: Semester,
+  ): Promise<MonthlyClassAverage[]> {
+    if (classIds.length === 0) return [];
+
+    const sessions = await this.prisma.testSession.findMany({
+      where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
+      select: {
+        id: true,
+        classId: true,
+        conductedAt: true,
+        class: { select: { name: true } },
+      },
+    });
+    if (sessions.length === 0) return [];
+
+    const sessionIds = sessions.map((s) => s.id);
+
+    const results = await this.prisma.testResult.findMany({
+      where: {
+        sessionId: { in: sessionIds },
+        calculatedGrade: { not: null },
+      },
+      select: { sessionId: true, calculatedGrade: true, gradeOverride: true },
+    });
+    if (results.length === 0) return [];
+
+    // Build a lookup: sessionId → { classId, className, month "YYYY-MM" }
+    const sessionMeta = new Map(
+      sessions.map((s) => [
+        s.id,
+        {
+          classId: s.classId,
+          className: s.class.name,
+          month: s.conductedAt.toISOString().slice(0, 7), // "YYYY-MM"
+        },
+      ]),
+    );
+
+    // Accumulate grades: "YYYY-MM|classId" → { className, grades[] }
+    const buckets = new Map<string, { className: string; grades: number[] }>();
+    for (const r of results) {
+      const meta = sessionMeta.get(r.sessionId);
+      if (!meta) continue;
+      const key = `${meta.month}|${meta.classId}`;
+      const bucket = buckets.get(key) ?? { className: meta.className, grades: [] };
+      bucket.grades.push(r.gradeOverride ?? r.calculatedGrade ?? 0);
+      buckets.set(key, bucket);
+    }
+
+    const output: MonthlyClassAverage[] = [];
+    for (const [key, bucket] of buckets) {
+      const [month, classId] = key.split('|') as [string, string];
+      const avg = Math.round(bucket.grades.reduce((s, g) => s + g, 0) / bucket.grades.length);
+      output.push({ month, classId, className: bucket.className, avg });
+    }
+
+    return output.sort((a, b) => a.month.localeCompare(b.month));
   }
 }

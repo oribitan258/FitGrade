@@ -14,12 +14,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ClassData } from '@fitgrade/types';
+import type { ClassData, Semester } from '@fitgrade/types';
 import { useClasses } from '@/hooks/use-classes';
 
-// ─── Storage key — must stay in sync with apps/web/app/(teacher)/schedule/page.tsx ──
+// ─── Storage key — semester-scoped so A and B schedules don't overwrite each other ──
 
-const STORAGE_KEY = 'fitgrade-schedule-v1';
+const storageKey = (semester: Semester): string => `fitgrade-schedule-v1-${semester}`;
 
 // ─── Period table — mirrors the PERIODS array in schedule/page.tsx ───────────
 
@@ -83,7 +83,7 @@ function nowInIsraelMinutes(): number {
  *
  * All other school days (Sun–Thu) receive 3 spread entries.
  */
-function seedDefaultSchedule(classes: readonly ClassData[]): Record<string, string> {
+function seedDefaultSchedule(classes: readonly ClassData[], semester: Semester): Record<string, string> {
   const n = classes.length;
   const getClassId = (i: number): string => classes[i % n]?.id ?? '';
 
@@ -125,7 +125,7 @@ function seedDefaultSchedule(classes: readonly ClassData[]): Record<string, stri
   }
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+    localStorage.setItem(storageKey(semester), JSON.stringify(seed));
   } catch { /* storage quota exceeded — ignore */ }
 
   return seed;
@@ -133,7 +133,7 @@ function seedDefaultSchedule(classes: readonly ClassData[]): Record<string, stri
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useTodaySchedule(): {
+export function useTodaySchedule(semester: Semester): {
   lessons:   TodayScheduleItem[] | undefined;
   isLoading: boolean;
   error:     unknown;
@@ -145,12 +145,12 @@ export function useTodaySchedule(): {
   // ── Read localStorage ───────────────────────────────────────────────────────
   const readStorage = useCallback((): void => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKey(semester));
       setSchedule(raw ? (JSON.parse(raw) as Record<string, string>) : {});
     } catch {
       setSchedule({});
     }
-  }, []);
+  }, [semester]);
 
   // Mount: initial read + 60-second refresh for live status transitions
   useEffect(() => {
@@ -162,16 +162,19 @@ export function useTodaySchedule(): {
   // Cross-tab sync: picks up schedule changes made in the Schedule page (other tab)
   useEffect(() => {
     function onStorageChange(e: StorageEvent): void {
-      if (e.key === STORAGE_KEY) readStorage();
+      if (e.key === storageKey(semester)) readStorage();
     }
     window.addEventListener('storage', onStorageChange);
     return () => window.removeEventListener('storage', onStorageChange);
-  }, [readStorage]);
+  }, [readStorage, semester]);
 
   // ── Auto-seed when schedule is empty and classes are ready ─────────────────
+  // Only seed for Semester A (default view). Semester B starts empty until the
+  // teacher explicitly assigns classes to slots.
   useEffect(() => {
     if (
       seededRef.current                  || // already ran this session
+      semester !== 'A'                   || // only auto-seed semester A
       classesLoading                     || // classes not ready yet
       !classes                           ||
       classes.length === 0               || // no classes to fill
@@ -180,8 +183,8 @@ export function useTodaySchedule(): {
     ) return;
 
     seededRef.current = true;
-    setSchedule(seedDefaultSchedule(classes));
-  }, [schedule, classes, classesLoading]);
+    setSchedule(seedDefaultSchedule(classes, semester));
+  }, [schedule, classes, classesLoading, semester]);
 
   // ── Derive today's lessons with computed statuses ──────────────────────────
 

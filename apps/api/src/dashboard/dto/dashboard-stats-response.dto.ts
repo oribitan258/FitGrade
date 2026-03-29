@@ -116,8 +116,17 @@ export class TopAchievementItemDto {
   @ApiProperty()
   className!: string;
 
+  @ApiProperty({ description: 'Gender composition of the class: BOYS | GIRLS | MIXED' })
+  classGenderType!: string;
+
   @ApiProperty({ description: 'Hebrew name of the specific exam (e.g. "ריצת 2000מ׳")' })
   examName!: string;
+
+  @ApiProperty({ description: 'Unit label (e.g. "שניות", "מטר") — null for REPS/PASS_FAIL', nullable: true })
+  unit!: string | null;
+
+  @ApiProperty({ description: 'Raw measurement value (seconds, reps, etc.) — null if not recorded', nullable: true })
+  rawValue!: number | null;
 
   @ApiProperty({ description: 'calculatedGrade for this result (0–100)' })
   score!: number;
@@ -167,4 +176,18 @@ export class TopStudentItemDto {
 
   @ApiProperty({ description: 'Student gender: MALE | FEMALE | OTHER' })
   gender!: string;
+}
+
+export class MonthlyClassAverageDto {
+  @ApiProperty({ description: 'Calendar month in "YYYY-MM" format — use as chart X-axis key', example: '2025-10' })
+  month!: string;
+
+  @ApiProperty()
+  classId!: string;
+
+  @ApiProperty()
+  className!: string;
+
+  @ApiProperty({ description: 'Rounded average grade for this class in this month (0–100)' })
+  avg!: number;
 }

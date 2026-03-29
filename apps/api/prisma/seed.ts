@@ -16,9 +16,8 @@
  * Run via: pnpm prisma:seed  (or)  npx prisma db seed
  *
  * Scoring formula:
- *   rawAtScore(s) = target100 + (100 - s) × (target55 - target100) / 45
- *   For TIME (lower=better): target55 > target100
- *   For GENERAL/REPS (higher=better): target100 > target55
+ *   Piecewise interpolation across 6 score anchors (s100/s90/s80/s70/s60/s50) per gender × age group.
+ *   Defined in apps/api/prisma/norms.config.ts; generated via generateBandsFromThresholds().
  */
 
 import {
@@ -28,8 +27,11 @@ import {
   Prisma,
   PrismaClient,
   Semester,
+  TestCategory,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { NORM_CONFIG, findThresholds } from './norms.config';
+import type { ScoreThresholds } from './norms.config';
 
 const prisma = new PrismaClient();
 
@@ -63,30 +65,6 @@ interface StudentDef {
   tier:      Tier;
 }
 
-interface TestTypeDef {
-  key:            string;
-  nameHe:         string;
-  descriptionHe?: string;
-  inputType:      FitnessInputType;
-  unit:           string;
-  higherIsBetter: boolean;
-}
-
-/** One anchor point defining a performance threshold for a gender × age group. */
-interface NormTarget {
-  gender:    Gender;
-  minAge:    number;
-  maxAge:    number;
-  target100: number; // raw value that earns score 100 (best performance)
-  target55:  number; // raw value that earns score 55  (mediocre)
-}
-
-interface NormSpec {
-  testKey:   string;
-  isTime:    boolean; // true = lower raw value is better (sprints, endurance)
-  targets:   NormTarget[];
-}
-
 interface NormBandInput {
   gender:   Gender;
   minAge:   number;
@@ -96,25 +74,7 @@ interface NormBandInput {
   score:    number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TEST TYPE CATALOGUE — 13 standard Israeli Ministry PE tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-const TEST_TYPES: TestTypeDef[] = [
-  { key: 'sprint60',         nameHe: 'ריצת 60 מטר',               descriptionHe: 'ריצת מהירות 60 מטר',                                inputType: FitnessInputType.TIME,    unit: 'שניות',  higherIsBetter: false },
-  { key: 'shuttle4x10',      nameHe: 'ריצת הלוך ושוב 4×10 מטר',   descriptionHe: 'מבחן זריזות — ריצת הלוך ושוב 4 פעמים 10 מטר',       inputType: FitnessInputType.TIME,    unit: 'שניות',  higherIsBetter: false },
-  { key: 'run2000',          nameHe: 'ריצת 2000 מטר',              descriptionHe: 'ריצת סיבולת 2000 מטר — בנים',                        inputType: FitnessInputType.TIME,    unit: 'שניות',  higherIsBetter: false },
-  { key: 'run1500',          nameHe: 'ריצת 1500 מטר',              descriptionHe: 'ריצת סיבולת 1500 מטר — בנות',                        inputType: FitnessInputType.TIME,    unit: 'שניות',  higherIsBetter: false },
-  { key: 'run1000',          nameHe: 'ריצת 1000 מטר',              descriptionHe: "ריצת סיבולת 1000 מטר — יסודי ה'–ו'",                 inputType: FitnessInputType.TIME,    unit: 'שניות',  higherIsBetter: false },
-  { key: 'beepTest',         nameHe: 'מבחן ביפ',                   descriptionHe: 'מבחן ביפ — רמת כושר אירובי',                         inputType: FitnessInputType.GENERAL, unit: 'רמה',    higherIsBetter: true  },
-  { key: 'situps',           nameHe: 'כפיפות בטן בדקה',            descriptionHe: 'כפיפות בטן בשכיבה, דקה אחת',                        inputType: FitnessInputType.REPS,    unit: 'חזרות',  higherIsBetter: true  },
-  { key: 'pushUps',          nameHe: 'שכיבות סמיכה',               descriptionHe: 'שכיבות סמיכה בניסיון אחד',                           inputType: FitnessInputType.REPS,    unit: 'חזרות',  higherIsBetter: true  },
-  { key: 'pullUps',          nameHe: 'מתח',                        descriptionHe: 'מתח — בנים; תלייה סטטית — בנות',                     inputType: FitnessInputType.REPS,    unit: 'חזרות',  higherIsBetter: true  },
-  { key: 'hangTime',         nameHe: 'תלייה סטטית',                descriptionHe: 'תלייה סטטית בידיים — בנות בעיקר',                    inputType: FitnessInputType.GENERAL, unit: 'שניות',  higherIsBetter: true  },
-  { key: 'standingLongJump', nameHe: 'קפיצה לרוחק מהמקום',         descriptionHe: 'קפיצה לרוחק ממצב עמידה',                             inputType: FitnessInputType.GENERAL, unit: 'ס"מ',    higherIsBetter: true  },
-  { key: 'powerBall',        nameHe: 'זריקת כדור כוח',             descriptionHe: 'זריקת כדור תרגיל (2 ק"ג) מעל הראש לפנים',           inputType: FitnessInputType.GENERAL, unit: 'מטר',    higherIsBetter: true  },
-  { key: 'flexibility',      nameHe: "כפיפת גו לפנים — גמישות",   descriptionHe: "כפיפת גו לפנים — מבחן סיטנד אנד ריץ'",              inputType: FitnessInputType.GENERAL, unit: 'ס"מ',    higherIsBetter: true  },
-];
+// TEST_TYPES and NORM_SPECS are replaced by NORM_CONFIG imported from norms.config.ts.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NORM TABLE TARGETS (per test × gender × age group)
@@ -122,282 +82,79 @@ const TEST_TYPES: TestTypeDef[] = [
 //   ה–ו: 10–12  |  ז': 12–13  |  ח': 13–14  |  ט': 14–15  |  י': 15–16  |  י"א: 16–17  |  י"ב: 17–18
 // ─────────────────────────────────────────────────────────────────────────────
 
-const NORM_SPECS: NormSpec[] = [
-  // ── ריצת 60 מטר (TIME: seconds, lower = better) ──────────────────────────
-  {
-    testKey: 'sprint60', isTime: true,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  9.0, target55: 12.0 },  // ה'–ו'
-      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100:  8.6, target55: 11.5 },  // ז'
-      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100:  8.2, target55: 11.0 },  // ח'
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100:  7.8, target55: 10.5 },  // ט'
-      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100:  7.6, target55: 10.2 },  // י'
-      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100:  7.5, target55: 10.0 },  // י"א
-      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100:  7.4, target55:  9.8 },  // י"ב
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 10.0, target55: 13.5 },  // ה'–ו'
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100:  9.6, target55: 13.2 },  // ז'
-      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100:  9.2, target55: 12.5 },  // ח'
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  8.8, target55: 12.0 },  // ט'
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100:  9.0, target55: 12.4 },  // י'
-      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100:  9.0, target55: 12.5 },  // י"א
-      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100:  9.1, target55: 12.7 },  // י"ב
-    ],
-  },
-  // ── ריצת הלוך ושוב 4×10 מטר (TIME: seconds, lower = better) ──────────────
-  {
-    testKey: 'shuttle4x10', isTime: true,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 11.5, target55: 14.5 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 10.5, target55: 13.5 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 10.0, target55: 13.0 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100:  9.8, target55: 12.5 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 12.0, target55: 15.5 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 11.5, target55: 14.5 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 11.0, target55: 14.0 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 10.8, target55: 13.8 },
-    ],
-  },
-  // ── ריצת 2000 מטר (TIME: seconds, lower = better) ────────────────────────
-  {
-    testKey: 'run2000', isTime: true,
-    targets: [
-      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 530, target55: 760 },  // ז'
-      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 495, target55: 720 },  // ח'
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 460, target55: 680 },  // ט'
-      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 440, target55: 665 },  // י'
-      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 428, target55: 660 },  // י"א
-      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 415, target55: 655 },  // י"ב
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 640, target55: 880 },  // ז'
-      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 600, target55: 840 },  // ח'
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 540, target55: 780 },  // ט'
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 522, target55: 762 },  // י'
-      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 513, target55: 754 },  // י"א
-      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 505, target55: 747 },  // י"ב
-    ],
-  },
-  // ── ריצת 1500 מטר (TIME: seconds, lower = better) ────────────────────────
-  {
-    testKey: 'run1500', isTime: true,
-    targets: [
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 360, target55: 540 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 330, target55: 510 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 310, target55: 480 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 435, target55: 660 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 420, target55: 630 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 400, target55: 600 },
-    ],
-  },
-  // ── ריצת 1000 מטר (TIME: seconds, lower = better, elementary) ─────────────
-  {
-    testKey: 'run1000', isTime: true,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 200, target55: 330 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 230, target55: 360 },
-    ],
-  },
-  // ── מבחן ביפ (GENERAL: level, higher = better) ───────────────────────────
-  {
-    testKey: 'beepTest', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  9.0, target55: 5.0 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 11.0, target55: 6.0 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 12.0, target55: 7.0 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 13.0, target55: 7.5 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100:  7.0, target55: 3.5 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100:  9.0, target55: 5.0 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 10.0, target55: 5.5 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 10.5, target55: 6.0 },
-    ],
-  },
-  // ── כפיפות בטן בדקה (REPS: higher = better) ──────────────────────────────
-  {
-    testKey: 'situps', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 40, target55: 22 },  // ה'–ו'
-      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 42, target55: 24 },  // ז'
-      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 45, target55: 26 },  // ח'
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 50, target55: 30 },  // ט'
-      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 52, target55: 31 },  // י'
-      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 54, target55: 32 },  // י"א
-      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 56, target55: 33 },  // י"ב
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 38, target55: 20 },  // ה'–ו'
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 38, target55: 22 },  // ז'
-      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 42, target55: 24 },  // ח'
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 45, target55: 26 },  // ט'
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 46, target55: 27 },  // י'
-      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 47, target55: 27 },  // י"א
-      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 48, target55: 28 },  // י"ב
-    ],
-  },
-  // ── שכיבות סמיכה (REPS: higher = better) ─────────────────────────────────
-  {
-    testKey: 'pushUps', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 25, target55: 12 },  // ה'–ו'
-      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 30, target55: 14 },  // ז'
-      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 35, target55: 17 },  // ח'
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 42, target55: 21 },  // ט'
-      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 45, target55: 22 },  // י'
-      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 47, target55: 23 },  // י"א
-      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 50, target55: 25 },  // י"ב
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 15, target55:  6 },  // ה'–ו'
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100: 16, target55:  7 },  // ז'
-      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100: 20, target55:  8 },  // ח'
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 23, target55:  9 },  // ט'
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100: 24, target55: 10 },  // י'
-      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100: 25, target55: 10 },  // י"א
-      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100: 26, target55: 11 },  // י"ב
-    ],
-  },
-  // ── מתח (REPS: higher = better) ──────────────────────────────────────────
-  {
-    testKey: 'pullUps', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  8, target55: 2 },  // ה'–ו'
-      { gender: Gender.MALE,   minAge: 12, maxAge: 13, target100: 10, target55: 3 },  // ז'
-      { gender: Gender.MALE,   minAge: 13, maxAge: 14, target100: 12, target55: 4 },  // ח'
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 14, target55: 5 },  // ט'
-      { gender: Gender.MALE,   minAge: 15, maxAge: 16, target100: 15, target55: 5 },  // י'
-      { gender: Gender.MALE,   minAge: 16, maxAge: 17, target100: 16, target55: 6 },  // י"א
-      { gender: Gender.MALE,   minAge: 17, maxAge: 18, target100: 17, target55: 6 },  // י"ב
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100:  4, target55: 1 },  // ה'–ו'
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 13, target100:  5, target55: 1 },  // ז'
-      { gender: Gender.FEMALE, minAge: 13, maxAge: 14, target100:  6, target55: 2 },  // ח'
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  7, target55: 2 },  // ט'
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 16, target100:  7, target55: 3 },  // י'
-      { gender: Gender.FEMALE, minAge: 16, maxAge: 17, target100:  8, target55: 3 },  // י"א
-      { gender: Gender.FEMALE, minAge: 17, maxAge: 18, target100:  9, target55: 3 },  // י"ב
-    ],
-  },
-  // ── תלייה סטטית (GENERAL: seconds, higher = better) ──────────────────────
-  {
-    testKey: 'hangTime', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 40, target55: 10 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 55, target55: 15 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 65, target55: 20 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 75, target55: 25 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 35, target55:  8 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 45, target55: 12 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 55, target55: 15 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 60, target55: 18 },
-    ],
-  },
-  // ── קפיצה לרוחק מהמקום (GENERAL: cm, higher = better) ───────────────────
-  {
-    testKey: 'standingLongJump', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 170, target55: 125 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 190, target55: 140 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 210, target55: 152 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 225, target55: 162 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 155, target55: 110 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 165, target55: 120 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 178, target55: 127 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 185, target55: 130 },
-    ],
-  },
-  // ── זריקת כדור כוח (GENERAL: meters, higher = better) ────────────────────
-  {
-    testKey: 'powerBall', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100:  6.5, target55: 3.5 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100:  8.5, target55: 4.5 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 10.0, target55: 5.5 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 11.5, target55: 6.5 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100:  5.0, target55: 2.5 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100:  6.0, target55: 3.0 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100:  7.0, target55: 3.5 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100:  7.5, target55: 4.0 },
-    ],
-  },
-  // ── כפיפת גו לפנים — גמישות (GENERAL: cm, higher = better) ──────────────
-  {
-    testKey: 'flexibility', isTime: false,
-    targets: [
-      { gender: Gender.MALE,   minAge: 10, maxAge: 12, target100: 22, target55:  5 },
-      { gender: Gender.MALE,   minAge: 12, maxAge: 14, target100: 20, target55:  3 },
-      { gender: Gender.MALE,   minAge: 14, maxAge: 15, target100: 22, target55:  4 },
-      { gender: Gender.MALE,   minAge: 15, maxAge: 18, target100: 25, target55:  6 },
-      { gender: Gender.FEMALE, minAge: 10, maxAge: 12, target100: 30, target55: 12 },
-      { gender: Gender.FEMALE, minAge: 12, maxAge: 14, target100: 33, target55: 14 },
-      { gender: Gender.FEMALE, minAge: 14, maxAge: 15, target100: 36, target55: 16 },
-      { gender: Gender.FEMALE, minAge: 15, maxAge: 18, target100: 38, target55: 18 },
-    ],
-  },
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
 // FORMULA HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Returns the raw value corresponding to a given score, using linear
- * interpolation between target_100 (score 100) and target_55 (score 55).
+ * Computes the raw measurement value corresponding to a given score using
+ * piecewise linear interpolation across the 6 score anchors in ScoreThresholds.
  *
- * TIME (lower=better): target55 > target100, value increases as score decreases.
- * GENERAL (higher=better): target100 > target55, value decreases as score decreases.
+ * Segments: 100→90, 90→80, 80→70, 70→60, 60→50, then extrapolates below 50
+ * using the same slope as the 60→50 segment.
  */
-function rawAtScore(score: number, target100: number, target55: number): number {
-  return target100 + (100 - score) * (target55 - target100) / 45;
+function rawAtScoreFromThresholds(score: number, t: ScoreThresholds): number {
+  if (score >= 100) return t.s100;
+  if (score >= 90) return t.s100 + (100 - score) * (t.s90  - t.s100) / 10;
+  if (score >= 80) return t.s90  + (90  - score) * (t.s80  - t.s90)  / 10;
+  if (score >= 70) return t.s80  + (80  - score) * (t.s70  - t.s80)  / 10;
+  if (score >= 60) return t.s70  + (70  - score) * (t.s60  - t.s70)  / 10;
+  if (score >= 50) return t.s60  + (60  - score) * (t.s50  - t.s60)  / 10;
+  // Below 50: extrapolate by extending the slope of the 60→50 segment
+  const slope = (t.s50 - t.s60) / 10;
+  return t.s50 + (50 - score) * slope;
 }
 
 /**
- * Returns the raw value a student of the given gender/age should achieve to
- * match their performance tier, based on the formula targets.
+ * Returns the raw value a student of the given gender/age should achieve
+ * to match their performance tier, using NORM_CONFIG thresholds.
  */
 function rawForTier(testKey: string, gender: Gender, age: number, tier: Tier): number {
-  const spec = NORM_SPECS.find((s) => s.testKey === testKey);
-  if (!spec) throw new Error(`No NormSpec for testKey: ${testKey}`);
-
-  const target = spec.targets.find(
-    (t) => t.gender === gender && t.minAge <= age && t.maxAge > age,
-  );
-  if (!target) throw new Error(`No NormTarget for ${testKey}/${gender}/age=${age}`);
-
-  return rawAtScore(TIER_GRADE[tier], target.target100, target.target55);
+  const thresholds = findThresholds(testKey, gender as 'MALE' | 'FEMALE', age);
+  if (!thresholds) throw new Error(`No norm thresholds for ${testKey}/${gender}/age=${age}`);
+  return rawAtScoreFromThresholds(TIER_GRADE[tier], thresholds);
 }
 
 /**
- * Generates NormTable band records for one test/gender/ageGroup combination.
+ * Generates NormTable band records for one test/gender/ageGroup combination
+ * from the 6-anchor ScoreThresholds.
  *
  * NormTable lookup condition: minValue ≤ rawValue < maxValue
  *
- * For TIME (lower=better):
- *   Score 100:  [0, rawAtScore(100)+ε)  — fastest times
- *   Score s:    [rawAtScore(s+1)+ε, rawAtScore(s)+ε)
- *   Score 1:    [rawAtScore(2)+ε, 999999)  — slowest times
+ * For TIME (isTime=true, lower=better):
+ *   Score 100: [0, raw(100)+ε)
+ *   Score s:   [raw(s+1)+ε, raw(s)+ε)
+ *   Score 1:   [raw(2)+ε, 999999)
  *
- * For GENERAL/REPS (higher=better):
- *   Score 100:  [rawAtScore(100), 999999)  — highest values
- *   Score s:    [rawAtScore(s), rawAtScore(s+1))
- *   Score 1:    [0, rawAtScore(2))  — lowest values
+ * For REPS/GENERAL (isTime=false, higher=better):
+ *   Score 100: [raw(100), 999999)
+ *   Score s:   [raw(s), raw(s+1))
+ *   Score 1:   [0, raw(2))
  */
-function generateBands(
-  target100: number,
-  target55:  number,
-  isTime:    boolean,
-  gender:    Gender,
-  minAge:    number,
-  maxAge:    number,
+function generateBandsFromThresholds(
+  thresholds: ScoreThresholds,
+  isTime:     boolean,
+  gender:     Gender,
+  minAge:     number,
+  maxAge:     number,
 ): NormBandInput[] {
   /** Small epsilon makes the threshold value itself fall in the intended band. */
   const EPS = 0.0001;
   const bands: NormBandInput[] = [];
+  const raw = (s: number): number => rawAtScoreFromThresholds(s, thresholds);
 
   if (isTime) {
-    // Score 100: [0, rawAtScore(100)+ε)
-    const raw100 = rawAtScore(100, target100, target55);
+    // Score 100: [0, raw(100)+ε)
     bands.push({
       gender, minAge, maxAge, score: 100,
       minValue: '0',
-      maxValue: String(+(raw100 + EPS).toFixed(4)),
+      maxValue: String(+(raw(100) + EPS).toFixed(4)),
     });
 
     // Scores 99 → 2
     for (let s = 99; s >= 2; s--) {
-      const lo = rawAtScore(s + 1, target100, target55) + EPS;
-      const hi = rawAtScore(s, target100, target55) + EPS;
+      const lo = raw(s + 1) + EPS;
+      const hi = raw(s) + EPS;
       bands.push({
         gender, minAge, maxAge, score: s,
         minValue: String(+lo.toFixed(4)),
@@ -406,25 +163,23 @@ function generateBands(
     }
 
     // Score 1 catch-all
-    const raw2 = rawAtScore(2, target100, target55) + EPS;
     bands.push({
       gender, minAge, maxAge, score: 1,
-      minValue: String(+raw2.toFixed(4)),
+      minValue: String(+(raw(2) + EPS).toFixed(4)),
       maxValue: '999999',
     });
   } else {
-    // Score 100: [rawAtScore(100), 999999)
-    const raw100 = rawAtScore(100, target100, target55);
+    // Score 100: [raw(100), 999999)
     bands.push({
       gender, minAge, maxAge, score: 100,
-      minValue: String(+Math.max(0, raw100).toFixed(4)),
+      minValue: String(+Math.max(0, raw(100)).toFixed(4)),
       maxValue: '999999',
     });
 
     // Scores 99 → 2
     for (let s = 99; s >= 2; s--) {
-      const lo = rawAtScore(s, target100, target55);
-      const hi = rawAtScore(s + 1, target100, target55);
+      const lo = raw(s);
+      const hi = raw(s + 1);
       bands.push({
         gender, minAge, maxAge, score: s,
         minValue: String(+Math.max(0, lo).toFixed(4)),
@@ -433,11 +188,10 @@ function generateBands(
     }
 
     // Score 1 catch-all
-    const raw2 = rawAtScore(2, target100, target55);
     bands.push({
       gender, minAge, maxAge, score: 1,
       minValue: '0',
-      maxValue: String(+Math.max(0, raw2).toFixed(4)),
+      maxValue: String(+Math.max(0, raw(2)).toFixed(4)),
     });
   }
 
@@ -488,6 +242,34 @@ const STUDENTS_GRADE7: StudentDef[] = [
   { firstName: 'עדי',    lastName: 'לוי',         dob: '2013-07-21', gender: Gender.FEMALE, code: '213',   tier: 'PASS'      },
   { firstName: 'יעל',    lastName: 'פינטו',       dob: '2012-12-09', gender: Gender.FEMALE, code: '214',   tier: 'FAIL'      },
   { firstName: 'אורית',  lastName: 'חדד',         dob: '2013-05-28', gender: Gender.FEMALE, code: '215',   tier: 'PASS'      },
+];
+
+/** Grade 2 class (כיתה ב' 1) — students born 2018–2019, age ~7 at test time. */
+const STUDENTS_GRADE2: StudentDef[] = [
+  { firstName: 'עומר',    lastName: 'לוי',       dob: '2018-04-10', gender: Gender.MALE,   code: '301', tier: 'EXCELLENT' },
+  { firstName: 'דור',     lastName: 'כהן',       dob: '2019-01-15', gender: Gender.MALE,   code: '302', tier: 'VERY_GOOD' },
+  { firstName: 'יהונתן',  lastName: 'שלום',      dob: '2018-08-22', gender: Gender.MALE,   code: '303', tier: 'GOOD'      },
+  { firstName: 'אריאל',   lastName: 'ביטון',     dob: '2019-03-05', gender: Gender.MALE,   code: '304', tier: 'PASS'      },
+  { firstName: 'שון',     lastName: 'פרץ',       dob: '2018-11-17', gender: Gender.MALE,   code: '305', tier: 'FAIL'      },
+  { firstName: 'מיה',     lastName: 'דוד',       dob: '2018-05-25', gender: Gender.FEMALE, code: '306', tier: 'EXCELLENT' },
+  { firstName: 'אלה',     lastName: 'גרין',      dob: '2019-02-10', gender: Gender.FEMALE, code: '307', tier: 'VERY_GOOD' },
+  { firstName: 'חן',      lastName: 'אברהם',     dob: '2018-09-30', gender: Gender.FEMALE, code: '308', tier: 'GOOD'      },
+  { firstName: 'ליאור',   lastName: 'מזרחי',     dob: '2019-06-14', gender: Gender.FEMALE, code: '309', tier: 'PASS'      },
+  { firstName: 'שיר',     lastName: 'שפירא',     dob: '2018-12-01', gender: Gender.FEMALE, code: '310', tier: 'FAIL'      },
+];
+
+/** Grade 4 class (כיתה ד' 1) — students born 2016–2017, age ~9 at test time. */
+const STUDENTS_GRADE4: StudentDef[] = [
+  { firstName: 'גיא',     lastName: 'שחר',       dob: '2016-03-18', gender: Gender.MALE,   code: '401', tier: 'EXCELLENT' },
+  { firstName: 'נמרוד',   lastName: 'לוי',       dob: '2017-01-22', gender: Gender.MALE,   code: '402', tier: 'VERY_GOOD' },
+  { firstName: 'עידן',    lastName: 'כהן',       dob: '2016-07-09', gender: Gender.MALE,   code: '403', tier: 'GOOD'      },
+  { firstName: 'יואל',    lastName: 'ניסים',     dob: '2017-04-27', gender: Gender.MALE,   code: '404', tier: 'PASS'      },
+  { firstName: 'רועי',    lastName: 'בר',        dob: '2016-10-03', gender: Gender.MALE,   code: '405', tier: 'FAIL'      },
+  { firstName: 'נגה',     lastName: 'אלון',      dob: '2016-05-12', gender: Gender.FEMALE, code: '406', tier: 'EXCELLENT' },
+  { firstName: 'ניל',     lastName: 'רוז',       dob: '2017-02-28', gender: Gender.FEMALE, code: '407', tier: 'VERY_GOOD' },
+  { firstName: 'רמי',     lastName: 'גל',        dob: '2016-08-19', gender: Gender.FEMALE, code: '408', tier: 'GOOD'      },
+  { firstName: 'דנה',     lastName: 'שם טוב',   dob: '2017-05-04', gender: Gender.FEMALE, code: '409', tier: 'PASS'      },
+  { firstName: 'אביגיל',  lastName: 'כץ',        dob: '2016-11-11', gender: Gender.FEMALE, code: '410', tier: 'FAIL'      },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -623,34 +405,38 @@ async function cleanupDevData(): Promise<void> {
 }
 
 async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
-  console.log('\nSeeding FitnessTestTypes + NormTables (formula-based)...');
+  console.log('\nSeeding FitnessTestTypes + NormTables (16 tests, piecewise interpolation)...');
   const testTypeIds = new Map<string, string>();
 
-  for (const def of TEST_TYPES) {
-    const spec = NORM_SPECS.find((s) => s.testKey === def.key);
-    if (!spec) {
-      console.log(`  [SKIP] No NormSpec for: ${def.nameHe}`);
-      continue;
-    }
-
-    // Build all bands for every configured gender × age group
+  for (const config of NORM_CONFIG) {
+    // Build all bands for every gender × age group in this test's config
     const bands: NormBandInput[] = [];
-    for (const t of spec.targets) {
-      const groupBands = generateBands(
-        t.target100, t.target55, spec.isTime,
-        t.gender, t.minAge, t.maxAge,
-      );
-      bands.push(...groupBands);
+    for (const ageGroup of config.ageGroups) {
+      for (const [genderStr, thresholds] of Object.entries(ageGroup.byGender) as [string, import('./norms.config').ScoreThresholds | undefined][]) {
+        if (!thresholds) continue;
+        const gender = genderStr as Gender;
+        const groupBands = generateBandsFromThresholds(
+          thresholds,
+          !config.higherIsBetter,
+          gender,
+          ageGroup.minAge,
+          ageGroup.maxAge,
+        );
+        bands.push(...groupBands);
+      }
     }
 
     const created = await prisma.fitnessTestType.create({
       data: {
-        nameHe:         def.nameHe,
-        descriptionHe:  def.descriptionHe,
-        inputType:      def.inputType,
-        unit:           def.unit,
+        nameHe:         config.nameHe,
+        descriptionHe:  config.descriptionHe,
+        inputType:      config.inputType as FitnessInputType,
+        unit:           config.unit,
         isGlobal:       true,
-        higherIsBetter: def.higherIsBetter,
+        higherIsBetter: config.higherIsBetter,
+        category:       config.category as TestCategory,
+        minGrade:       config.minGrade,
+        maxGrade:       config.maxGrade,
         normTables: {
           createMany: {
             data: bands.map((b) => ({
@@ -667,30 +453,30 @@ async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
       select: { id: true },
     });
 
-    testTypeIds.set(def.key, created.id);
-    console.log(
-      `  ✓ ${def.nameHe} — ${bands.length} norm bands (${spec.targets.length} age/gender groups)`,
-    );
+    testTypeIds.set(config.testKey, created.id);
+    const groupCount = config.ageGroups.reduce((n, g) => n + Object.keys(g.byGender).length, 0);
+    console.log(`  ✓ ${config.nameHe} — ${bands.length} norm bands (${groupCount} age/gender groups)`);
   }
 
   return testTypeIds;
 }
 
 async function seedClass(opts: {
-  name:        string;
-  gradeLabel:  string;
-  joinCode:    string;
-  teacherId:   string;
-  students:    StudentDef[];
+  name:         string;
+  gradeLabel:   string;
+  joinCode:     string;
+  teacherId:    string;
+  students:     StudentDef[];
   /** Representative age used for formula-based raw value computation. */
-  classAge:    number;
-  sessions:    Array<{ testKey: string; date: Date }>;
-  testTypeIds: Map<string, string>;
+  classAge:     number;
+  gradeLevel?:  number;
+  sessions:     Array<{ testKey: string; date: Date }>;
+  testTypeIds:  Map<string, string>;
   passwordHash: string;
 }): Promise<string> {
   const {
     name, gradeLabel, joinCode, teacherId,
-    students, classAge, sessions, testTypeIds, passwordHash,
+    students, classAge, gradeLevel, sessions, testTypeIds, passwordHash,
   } = opts;
 
   const cls = await prisma.class.create({
@@ -703,6 +489,7 @@ async function seedClass(opts: {
       teacherId,
       testWeight:       55,
       talmidautWeight:  45,
+      ...(gradeLevel !== undefined ? { gradeLevel } : {}),
     },
     select: { id: true },
   });
@@ -862,6 +649,7 @@ async function main(): Promise<void> {
     teacherId:   teacher.id,
     students:    STUDENTS_GRADE10,
     classAge:    16, // representative age; norm group 15–18
+    gradeLevel:  10,
     sessions: [
       { testKey: 'sprint60',         date: new Date('2025-10-15') },
       { testKey: 'situps',           date: new Date('2025-11-12') },
@@ -880,11 +668,46 @@ async function main(): Promise<void> {
     teacherId:   teacher.id,
     students:    STUDENTS_GRADE7,
     classAge:    13, // representative age; norm group 12–14
+    gradeLevel:  7,
     sessions: [
       { testKey: 'sprint60', date: new Date('2025-10-15') },
       { testKey: 'pushUps',  date: new Date('2025-11-12') },
       { testKey: 'beepTest', date: new Date('2025-12-10') },
       { testKey: 'situps',   date: new Date('2026-01-14') },
+    ],
+    testTypeIds,
+    passwordHash,
+  });
+
+  console.log("\nSeeding grade-2 class (כיתה ב' 1)...");
+  const class2Id = await seedClass({
+    name:        "כיתה ב' 1",
+    gradeLabel:  'Grade 2',
+    joinCode:    'CLASS2',
+    teacherId:   teacher.id,
+    students:    STUDENTS_GRADE2,
+    classAge:    7, // representative age; norm group 6–8
+    gradeLevel:  2,
+    sessions: [
+      { testKey: 'run300',   date: new Date('2025-10-15') },
+      { testKey: 'situps30', date: new Date('2025-11-12') },
+    ],
+    testTypeIds,
+    passwordHash,
+  });
+
+  console.log("\nSeeding grade-4 class (כיתה ד' 1)...");
+  const class4Id = await seedClass({
+    name:        "כיתה ד' 1",
+    gradeLabel:  'Grade 4',
+    joinCode:    'CLASS4',
+    teacherId:   teacher.id,
+    students:    STUDENTS_GRADE4,
+    classAge:    9, // representative age; norm group 8–10
+    gradeLevel:  4,
+    sessions: [
+      { testKey: 'run600',   date: new Date('2025-10-15') },
+      { testKey: 'situps30', date: new Date('2025-11-12') },
     ],
     testTypeIds,
     passwordHash,
@@ -909,11 +732,15 @@ async function main(): Promise<void> {
   });
   console.log(`  Schedule entries created: ${scheduleCount}`);
 
+  // Suppress unused variable warnings for elementary class IDs (no schedule entries needed)
+  void class2Id;
+  void class4Id;
+
   console.log('\n══════════════════════════════════════════════════════');
   console.log('  Seeding complete.');
   console.log('  Dev login:    teacher@test.com  /  /api/auth/dev-login');
   console.log('  Student (10): CLASS10 + 12345 + password123');
-  console.log(`  Total test types seeded: ${testTypeIds.size}`);
+  console.log(`  Total test types seeded: ${testTypeIds.size} (16 tests)`);
   console.log('══════════════════════════════════════════════════════\n');
 }
 

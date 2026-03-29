@@ -19,6 +19,8 @@ const mockClass: ClassResponseDto = {
   joinCodeExpiresAt: new Date('2025-01-08'),
   studentCount: 0,
   createdAt: new Date('2025-01-01'),
+  genderType: 'MIXED',
+  gradeLevel: 10,
 };
 
 const createDto: CreateClassDto = {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AttendanceStatus } from '@prisma/client';
+import { AttendanceStatus, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Flat test result row for report aggregation. */
@@ -94,14 +94,20 @@ export class ReportsRepository {
 
   /**
    * Loads all test results for all students in a class in one query.
+   * When `semester` is provided, only results from sessions in that semester are returned.
    * Returns flat rows with effectiveGrade already resolved.
    */
-  async findAllTestResults(classId: string, studentIds: string[]): Promise<RawReportResult[]> {
+  async findAllTestResults(
+    classId: string,
+    studentIds: string[],
+    semester?: Semester,
+  ): Promise<RawReportResult[]> {
     if (studentIds.length === 0) return [];
+    const semesterFilter = semester !== undefined ? { semester } : {};
     const results = await this.prisma.testResult.findMany({
       where: {
         studentId: { in: studentIds },
-        session: { classId },
+        session: { classId, ...semesterFilter },
         OR: [
           { calculatedGrade: { not: null } },
           { gradeOverride: { not: null } },
@@ -158,15 +164,18 @@ export class ReportsRepository {
 
   /**
    * Returns per-student, per-status attendance counts via DB-level groupBy.
+   * When `semester` is provided, only records from that semester are counted.
    */
   async findAttendanceStats(
     classId: string,
     studentIds: string[],
+    semester?: Semester,
   ): Promise<RawAttendanceStat[]> {
     if (studentIds.length === 0) return [];
+    const semesterFilter = semester !== undefined ? { semester } : {};
     const grouped = await this.prisma.attendanceRecord.groupBy({
       by: ['studentId', 'status'],
-      where: { classId, studentId: { in: studentIds } },
+      where: { classId, studentId: { in: studentIds }, ...semesterFilter },
       _count: { status: true },
     });
 
@@ -229,6 +238,17 @@ export class ReportsRepository {
         }),
       ),
     );
+  }
+
+  /**
+   * Counts how many TestSessions exist for a class in a specific semester.
+   * Used as a pre-check: if 0 sessions exist we return an empty report rather
+   * than leaking year-wide Talmidaut data into a semester with no test activity.
+   */
+  async countTestSessionsForSemester(classId: string, semester: Semester): Promise<number> {
+    return this.prisma.testSession.count({
+      where: { classId, semester },
+    });
   }
 
   /**

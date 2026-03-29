@@ -41,6 +41,8 @@ function bracketFor(score: number): Bracket {
 
 /** Age group definitions — per-grade secondary resolution matching seed norm bands. */
 const AGE_GROUPS = [
+  { key: '6-8',   label: "א'–ב'", minAge: 6,  maxAge: 8  },
+  { key: '8-10',  label: "ג'–ד'", minAge: 8,  maxAge: 10 },
   { key: '10-12', label: "ה'–ו'", minAge: 10, maxAge: 12 },
   { key: '12-13', label: "ז'",    minAge: 12, maxAge: 13 },
   { key: '13-14', label: "ח'",    minAge: 13, maxAge: 14 },
@@ -142,7 +144,7 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
         <div>
           <p className="font-semibold text-slate-700">אין נתוני נורמות</p>
           <p className="mt-1 text-sm text-slate-400">
-            מבחן זה אינו כולל נתונים עבור קבוצה זו
+            אין נתונים עבור קבוצת גיל זו במבחן שנבחר
           </p>
         </div>
       </div>
@@ -270,22 +272,8 @@ function FilterPills<T extends string>({
   );
 }
 
-// ─── Age group filter — only show available groups ────────────────────────────
-
-function ageGroupOpts(
-  bands: NormBand[],
-  gender: GenderOpt,
-): readonly { value: AgeGroupKey; label: string }[] {
-  const available = new Set(
-    bands
-      .filter((b) => b.gender === gender)
-      .map((b) => `${b.minAge}-${b.maxAge}`),
-  );
-  return AGE_GROUPS.filter((g) => available.has(g.key)).map((g) => ({
-    value: g.key,
-    label: g.label,
-  }));
-}
+/** All age group options — always shown regardless of selected test. */
+const ALL_AGE_GROUP_OPTS = AGE_GROUPS.map((g) => ({ value: g.key, label: g.label }));
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -307,18 +295,6 @@ export default function AchievementTablesPage(): React.JSX.Element {
   }, [testTypes, selectedTypeId]);
 
   const { data: norms, isLoading: normsLoading } = useTestTypeNorms(selectedTypeId);
-
-  // Derive available age groups for current gender
-  const availableAgeGroups = useMemo(
-    () => (norms ? ageGroupOpts(norms.bands, gender) : []),
-    [norms, gender],
-  );
-
-  // Auto-correct ageGroupKey when available groups change
-  const effectiveAgeGroupKey: AgeGroupKey = useMemo(() => {
-    if (availableAgeGroups.some((g) => g.value === ageGroupKey)) return ageGroupKey;
-    return availableAgeGroups[0]?.value ?? '12-13';
-  }, [availableAgeGroups, ageGroupKey]);
 
   // Filtered test type list for the dropdown search
   const filteredTypes = useMemo(
@@ -431,26 +407,16 @@ export default function AchievementTablesPage(): React.JSX.Element {
             />
           </div>
 
-          {/* Age group filter */}
-          <div className="space-y-2">
+          {/* Age group filter — always shows all 9 grades */}
+          <div className="space-y-2 w-full">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500 block">
               קבוצת גיל (כיתה)
             </span>
-            {availableAgeGroups.length > 0 ? (
-              <FilterPills
-                options={availableAgeGroups}
-                value={effectiveAgeGroupKey}
-                onChange={setAgeGroupKey}
-              />
-            ) : normsLoading ? (
-              <div className="flex gap-2">
-                {[1, 2, 3, 4].map((n) => (
-                  <div key={n} className="h-9 w-16 animate-pulse rounded-xl bg-slate-200/60" />
-                ))}
-              </div>
-            ) : (
-              <span className="text-sm text-slate-400">טוען...</span>
-            )}
+            <FilterPills
+              options={ALL_AGE_GROUP_OPTS}
+              value={ageGroupKey}
+              onChange={setAgeGroupKey}
+            />
           </div>
         </div>
       </motion.div>
@@ -472,7 +438,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
               </h2>
               <p className="text-xs text-slate-400">
                 {GENDER_OPTS.find((g) => g.value === gender)?.label ?? ''} ·{' '}
-                {AGE_GROUPS.find((g) => g.key === effectiveAgeGroupKey)?.label ?? ''} ·{' '}
+                {AGE_GROUPS.find((g) => g.key === ageGroupKey)?.label ?? ''} ·{' '}
                 {selectedType?.unit ?? 'ביצועים'}
               </p>
             </div>
@@ -529,7 +495,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
                 higherIsBetter={norms.higherIsBetter}
                 unit={norms.unit}
                 gender={gender}
-                ageGroupKey={effectiveAgeGroupKey}
+                ageGroupKey={ageGroupKey}
               />
             </motion.div>
           ) : (

@@ -4,6 +4,8 @@ import { z } from 'zod';
 
 export type Semester = 'A' | 'B';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+export type ClassGenderType = 'BOYS' | 'GIRLS' | 'MIXED';
+export type TestCategory = 'ENDURANCE' | 'STRENGTH' | 'SPEED_AGILITY' | 'FLEXIBILITY';
 
 // ─── API response shapes ───────────────────────────────────────────────────
 
@@ -13,10 +15,31 @@ export interface ClassData {
   name: string;
   academicYear: string;
   semester: Semester;
+  /** Gender composition of the class: BOYS | GIRLS | MIXED. */
+  genderType: ClassGenderType;
   joinCode: string;
   joinCodeExpiresAt: string | null;
   studentCount: number;
   createdAt: string;
+  /** School grade level 1–12. null for legacy classes created before this field. */
+  gradeLevel: number | null;
+}
+
+/** Mirrors FitnessTestTypeResponseDto returned by GET /tests/types */
+export interface TestTypeData {
+  id: string;
+  nameHe: string;
+  descriptionHe: string | null;
+  inputType: 'TIME' | 'REPS' | 'PASS_FAIL' | 'GENERAL';
+  unit: string | null;
+  isGlobal: boolean;
+  higherIsBetter: boolean;
+  /** Logical grouping for UI tabs: ENDURANCE | STRENGTH | SPEED_AGILITY | FLEXIBILITY */
+  category: TestCategory;
+  /** Recommended minimum school grade (1–12). null = no lower bound. Display only. */
+  minGrade: number | null;
+  /** Recommended maximum school grade (1–12). null = no upper bound. Display only. */
+  maxGrade: number | null;
 }
 
 /** Mirrors StudentResponseDto returned by GET /classes/:classId/students */
@@ -43,6 +66,9 @@ export const createClassSchema = z.object({
     'פורמט שנת לימודים לא תקין — לדוגמה: 2024-2025',
   ),
   semester: z.enum(['A', 'B'], { required_error: 'יש לבחור סמסטר' }),
+  genderType: z.enum(['BOYS', 'GIRLS', 'MIXED']).default('MIXED'),
+  /** School grade level 1–12. Optional for backward compatibility with legacy callers. */
+  gradeLevel: z.number().int().min(1).max(12).optional(),
 });
 
 export type CreateClassInput = z.infer<typeof createClassSchema>;
@@ -385,6 +411,57 @@ export interface TopStudentPerClassItem {
   avgScore: number;
 }
 
+// ─── Student Report ──────────────────────────────────────────────────────────
+
+/** One test-type row in the formal student report. */
+export interface ReportTestResult {
+  testTypeId: string;
+  nameHe: string;
+  unit: string | null;
+  /** 'TIME' | 'REPS' | 'PASS_FAIL' | 'GENERAL' */
+  inputType: string;
+  /** ISO 8601 date of the most recent session for this test. */
+  conductedAt: string;
+  /** Effective grade: gradeOverride ?? calculatedGrade (0–100). */
+  grade: number;
+  rawValue: number | null;
+  /** Class-wide average for this test type in the requested semester (0–100). */
+  classAvg: number;
+  /** Number of times the student took this test. */
+  sessionCount: number;
+}
+
+/** Attendance breakdown for the formal student report. */
+export interface ReportAttendance {
+  total: number;
+  present: number;
+  absent: number;
+  excused: number;
+  /** Percentage of present records (0–100). */
+  pct: number;
+}
+
+/** Full formal student report — GET /classes/:classId/students/:studentId/report */
+export interface StudentReport {
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  gender: string;
+  /** ISO 8601 date string. */
+  dateOfBirth: string;
+  studentCode: string;
+  className: string;
+  gradeLevel: number | null;
+  /** 'A' | 'B' | null (null = all semesters). */
+  semester: string | null;
+  /** ISO 8601 timestamp when the report was generated. */
+  generatedAt: string;
+  /** Test results sorted best-grade first. */
+  testResults: ReportTestResult[];
+  attendance: ReportAttendance;
+  finalGrade: FinalGrade;
+}
+
 /** Top individual achievement — GET /dashboard/top-achievements */
 export interface TopAchievementItem {
   /** Rank position, starting at 1. */
@@ -393,8 +470,14 @@ export interface TopAchievementItem {
   studentName: string;
   classId: string;
   className: string;
+  /** Gender composition of the class: BOYS | GIRLS | MIXED. */
+  classGenderType: ClassGenderType;
   /** Hebrew name of the specific exam (e.g. "ריצת 2000מ׳"). */
   examName: string;
+  /** Unit label for the test type (e.g. "שניות", "מטר") — null for REPS/PASS_FAIL. */
+  unit: string | null;
+  /** Raw measurement value (seconds for TIME, reps for REPS) — null if not recorded. */
+  rawValue: number | null;
   /** The student's calculatedGrade for this result (0–100). */
   score: number;
 }

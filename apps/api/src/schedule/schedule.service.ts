@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Semester } from '@prisma/client';
 import { ScheduleRepository } from './schedule.repository';
 import type { TodayScheduleItemDto, ScheduleLessonStatus } from './dto/today-schedule-item.dto';
 
@@ -13,11 +14,11 @@ export class ScheduleService {
    * Returns today's schedule for the teacher with real-time status labels.
    * Status is computed server-side based on the current Israel Standard Time.
    */
-  async getTodaySchedule(teacherId: string): Promise<TodayScheduleItemDto[]> {
+  async getTodaySchedule(teacherId: string, semester: Semester = 'A'): Promise<TodayScheduleItemDto[]> {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0=Sunday … 6=Saturday
 
-    const entries = await this.scheduleRepository.findEntriesForDay(teacherId, dayOfWeek);
+    const entries = await this.scheduleRepository.findEntriesForDay(teacherId, dayOfWeek, semester);
 
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
@@ -59,11 +60,17 @@ export class ScheduleService {
     period: number,
     startTime: string,
     classId: string,
+    semester: Semester = 'A',
   ): Promise<void> {
-    await this.scheduleRepository.upsertEntry(teacherId, dayOfWeek, period, startTime, classId);
+    await this.scheduleRepository.upsertEntry(teacherId, dayOfWeek, period, startTime, classId, semester);
   }
 
-  async deleteEntry(teacherId: string, dayOfWeek: number, period: number): Promise<void> {
-    await this.scheduleRepository.deleteEntry(teacherId, dayOfWeek, period);
+  async deleteEntry(
+    teacherId: string,
+    dayOfWeek: number,
+    period: number,
+    semester: Semester = 'A',
+  ): Promise<void> {
+    await this.scheduleRepository.deleteEntry(teacherId, dayOfWeek, period, semester);
   }
 }
