@@ -61,6 +61,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { GlowingSearch } from '@/components/ui/glowing-search';
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest, logout } from '@/lib/api-client';
 import { ApiError } from '@fitgrade/types';
@@ -303,12 +304,13 @@ function StudentPicker({ students, selectedId, disabledIds, onChange, placeholde
             }}
           >
             <div className="border-b border-white/[0.08] p-2">
-              <input
-                autoFocus
+              <GlowingSearch
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={setQuery}
                 placeholder="חיפוש שם או קוד..."
-                className="w-full rounded-xl bg-white/[0.08] px-3 py-2 text-sm text-white placeholder:text-white/35 outline-none focus:ring-1 focus:ring-violet-400/40"
+                aria-label="חיפוש תלמיד לפי שם או קוד"
+                autoFocus
+                dark
               />
             </div>
             <div className="max-h-52 overflow-y-auto py-1">

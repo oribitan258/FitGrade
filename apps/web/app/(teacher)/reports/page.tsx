@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUpDown,
@@ -12,7 +13,9 @@ import {
   FileText,
   Loader2,
   Printer,
+  RefreshCw,
   Save,
+  Settings2,
   ShieldAlert,
   Star,
   TrendingDown,
@@ -33,9 +36,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { WeightSlider } from '@/components/ui/weight-slider';
 import { useSemester } from '@/contexts/semester-context';
 import { useClasses } from '@/hooks/use-classes';
 import { useClassReport, useCommentsBank } from '@/hooks/use-reports';
+import { useGradingPolicy, updateClassGradingPolicy } from '@/hooks/use-grading-policy';
+import { useReportSettings } from '@/hooks/use-report-settings';
 import { apiRequest } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { ApiError } from '@fitgrade/types';
@@ -1127,6 +1139,7 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
   /** True whenever the browser is about to print (covers both the print button
    *  and Ctrl+P). While true every motion element skips its initial state. */
   const isPrinting = useIsPrinting(printMode);
+  const { data: reportSettings } = useReportSettings();
   // All hooks before any conditional return
   const merged     = useMemo(() => buildMergedRows(rowsA, rowsB),   [rowsA, rowsB]);
   const chartData  = useMemo(() => buildChartData(rowsA, rowsB),    [rowsA, rowsB]);
@@ -1163,9 +1176,12 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
   return (
     <div className="space-y-6">
       {/* ── Print-only annual report header ──────────────────────────── */}
-      <div className="hidden print:block border-b-2 border-slate-800 pb-5 mb-2" dir="rtl">
+      <div className="border-b-2 border-slate-800 pb-5 mb-2" dir="rtl">
         <div className="flex items-start justify-between">
           <div>
+            {reportSettings?.schoolName && (
+              <p className="text-sm font-bold text-slate-500 mb-0.5">{reportSettings.schoolName}</p>
+            )}
             <h1 className="text-xl font-bold text-slate-900">דו&quot;ח ריכוז ציונים שנתי — תשפ&quot;ו</h1>
             <p className="mt-1 text-sm font-semibold text-slate-700">כיתה: {classLabel}</p>
           </div>
@@ -1442,6 +1458,42 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
         </div>
       )}
       </motion.div>
+
+      {/* ── Print-only signature footer ───────────────────────────────── */}
+      <div className="mt-8 border-t-2 border-slate-300 pt-8 print:mt-6 print:break-inside-avoid" dir="rtl">
+        <div className="flex justify-between gap-12">
+          {/* Teacher signature */}
+          <div className="flex-1 text-center">
+            {reportSettings?.teacherSignature ? (
+              <div className="mb-2 flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={reportSettings.teacherSignature}
+                  alt="חתימת מורה"
+                  className="h-16 object-contain"
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 mb-10">___________________________</p>
+            )}
+            <p className="text-sm font-semibold text-slate-700">
+              {reportSettings?.teacherName ?? 'המורה לחינוך גופני'}
+            </p>
+            <p className="text-xs text-slate-400">חתימת המורה</p>
+          </div>
+          {/* Date — filled automatically */}
+          <div className="flex-1 text-center">
+            <div className="mb-2 flex h-16 items-center justify-center">
+              <p className="text-base font-bold text-slate-800">{printDate}</p>
+            </div>
+            <p className="text-sm font-semibold text-slate-700">&nbsp;</p>
+            <p className="text-xs text-slate-400">תאריך</p>
+          </div>
+        </div>
+        <p className="mt-6 text-center text-[10px] text-slate-400">
+          דוח זה הופק ממערכת FitGrade · {printDate}
+        </p>
+      </div>
     </div>
   );
 }
@@ -1466,12 +1518,22 @@ export default function ReportsPage(): React.JSX.Element {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>('alpha');
 
+  // ── Class grading-policy override dialog ──────────────────────────────────────
+  const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
+  const [policyFitness, setPolicyFitness] = useState(55);
+  const [policyConduct, setPolicyConduct] = useState(45);
+  const [policyConfirmed, setPolicyConfirmed] = useState(false);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+
   // 'YEAR' toggle overrides sidebar; otherwise sidebar semesterFilter is the source of truth
   const semesterParam = showFullYear ? undefined : semesterFilter;
 
   const { data: classes, isLoading: classesLoading } = useClasses();
   const { data: rows, isLoading: reportLoading, mutate: mutateReport } = useClassReport(selectedClassId, semesterParam);
   const { data: bank = [] } = useCommentsBank();
+  const { data: globalPolicy } = useGradingPolicy();
+  const { data: reportSettings } = useReportSettings();
 
   // Full-year parallel fetches — only active when showFullYear is toggled on
   const fullYearClassId = showFullYear ? selectedClassId : '';
@@ -1503,6 +1565,47 @@ export default function ReportsPage(): React.JSX.Element {
   useEffect(() => {
     setCustomOrder(null);
   }, [selectedClassId]);
+
+  // Seed dialog with current class weights when it opens
+  function openPolicyDialog(): void {
+    const fw = selectedClass?.testWeight ?? globalPolicy?.fitnessWeight ?? 55;
+    const cw = selectedClass?.talmidautWeight ?? globalPolicy?.conductWeight ?? 45;
+    setPolicyFitness(fw);
+    setPolicyConduct(cw);
+    setPolicyConfirmed(false);
+    setPolicyError(null);
+    setPolicyDialogOpen(true);
+  }
+
+  async function savePolicyOverride(): Promise<void> {
+    if (!selectedClassId) return;
+    setPolicySaving(true);
+    setPolicyError(null);
+    try {
+      await updateClassGradingPolicy(selectedClassId, policyFitness, policyConduct);
+      await mutateReport();
+      setPolicyDialogOpen(false);
+    } catch {
+      setPolicyError('שגיאה בשמירה — נסה שוב');
+    } finally {
+      setPolicySaving(false);
+    }
+  }
+
+  async function resetPolicyOverride(): Promise<void> {
+    if (!selectedClassId) return;
+    setPolicySaving(true);
+    setPolicyError(null);
+    try {
+      await updateClassGradingPolicy(selectedClassId, null, null);
+      await mutateReport();
+      setPolicyDialogOpen(false);
+    } catch {
+      setPolicyError('שגיאה באיפוס — נסה שוב');
+    } finally {
+      setPolicySaving(false);
+    }
+  }
 
   const reportRows = rows ?? [];
 
@@ -1594,8 +1697,11 @@ export default function ReportsPage(): React.JSX.Element {
   }
 
   function handlePrintPDF(): void {
-    setPrintMode(true);
-    setTimeout(() => { window.print(); setPrintMode(false); }, 100);
+    // flushSync guarantees React commits printMode:true to the DOM BEFORE
+    // window.print() is called — no race condition, no stale invisible states.
+    flushSync(() => setPrintMode(true));
+    window.print();
+    setPrintMode(false);
   }
 
   const avgFinalGrade = useMemo(() => {
@@ -1611,11 +1717,24 @@ export default function ReportsPage(): React.JSX.Element {
     <>
       {/* ── Print styles ──────────────────────────────────────────────────── */}
       <style>{`
+        /* @page must be at top level — not inside @media print */
+        @page { margin: 10mm; size: A4 landscape; }
+
         @media print {
           /* ── 1. Force exact color rendering (charts, badges, grade colours) ── */
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            /* ── CRITICAL: reset ALL Framer Motion inline animation states ──
+               The layout wrapper (motion.div in layout.tsx) sits ABOVE .print-area
+               and has initial:{ opacity:0, scale:1.02, filter:blur(3px) }.
+               If that ancestor has opacity<1 or a blur, everything inside is
+               invisible regardless of .print-area * rules.
+               This global * rule defeats any stale inline animation state on
+               ANY element — ancestor OR descendant. */
+            opacity: 1 !important;
+            transform: none !important;
+            filter: none !important;
           }
 
           /* ── 2. Reset ancestor containers that clip to one viewport height ── */
@@ -1631,15 +1750,18 @@ export default function ReportsPage(): React.JSX.Element {
           /* ── 3. Isolate the print area ─────────────────────────────────── */
           body * { visibility: hidden; }
           .print-area, .print-area * { visibility: visible; }
+          /* CRITICAL: Do NOT use position:absolute + inset-inline-start:50% + translateX(-50%)
+             because the global * { transform:none } rule (needed for Framer Motion) kills
+             the translateX correction, leaving the element offset by 50% in RTL.
+             Use position:static + margin:auto instead — direction-agnostic and safe. */
           .print-area {
-            position: absolute;
-            top: 0;
-            inset-inline-start: 50%;
-            transform: translateX(-50%);
-            width: 100%;
-            max-width: 297mm;
-            margin: 0 auto;
-            padding: 0 6mm;
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 297mm !important;
+            margin: 0 auto !important;
+            padding: 0 4mm !important;
+            box-sizing: border-box !important;
             font-size: 10px;
             color: #000;
             direction: rtl;
@@ -1728,8 +1850,8 @@ export default function ReportsPage(): React.JSX.Element {
             page-break-inside: avoid !important;
           }
 
-          /* Insight cards: keep together */
-          .print-area .rounded-2xl { break-inside: avoid; page-break-inside: avoid; }
+          /* Insight cards: keep stat grids together but allow tables to flow */
+          .print-area .grid { break-inside: avoid; page-break-inside: avoid; }
 
           /* ── 9. Tables: header repeats, rows intact ──────────────────────── */
           .print-area table {
@@ -1741,24 +1863,71 @@ export default function ReportsPage(): React.JSX.Element {
           .print-area tr    { break-inside: avoid; page-break-inside: avoid; }
           .print-area td, .print-area th { padding: 5px 8px !important; font-size: 9px !important; }
 
-          /* ── 10. Symmetric grid columns in print ─────────────────────────── */
-          .print-area .sm\\:grid-cols-4 { grid-template-columns: repeat(4, 1fr) !important; }
-          .print-area .sm\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr) !important; }
-          .print-area .grid-cols-2     { grid-template-columns: repeat(2, 1fr) !important; }
+          /* ── 10. Force full-width block on overflow-hidden wrappers (table containers) ─
+             The overflow-hidden div is a flex/grid child that can shrink. Force it to
+             stretch to 100% so the table inside always fills the page width.          */
+          .print-area .overflow-hidden {
+            width: 100% !important;
+            max-width: 100% !important;
+            display: block !important;
+            box-sizing: border-box !important;
+          }
 
-          /* ── 11. Hide interactive / decorative UI ────────────────────────── */
+          /* ── 11. Symmetric grid columns in print ────────────────────────────
+             MUST include display:grid — rule 2 forces all overflow-hidden divs to
+             display:block, and the ancestor chain may inherit that reset.            */
+          .print-area .sm\\:grid-cols-4 { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; }
+          .print-area .sm\\:grid-cols-2 { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; }
+          /* Force stat-card grid into single 4-col row — default grid-cols-2 = 2×2 = wastes half a page */
+          .print-area .grid-cols-2      { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; }
+          /* Insight cards: keep 2-col grid */
+          .print-area .sm\\:grid-cols-2.print\\:grid-cols-2 { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; }
+
+          /* ── 12. Hide interactive / decorative UI ─────────────────────────── */
           button, select, input[type="number"], input[type="text"], textarea {
             display: none !important;
           }
 
-          @page { margin: 15mm; size: A4 landscape; }
+          /* ── 13. Compact spacing: collapse large web gaps for A4 ─────────────
+             space-y-6 = 1.5rem = 24px between each section. On A4 landscape
+             (net height ≈ 760px with 10mm margins) that alone eats ~120px.         */
+          .print-area .space-y-6 > * + * { margin-top: 8px !important; }
+          .print-area .space-y-4 > * + * { margin-top: 6px !important; }
+          .print-area .space-y-3 > * + * { margin-top: 4px !important; }
+          .print-area .gap-3,
+          .print-area .gap-4     { gap: 5px !important; }
+          .print-area .mb-6      { margin-bottom: 10px !important; }
+          .print-area .pb-4,
+          .print-area .pb-5      { padding-bottom: 8px !important; }
+          .print-area .mb-3,
+          .print-area .mb-2      { margin-bottom: 4px !important; }
+          .print-area .mt-4      { margin-top: 6px !important; }
+
+          /* ── 14. Compact card padding (rem = root 16px, not .print-area 10px) */
+          .print-area .p-4 { padding: 8px 10px !important; }
+          .print-area .p-5 { padding: 8px 10px !important; }
+
+          /* ── 15. Shrink oversized stat-card numbers ──────────────────────── */
+          .print-area .text-3xl { font-size: 18px !important; line-height: 1.2 !important; }
+          .print-area .text-2xl { font-size: 15px !important; line-height: 1.2 !important; }
+
+          /* ── 16. Chart: cap at 180 px + force full width ─────────────────────
+             h-64 = 16rem = 256 px at root 16px — far too tall for A4.
+             [dir="ltr"] is the chart's RTL-isolation wrapper — must be 100% wide. */
+          .print-area .h-64   { height: 180px !important; max-height: 180px !important; }
+          .print-area .h-56   { height: 150px !important; max-height: 150px !important; }
+          .print-area [dir="ltr"] { width: 100% !important; display: block !important; }
+
         }
       `}</style>
 
-      <div className="space-y-6 print-area">
+      <div className="space-y-6 print-area print:block print:h-auto print:min-h-0 print:overflow-visible print:p-0 print:m-0 print:max-w-none">
         {/* ── Print-only class header — hidden in Full Year mode (FullYearView has its own) ── */}
         {!showFullYear && (
-          <div className="hidden print:block border-b border-slate-300 pb-4 mb-6 text-center" dir="rtl">
+          <div className="border-b border-slate-300 pb-4 mb-6 text-center" dir="rtl">
+            {reportSettings?.schoolName && (
+              <p className="text-base font-bold text-slate-600 mb-1">{reportSettings.schoolName}</p>
+            )}
             <h1 className="text-2xl font-bold text-slate-900">
               דוח ציונים כיתתי — {selectedClass?.name ?? ''}
             </h1>
@@ -1769,7 +1938,7 @@ export default function ReportsPage(): React.JSX.Element {
         )}
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4 print:hidden">
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-l from-indigo-700 via-violet-700 to-indigo-800 bg-clip-text text-transparent">מרכז דוחות</h1>
             <p className="mt-0.5 text-sm text-slate-500">
@@ -1811,7 +1980,7 @@ export default function ReportsPage(): React.JSX.Element {
             <Button
               type="button"
               variant="outline"
-              onClick={() => { setPrintMode(true); setTimeout(() => { window.print(); setPrintMode(false); }, 100); }}
+              onClick={() => { flushSync(() => setPrintMode(true)); window.print(); setPrintMode(false); }}
               className="gap-2 rounded-xl border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 shadow-sm"
             >
               <Printer className="h-4 w-4" aria-hidden="true" />
@@ -1972,10 +2141,94 @@ export default function ReportsPage(): React.JSX.Element {
                     </button>
                   </>
                 )}
+                {/* Per-class grading policy button */}
+                <button
+                  type="button"
+                  onClick={openPolicyDialog}
+                  className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 hover:border-indigo-300"
+                  title="הגדרות מדיניות ציון לכיתה זו"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                  מדיניות ציון
+                  {selectedClass.testWeight !== null && (
+                    <span className="ms-1 rounded-full bg-indigo-100 px-1.5 py-px text-[10px] font-bold text-indigo-600">
+                      {selectedClass.testWeight}/{selectedClass.talmidautWeight}
+                    </span>
+                  )}
+                </button>
               </div>
             )}
           </div>
         </div>
+
+        {/* ── Class Grading Policy Dialog ──────────────────────────────────── */}
+        <Dialog open={policyDialogOpen} onOpenChange={setPolicyDialogOpen}>
+          <DialogContent className="max-w-md" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Settings2 className="h-4 w-4 text-indigo-500" />
+                מדיניות ציון — {selectedClass?.name ?? ''}
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Warning if this is a per-class override */}
+            {!policyConfirmed && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <p className="font-semibold">שים לב: דריסת ברירת המחדל הגלובלית</p>
+                <p className="mt-1 text-amber-700">
+                  הגדרות אלה ידרסו את מדיניות הציון הגלובלית עבור כיתה זו בלבד.
+                  {globalPolicy && (
+                    <span> ברירת המחדל הנוכחית: כושר {globalPolicy.fitnessWeight}% / תלמידות {globalPolicy.conductWeight}%.</span>
+                  )}
+                </p>
+                <button
+                  onClick={() => setPolicyConfirmed(true)}
+                  className="mt-2 rounded-xl bg-amber-600 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-amber-700"
+                >
+                  הבנתי — המשך
+                </button>
+              </div>
+            )}
+
+            {policyConfirmed && (
+              <div className="space-y-5 pt-1">
+                <WeightSlider
+                  fitnessWeight={policyFitness}
+                  conductWeight={policyConduct}
+                  onChange={(fw, cw) => { setPolicyFitness(fw); setPolicyConduct(cw); }}
+                  disabled={policySaving}
+                />
+
+                {policyError && (
+                  <p className="text-center text-sm text-red-500">{policyError}</p>
+                )}
+
+                <div className="flex items-center justify-between gap-3">
+                  {selectedClass?.testWeight !== null ? (
+                    <button
+                      type="button"
+                      onClick={resetPolicyOverride}
+                      disabled={policySaving}
+                      className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      חזור לברירת מחדל
+                    </button>
+                  ) : <span />}
+
+                  <button
+                    type="button"
+                    onClick={savePolicyOverride}
+                    disabled={policySaving || policyFitness + policyConduct !== 100}
+                    className="rounded-2xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white shadow transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {policySaving ? 'שומר...' : 'שמור לכיתה זו'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* ── Summary stats ──────────────────────────────────────────────── */}
         {!reportLoading && reportRows.length > 0 && (
@@ -2126,6 +2379,43 @@ export default function ReportsPage(): React.JSX.Element {
               )}
             </motion.div>
           </AnimatePresence>
+        )}
+        {/* ── Print-only signature footer ───────────────────────────────── */}
+        {!showFullYear && (
+          <div className="mt-8 border-t-2 border-slate-300 pt-8 print:mt-6 print:break-inside-avoid" dir="rtl">
+            <div className="flex justify-between gap-12">
+              {/* Teacher signature */}
+              <div className="flex-1 text-center">
+                {reportSettings?.teacherSignature ? (
+                  <div className="mb-2 flex justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={reportSettings.teacherSignature}
+                      alt="חתימת מורה"
+                      className="h-16 object-contain"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 mb-10">___________________________</p>
+                )}
+                <p className="text-sm font-semibold text-slate-700">
+                  {reportSettings?.teacherName ?? 'המורה לחינוך גופני'}
+                </p>
+                <p className="text-xs text-slate-400">חתימת המורה</p>
+              </div>
+              {/* Date — filled automatically */}
+              <div className="flex-1 text-center">
+                <div className="mb-2 flex h-16 items-center justify-center">
+                  <p className="text-base font-bold text-slate-800">{new Date().toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                </div>
+                <p className="text-sm font-semibold text-slate-700">&nbsp;</p>
+                <p className="text-xs text-slate-400">תאריך</p>
+              </div>
+            </div>
+            <p className="mt-6 text-center text-[10px] text-slate-400">
+              דוח זה הופק ממערכת FitGrade · {new Date().toLocaleDateString('he-IL')}
+            </p>
+          </div>
         )}
       </div>
 

@@ -73,6 +73,24 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Global grading policy defaults (applied when a class has no per-class override) ──
+  /// Default percentage of the final grade derived from fitness tests (0–100). Must sum to 100 with defaultConductWeight.
+  defaultFitnessWeight  Int @default(55)
+  /// Default percentage of the final grade derived from Talmida'ut conduct (0–100).
+  defaultConductWeight  Int @default(45)
+
+  // ── Report & grading policy settings ──────────────────────────────────
+  /// Minimum score considered passing (0–100). Replaces the hardcoded 60.
+  passingGrade     Int     @default(60)
+  /// Teacher's display name shown in greetings and on PDF report headers. Null = use Google name.
+  teacherName      String?
+  /// School name as it should appear on PDF exports and report headers.
+  schoolName       String?
+  /// URL to the school logo image used in PDF export headers.
+  schoolLogoUrl    String?
+  /// Teacher's drawn signature (Base64 PNG Data URL) for PDF reports.
+  teacherSignature String?
+
   classes         Class[]
   auditLogs       AuditLog[]
   events          Event[]
@@ -103,11 +121,11 @@ model Class {
   /// null = legacy class created before this field was added.
   gradeLevel Int?
 
-  // ── Final-grade weights (must sum to 100) ─────────────────────────────
-  // testWeight: percentage of the grade derived from physical fitness tests (0–100)
-  // talmidautWeight: percentage from Talmida'ut (behaviour + participation + uniform)
-  testWeight        Int @default(55)
-  talmidautWeight   Int @default(45)
+  // ── Per-class final-grade weight overrides ───────────────────────────
+  // null = inherit from the teacher's global defaultFitnessWeight / defaultConductWeight.
+  // When set, testWeight + talmidautWeight must sum to 100.
+  testWeight        Int? // null = use teacher's global default
+  talmidautWeight   Int? // null = use teacher's global default
 
   teacherId String
   teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)

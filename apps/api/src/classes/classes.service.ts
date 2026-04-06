@@ -10,6 +10,8 @@ import type {
   StudentGradeDto,
   TestSummaryDto,
 } from './dto/class-details-response.dto';
+import type { UpdateClassWeightsDto } from './dto/update-class-weights.dto';
+import type { QuickGradeOverrideDto } from './dto/quick-grade-override.dto';
 
 /** Hebrew month labels for the progress chart X-axis. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -88,6 +90,8 @@ export class ClassesService {
       studentTotals: Map<string, { sum: number; count: number }>;
       // key: studentId → rawValue from the most recent session (overwritten as results are asc-sorted)
       studentLatestRaw: Map<string, number | null>;
+      // key: studentId → gradeOverride from the most recent session (overwritten as results are asc-sorted)
+      studentLatestGradeOverride: Map<string, number | null>;
     }
 
     const testMap = new Map<string, TestAccumulator>();
@@ -103,6 +107,7 @@ export class ClassesService {
           sessions: new Map(),
           studentTotals: new Map(),
           studentLatestRaw: new Map(),
+          studentLatestGradeOverride: new Map(),
         });
       }
 
@@ -119,11 +124,12 @@ export class ClassesService {
       studentData.count++;
       acc.studentTotals.set(result.studentId, studentData);
 
-      // Results are ordered asc by conductedAt, so the last write wins = most recent rawValue
+      // Results are ordered asc by conductedAt, so the last write wins = most recent values
       acc.studentLatestRaw.set(
         result.studentId,
         result.rawValue !== null ? result.rawValue.toNumber() : null,
       );
+      acc.studentLatestGradeOverride.set(result.studentId, result.gradeOverride);
     }
 
     // ── Build TestSummaryDto[] ──────────────────────────────────────────────────
@@ -145,6 +151,8 @@ export class ClassesService {
           studentId,
           effectiveGrade: count > 0 ? Math.round(sum / count) : 0,
           rawValue: acc.studentLatestRaw.get(studentId) ?? null,
+          // undefined → null fallback: student may not appear in the override map if they have no result
+          gradeOverride: acc.studentLatestGradeOverride.get(studentId) ?? null,
         }));
 
         const distribution: GradeDistributionDto = { excellent: 0, good: 0, pass: 0, fail: 0 };
@@ -160,6 +168,49 @@ export class ClassesService {
     );
 
     return { attendancePct, testSummaries };
+  }
+
+  /**
+   * Updates the per-class grading weight overrides.
+   * Pass null for both fields to reset to the teacher's global defaults.
+   * When both are non-null they must sum to 100.
+   */
+  async updateClassWeights(
+    classId: string,
+    teacherId: string,
+    dto: UpdateClassWeightsDto,
+  ): Promise<ClassResponseDto> {
+    const { testWeight, talmidautWeight } = dto;
+    const { BadRequestException } = await import('@nestjs/common');
+    if (testWeight !== null && talmidautWeight !== null) {
+      if (testWeight + talmidautWeight !== 100) {
+        throw new BadRequestException('משקל הכושר ומשקל התלמידות חייבים לסכום ל-100');
+      }
+    }
+    const updated = await this.classesRepository.updateWeights(classId, teacherId, testWeight, talmidautWeight);
+    this.logger.log(
+      `Teacher ${teacherId} updated class ${classId} weights: test=${testWeight ?? 'global'} talmidaut=${talmidautWeight ?? 'global'}`,
+    );
+    return updated;
+  }
+
+  /**
+   * Overrides the grade for the most recent test result for a student in a class.
+   * The teacher must own the class. Throws NotFoundException if no result exists.
+   */
+  async setStudentGradeOverride(
+    classId: string,
+    studentId: string,
+    dto: QuickGradeOverrideDto,
+    teacherId: string,
+  ): Promise<{ effectiveGrade: number }> {
+    await this.classesRepository.findOneByIdAndTeacher(classId, teacherId);
+    return this.classesRepository.quickGradeOverride(
+      classId,
+      studentId,
+      dto.testTypeId,
+      dto.gradeOverride,
+    );
   }
 
   /**

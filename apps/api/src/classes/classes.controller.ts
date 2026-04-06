@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -16,6 +17,8 @@ import {
 } from '@nestjs/swagger';
 import { ClassesService } from './classes.service';
 import { CreateClassDto } from './dto/create-class.dto';
+import { UpdateClassWeightsDto } from './dto/update-class-weights.dto';
+import { QuickGradeOverrideDto, QuickGradeResponseDto } from './dto/quick-grade-override.dto';
 import { SemesterQueryDto } from './dto/semester-query.dto';
 import { ClassResponseDto } from './dto/class-response.dto';
 import { ClassDetailsResponseDto } from './dto/class-details-response.dto';
@@ -75,6 +78,44 @@ export class ClassesController {
     @CurrentUser() user: JwtPayload,
   ): Promise<ClassDetailsResponseDto> {
     return this.classesService.getClassDetails(classId, user.sub, query.semester);
+  }
+
+  /**
+   * Updates per-class grading weight overrides.
+   * Pass null for both to reset to the teacher's global defaults.
+   * When both are non-null they must sum to 100.
+   */
+  @Patch(':id/grading-policy')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update per-class grading weight overrides' })
+  @ApiResponse({ status: 200, type: ClassResponseDto })
+  @ApiResponse({ status: 400, description: 'Weights do not sum to 100' })
+  @ApiResponse({ status: 404, description: 'Class not found' })
+  async updateClassWeights(
+    @Param('id') classId: string,
+    @Body() dto: UpdateClassWeightsDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<ClassResponseDto> {
+    return this.classesService.updateClassWeights(classId, user.sub, dto);
+  }
+
+  /**
+   * Overrides the grade for the most recent test result for a student.
+   * Used by the Grade Management Matrix for rapid inline edits.
+   * Throws 404 if no prior result exists for this (student, testType, class) combination.
+   */
+  @Patch(':id/students/:studentId/grade-override')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Quick-override a student grade (Grade Matrix)' })
+  @ApiResponse({ status: 200, type: QuickGradeResponseDto })
+  @ApiResponse({ status: 404, description: 'No existing result to override' })
+  async setStudentGradeOverride(
+    @Param('id') classId: string,
+    @Param('studentId') studentId: string,
+    @Body() dto: QuickGradeOverrideDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<QuickGradeResponseDto> {
+    return this.classesService.setStudentGradeOverride(classId, studentId, dto, user.sub);
   }
 
   /**

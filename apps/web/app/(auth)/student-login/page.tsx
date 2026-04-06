@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { Activity, Dumbbell, Hash, KeyRound, Lock, Trophy, User, Zap } from 'lucide-react';
 import { apiRequest, setToken } from '@/lib/api-client';
 import { ApiError } from '@fitgrade/types';
+import { LoginLoader } from '@/components/ui/login-loader';
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -312,8 +313,14 @@ export default function StudentLoginPage(): React.JSX.Element {
                 className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"
                 style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 60%)' }}
               />
-              <KeyRound className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {isSubmitting ? 'נכנס...' : 'כניסה'}
+              {isSubmitting ? (
+                <LoginLoader variant="green" />
+              ) : (
+                <>
+                  <KeyRound className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  כניסה
+                </>
+              )}
             </motion.button>
           </form>
 

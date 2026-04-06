@@ -4,8 +4,8 @@ import { memo, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity, Award, BookOpen, CalendarDays, Dumbbell,
-  Flame, LayoutDashboard, LogOut, Medal,
-  Target, Timer, Trophy, Users, Zap,
+  Flame, Heart, LayoutDashboard, LogOut, Medal,
+  Star, Swords, Target, Timer, Trophy, Users, Wind, Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -26,7 +26,7 @@ const GLOW_VIOLET  = 'drop-shadow(0 0 10px rgba(139,92,246,0.65))';
 const GLOW_FUCHSIA = 'drop-shadow(0 0 10px rgba(217,70,239,0.55))';
 const GLOW_INDIGO  = 'drop-shadow(0 0 10px rgba(99,102,241,0.60))';
 
-// ─── Floating icons (Mode B — Live Arena — reduced 33→8) ─────────────────────
+// ─── Floating icons (Mode B — Live Arena) ────────────────────────────────────
 
 const FLOATING_ICONS_B = [
   { icon: Dumbbell, top: '5%',  left: '4%',  size: 32, delay: 0,   dur: 8,  op: 0.45, glow: GLOW_VIOLET  },
@@ -37,9 +37,13 @@ const FLOATING_ICONS_B = [
   { icon: Users,    top: '82%', left: '18%', size: 26, delay: 2.0, dur: 9,  op: 0.42, glow: GLOW_INDIGO  },
   { icon: Flame,    top: '8%',  left: '43%', size: 22, delay: 1.8, dur: 10, op: 0.45, glow: GLOW_FUCHSIA },
   { icon: Zap,      top: '88%', left: '43%', size: 26, delay: 0.2, dur: 12, op: 0.42, glow: GLOW_INDIGO  },
+  { icon: Heart,    top: '32%', left: '2%',  size: 20, delay: 2.5, dur: 9,  op: 0.38, glow: GLOW_FUCHSIA },
+  { icon: Swords,   top: '22%', left: '62%', size: 22, delay: 4.0, dur: 11, op: 0.38, glow: GLOW_VIOLET  },
+  { icon: Wind,     top: '74%', left: '52%', size: 20, delay: 3.5, dur: 13, op: 0.35, glow: GLOW_INDIGO  },
+  { icon: Star,     top: '48%', left: '27%', size: 18, delay: 1.0, dur: 10, op: 0.38, glow: GLOW_FUCHSIA },
 ] as const;
 
-// ─── Floating icons (Mode A — Command Center watermarks — reduced 12→8) ──────
+// ─── Floating icons (Mode A — Command Center watermarks) ─────────────────────
 
 const MODE_A_ICONS: Array<{
   Icon: LucideIcon;
@@ -52,14 +56,20 @@ const MODE_A_ICONS: Array<{
   rotate: number;
   op: number;
 }> = [
-  { Icon: Dumbbell, top: '8%',  insetInlineEnd:   '6%',  size: 56, delay: 0,   dur: 14, rotate: 12,  op: 0.05 },
-  { Icon: Timer,    top: '52%', insetInlineStart: '3%',  size: 48, delay: 4,   dur: 18, rotate: -8,  op: 0.04 },
-  { Icon: Flame,    top: '75%', insetInlineEnd:   '16%', size: 52, delay: 8,   dur: 16, rotate: 6,   op: 0.05 },
-  { Icon: Trophy,   top: '24%', insetInlineStart: '15%', size: 42, delay: 2,   dur: 21, rotate: -12, op: 0.04 },
-  { Icon: Activity, top: '62%', insetInlineStart: '35%', size: 38, delay: 11,  dur: 19, rotate: 10,  op: 0.04 },
-  { Icon: Medal,    top: '38%', insetInlineEnd:   '22%', size: 44, delay: 3,   dur: 22, rotate: 8,   op: 0.04 },
-  { Icon: Target,   top: '18%', insetInlineEnd:   '38%', size: 30, delay: 5,   dur: 20, rotate: 14,  op: 0.03 },
-  { Icon: Zap,      top: '44%', insetInlineStart: '58%', size: 26, delay: 7,   dur: 13, rotate: 18,  op: 0.03 },
+  { Icon: Dumbbell,    top: '6%',  insetInlineEnd:   '5%',  size: 58, delay: 0,   dur: 14, rotate: 12,  op: 0.055 },
+  { Icon: Timer,       top: '50%', insetInlineStart: '2%',  size: 50, delay: 4,   dur: 18, rotate: -8,  op: 0.045 },
+  { Icon: Flame,       top: '76%', insetInlineEnd:   '14%', size: 54, delay: 8,   dur: 16, rotate: 6,   op: 0.050 },
+  { Icon: Trophy,      top: '22%', insetInlineStart: '14%', size: 44, delay: 2,   dur: 21, rotate: -12, op: 0.045 },
+  { Icon: Activity,    top: '63%', insetInlineStart: '34%', size: 40, delay: 11,  dur: 19, rotate: 10,  op: 0.040 },
+  { Icon: Medal,       top: '37%', insetInlineEnd:   '21%', size: 46, delay: 3,   dur: 22, rotate: 8,   op: 0.040 },
+  { Icon: Target,      top: '16%', insetInlineEnd:   '37%', size: 32, delay: 5,   dur: 20, rotate: 14,  op: 0.035 },
+  { Icon: Zap,         top: '43%', insetInlineStart: '57%', size: 28, delay: 7,   dur: 13, rotate: 18,  op: 0.035 },
+  { Icon: Heart,       top: '86%', insetInlineStart: '8%',  size: 36, delay: 9,   dur: 17, rotate: -6,  op: 0.040 },
+  { Icon: Swords,      top: '28%', insetInlineEnd:   '8%',  size: 42, delay: 6,   dur: 23, rotate: 20,  op: 0.040 },
+  { Icon: Wind,        top: '55%', insetInlineEnd:   '44%', size: 34, delay: 13,  dur: 15, rotate: -14, op: 0.035 },
+  { Icon: Star,        top: '10%', insetInlineStart: '42%', size: 26, delay: 10,  dur: 24, rotate: 22,  op: 0.030 },
+  { Icon: Users,       top: '70%', insetInlineStart: '62%', size: 38, delay: 15,  dur: 20, rotate: -10, op: 0.035 },
+  { Icon: Award,       top: '92%', insetInlineEnd:   '38%', size: 32, delay: 12,  dur: 18, rotate: 16,  op: 0.030 },
 ];
 
 // ─── Mobile Bottom Navigation ─────────────────────────────────────────────────
@@ -372,28 +382,28 @@ function TeacherShell({
 
   return (
     <div
-      className="relative flex h-screen overflow-hidden overflow-x-hidden"
+      className="relative flex h-screen overflow-hidden overflow-x-hidden print:block print:h-auto print:overflow-visible"
       data-semester={activeSemester}
     >
       {/* ── Background canvas — memoized, only re-renders on isTestActive/semester change ── */}
       <BackgroundCanvas isTestActive={isTestActive} activeSemester={activeSemester} />
 
-      {/* Sidebar — desktop only */}
-      <div className="relative z-10 flex-shrink-0 hidden md:flex">
+      {/* Sidebar — desktop only; hidden in print so it doesn't bleed into PDFs */}
+      <div className="relative z-10 flex-shrink-0 hidden md:flex print:hidden">
         <Sidebar />
       </div>
 
       {/* Main content */}
       <main
         className={cn(
-          'relative z-10 flex-1 overflow-y-auto',
+          'relative z-10 flex-1 overflow-y-auto print:block print:overflow-visible print:h-auto',
           'transition-[padding] duration-300',
           copilotOpen && 'md:pe-[420px]',
         )}
       >
         {/* ── Semester accent line — 3px sticky gradient at top of content ── */}
         <motion.div
-          className="sticky top-0 z-10 h-[3px] w-full shrink-0"
+          className="sticky top-0 z-10 h-[3px] w-full shrink-0 print:hidden"
           animate={{
             background: activeSemester === 'A'
               ? 'linear-gradient(to left, rgba(109,40,217,0) 0%, rgba(139,92,246,1) 25%, rgba(167,139,250,1) 50%, rgba(139,92,246,1) 75%, rgba(109,40,217,0) 100%)'
@@ -406,8 +416,8 @@ function TeacherShell({
           aria-hidden="true"
         />
 
-        <SemesterStripMobile />
-        <div className="p-3 pb-24 md:p-4 md:pb-6 lg:px-8 lg:pt-2 lg:pb-8">
+        <div className="print:hidden"><SemesterStripMobile /></div>
+        <div className="p-3 pb-24 md:p-4 md:pb-6 lg:px-8 lg:pt-2 lg:pb-8 print:p-0">
           <AnimatePresence mode="wait">
             <motion.div
               key={pathname}

@@ -31,6 +31,9 @@ export class StudentGradeDto {
 
   @ApiPropertyOptional({ nullable: true, description: 'Raw measurement value from the most recent session (seconds, reps, etc.)' })
   rawValue!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Teacher override from the most recent session; null = never overridden or explicitly cleared' })
+  gradeOverride!: number | null;
 }
 
 export class TestSummaryDto {

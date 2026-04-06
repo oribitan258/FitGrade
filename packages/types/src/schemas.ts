@@ -23,6 +23,10 @@ export interface ClassData {
   createdAt: string;
   /** School grade level 1–12. null for legacy classes created before this field. */
   gradeLevel: number | null;
+  /** Per-class fitness-test weight override. null = use teacher's global default. */
+  testWeight: number | null;
+  /** Per-class Talmida'ut weight override. null = use teacher's global default. */
+  talmidautWeight: number | null;
 }
 
 /** Mirrors FitnessTestTypeResponseDto returned by GET /tests/types */
@@ -118,6 +122,12 @@ export interface StudentGrade {
   effectiveGrade: number;
   /** Raw measurement value from the most recent session (seconds, reps, etc.), or null. */
   rawValue: number | null;
+  /**
+   * The teacher's explicit override from the most recent session, or null if never set / cleared.
+   * null ≠ "no grade" — it means the teacher hasn't touched this cell.
+   * Used by the grade matrix to differentiate "auto-calculated" from "teacher-overridden".
+   */
+  gradeOverride: number | null;
 }
 
 export interface TestSummary {
@@ -368,7 +378,11 @@ export interface ReportRow {
   fitnessAvg: number;
   /** talmidautAvg minus absence penalty, clamped to [0, 100]. */
   conductScore: number;
-  /** Algorithm-computed recommended grade: fitnessAvg × 85% + conductScore × 15%. */
+  /** Effective fitness weight used for this row's grade calculation (0–100 integer). */
+  fitnessWeight: number;
+  /** Effective conduct weight used for this row's grade calculation (0–100 integer). */
+  conductWeight: number;
+  /** Recommended grade: fitnessAvg × fitnessWeight% + conductScore × conductWeight%, rounded. */
   recommendedFinalGrade: number;
   /** Teacher's override, or null if not saved yet. */
   teacherFinalGrade: number | null;

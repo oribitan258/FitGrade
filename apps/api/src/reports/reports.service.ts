@@ -40,10 +40,6 @@ export const MINISTRY_COMMENTS_BANK: string[] = [
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/** Grade split: 85% tests, 15% conduct. */
-const TEST_WEIGHT_PCT = 0.85;
-const CONDUCT_WEIGHT_PCT = 0.15;
-
 /** Penalty subtracted from conductScore per unexcused absence. */
 const ABSENCE_PENALTY_PER_DAY = 5;
 
@@ -119,7 +115,16 @@ export class ReportsService {
    * that semester only. Talmidaut records are always year-wide (no semester column).
    */
   async getClassReport(classId: string, teacherId: string, semester?: Semester): Promise<ReportRowDto[]> {
-    await this.reportsRepository.verifyClassOwnership(classId, teacherId);
+    const [cls, teacherDefaults] = await Promise.all([
+      this.reportsRepository.verifyClassOwnership(classId, teacherId),
+      this.reportsRepository.findTeacherGradingDefaults(teacherId),
+    ]);
+
+    // Resolve effective weights: class override → teacher global default
+    const fitnessWeightPct =
+      (cls.testWeight ?? teacherDefaults.defaultFitnessWeight) / 100;
+    const conductWeightPct =
+      (cls.talmidautWeight ?? teacherDefaults.defaultConductWeight) / 100;
 
     // Guard: if a specific semester was requested but has NO sessions at all,
     // return empty immediately. This prevents year-wide Talmidaut conduct scores
@@ -197,7 +202,7 @@ export class ReportsService {
       );
 
       const recommendedFinalGrade = Math.round(
-        fitnessAvg * TEST_WEIGHT_PCT + conductScore * CONDUCT_WEIGHT_PCT,
+        fitnessAvg * fitnessWeightPct + conductScore * conductWeightPct,
       );
 
       // Per-test breakdown: best grade per test type, sorted descending
@@ -227,6 +232,8 @@ export class ReportsService {
         studentCode: student.studentCode,
         fitnessAvg,
         conductScore,
+        fitnessWeight: Math.round(fitnessWeightPct * 100),
+        conductWeight: Math.round(conductWeightPct * 100),
         recommendedFinalGrade,
         teacherFinalGrade: override?.teacherFinalGrade ?? null,
         suggestedComment,

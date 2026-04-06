@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Crown, Search, Trophy, Users } from 'lucide-react';
+import { ChevronDown, Crown, Trophy, Users } from 'lucide-react';
+import { GlowingSearch } from '@/components/ui/glowing-search';
 import Link from 'next/link';
 import { getHebrewGradeLabel } from '@fitgrade/types';
 import type { TopStudentItem } from '@fitgrade/types';
@@ -384,17 +385,13 @@ export default function OutstandingStudentsPage(): React.JSX.Element {
         {/* ── Filters row ──────────────────────────────────────────────── */}
         <motion.div variants={ITEM} className="flex flex-wrap items-center gap-3">
           {/* Search */}
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden="true" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="חיפוש לפי שם..."
-              className="w-full rounded-xl border border-white/70 bg-white/60 backdrop-blur-sm ps-9 pe-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              aria-label="חיפוש תלמיד לפי שם"
-            />
-          </div>
+          <GlowingSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="חיפוש לפי שם..."
+            aria-label="חיפוש תלמיד לפי שם"
+            className="flex-1 min-w-[180px] max-w-xs"
+          />
 
           {/* Test type dropdown */}
           <div className="relative">

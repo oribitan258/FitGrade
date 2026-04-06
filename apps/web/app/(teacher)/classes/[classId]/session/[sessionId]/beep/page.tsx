@@ -25,16 +25,16 @@ import { useTestSession } from '@/hooks/use-test-session';
 import { useBeepTestContext } from '@/contexts/beep-test-context';
 import type { BeepStudentState, PersistedBeepState } from '@/hooks/use-beep-students';
 
-import { BeepTestSetup, type BeepTestSetupStudent } from '@/components/beep-test/beep-test-setup';
+import type { BeepTestSetupStudent } from '@/components/beep-test/beep-test-setup';
+import { BeepPreTestSelection } from '@/components/beep-test/beep-pre-test-selection';
 import { BeepTestConsole } from '@/components/beep-test/beep-test-console';
 import { BeepTestSummary } from '@/components/beep-test/beep-test-summary';
-import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Phase = 'ROSTER' | 'SETUP' | 'RUNNING' | 'COMPLETE';
+type Phase = 'SETUP' | 'RUNNING' | 'COMPLETE';
 
 /** Maximum age (ms) for a crash-recovery snapshot to be offered. */
 const MAX_RECOVERY_AGE_MS = 2 * 60 * 60 * 1_000; // 2 hours
@@ -51,10 +51,7 @@ export default function BeepTestPage(): React.JSX.Element {
   const { data: session, isLoading, error: loadError } = useTestSession(sessionId);
 
   // ── Phase state ───────────────────────────────────────────────────────────
-  const [phase, setPhase] = useState<Phase>('ROSTER');
-
-  // ── Roster confirmed by PreTestRosterSelection — feeds SETUP ─────────────
-  const [rosterStudents, setRosterStudents] = useState<BeepTestSetupStudent[]>([]);
+  const [phase, setPhase] = useState<Phase>('SETUP');
 
   // ── Transition payload — set in RUNNING, consumed in COMPLETE ────────────
   const [selectedStudents, setSelectedStudents] = useState<BeepTestSetupStudent[]>([]);
@@ -118,17 +115,6 @@ export default function BeepTestPage(): React.JSX.Element {
   }, [setTestActive]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-
-  /** Called by PreTestRosterSelection when the teacher confirms the roster. */
-  const handleRosterConfirm = useCallback(
-    (selected: import('@fitgrade/types').SessionStudent[]): void => {
-      setRosterStudents(
-        selected.map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName })),
-      );
-      setPhase('SETUP');
-    },
-    [],
-  );
 
   /** Called by BeepTestSetup when teacher presses "התחל מבחן". */
   const handleStart = useCallback(
@@ -237,13 +223,12 @@ export default function BeepTestPage(): React.JSX.Element {
     );
   }
 
-  const fullRoster: BeepTestSetupStudent[] = session.students.map((s) => ({
+  // Map session students → BeepTestSetupStudent for the pre-test screen
+  const beepRoster: BeepTestSetupStudent[] = session.students.map((s) => ({
     id: s.id,
     firstName: s.firstName,
     lastName: s.lastName,
   }));
-  // Use the teacher-filtered roster if available, fall back to full class roster
-  const classRoster = rosterStudents.length > 0 ? rosterStudents : fullRoster;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -296,15 +281,6 @@ export default function BeepTestPage(): React.JSX.Element {
         )}
       </AnimatePresence>
 
-      {/* ── Roster selection — shown before SETUP ───────────────────────── */}
-      {phase === 'ROSTER' && (
-        <PreTestRosterSelection
-          students={session.students}
-          testName={session.testNameHe}
-          onConfirm={handleRosterConfirm}
-        />
-      )}
-
       {/* ── Phase content ───────────────────────────────────────────────── */}
       <AnimatePresence mode="wait">
         {phase === 'SETUP' && (
@@ -315,8 +291,9 @@ export default function BeepTestPage(): React.JSX.Element {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <BeepTestSetup
-              classStudents={classRoster}
+            <BeepPreTestSelection
+              students={beepRoster}
+              testName={session.testNameHe}
               onStart={handleStart}
             />
           </motion.div>

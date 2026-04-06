@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { ComparisonModule } from './comparison/comparison.module';
+import { SettingsModule } from './settings/settings.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -37,6 +38,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     CopilotModule,
     ScheduleModule,
     ComparisonModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [

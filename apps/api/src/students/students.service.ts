@@ -18,6 +18,10 @@ import type {
 } from './dto/student-report-response.dto';
 import type { FinalGradeResult } from './students.repository';
 
+/** Fallback weights when a class has no per-class override. */
+const DEFAULT_TEST_WEIGHT = 55;
+const DEFAULT_TALMIDAUT_WEIGHT = 45;
+
 /** Hebrew month labels for building per-student history points. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
   1: "ינו'", 2: "פבר'", 3: "מרץ",   4: "אפר'",
@@ -157,17 +161,20 @@ export class StudentsService {
           )
         : 0;
 
+    const effectiveTestWeight = classWeights.testWeight ?? DEFAULT_TEST_WEIGHT;
+    const effectiveTalmidautWeight = classWeights.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
+
     const recommendedGrade = Math.round(
-      overallAvg * (classWeights.testWeight / 100) +
-        talmidautAvg * (classWeights.talmidautWeight / 100),
+      overallAvg * (effectiveTestWeight / 100) +
+        talmidautAvg * (effectiveTalmidautWeight / 100),
     );
 
     const finalGrade: FinalGradeDto = {
       fitnessAvg: overallAvg,
       talmidautAvg,
       recommendedGrade,
-      testWeight: classWeights.testWeight,
-      talmidautWeight: classWeights.talmidautWeight,
+      testWeight: effectiveTestWeight,
+      talmidautWeight: effectiveTalmidautWeight,
     };
 
     return {
@@ -300,15 +307,18 @@ export class StudentsService {
           )
         : 0;
 
+    const reportTestWeight = cls.testWeight ?? DEFAULT_TEST_WEIGHT;
+    const reportTalmidautWeight = cls.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
+
     const finalGrade: FinalGradeDto = {
       fitnessAvg,
       talmidautAvg,
       recommendedGrade: Math.round(
-        fitnessAvg    * (cls.testWeight     / 100) +
-        talmidautAvg  * (cls.talmidautWeight / 100),
+        fitnessAvg   * (reportTestWeight     / 100) +
+        talmidautAvg * (reportTalmidautWeight / 100),
       ),
-      testWeight:      cls.testWeight,
-      talmidautWeight: cls.talmidautWeight,
+      testWeight:      reportTestWeight,
+      talmidautWeight: reportTalmidautWeight,
     };
 
     this.logger.log(

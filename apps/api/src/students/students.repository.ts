@@ -41,8 +41,8 @@ export interface RawReportData {
   cls: {
     name: string;
     gradeLevel: number | null;
-    testWeight: number;
-    talmidautWeight: number;
+    testWeight: number | null;
+    talmidautWeight: number | null;
   };
   studentResults: RawReportResult[];
   /** Aggregated attendance counts keyed by AttendanceStatus. */
@@ -79,10 +79,10 @@ export interface RawTalmidautRow {
   recordedAt: Date;
 }
 
-/** Class weight fields returned alongside profile data. */
+/** Class weight fields returned alongside profile data. null = inherit from teacher global defaults. */
 export interface ClassWeights {
-  testWeight: number;
-  talmidautWeight: number;
+  testWeight: number | null;
+  talmidautWeight: number | null;
 }
 
 /** All raw data needed to build StudentProfileResponseDto. */
@@ -118,6 +118,10 @@ export interface CreateTalmidautInput {
   behavior: number;
   notes?: string;
 }
+
+/** Default weights applied when a class has no per-class override. */
+const DEFAULT_TEST_WEIGHT = 55;
+const DEFAULT_TALMIDAUT_WEIGHT = 45;
 
 export interface FinalGradeResult {
   fitnessAvg: number;
@@ -268,7 +272,10 @@ export class StudentsRepository {
       attendancePresent,
       recentAttendance,
       talmidautRecords,
-      classWeights: { testWeight: classData.testWeight, talmidautWeight: classData.talmidautWeight },
+      classWeights: {
+        testWeight: classData.testWeight,
+        talmidautWeight: classData.talmidautWeight,
+      },
     };
   }
 
@@ -334,8 +341,11 @@ export class StudentsRepository {
           )
         : 0;
 
+    const effectiveTestWeight = cls.testWeight ?? DEFAULT_TEST_WEIGHT;
+    const effectiveTalmidautWeight = cls.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
+
     const recommendedGrade = Math.round(
-      fitnessAvg * (cls.testWeight / 100) + talmidautAvg * (cls.talmidautWeight / 100),
+      fitnessAvg * (effectiveTestWeight / 100) + talmidautAvg * (effectiveTalmidautWeight / 100),
     );
 
     await this.prisma.studentFinalGrade.upsert({
@@ -348,8 +358,8 @@ export class StudentsRepository {
       fitnessAvg,
       talmidautAvg,
       recommendedGrade,
-      testWeight: cls.testWeight,
-      talmidautWeight: cls.talmidautWeight,
+      testWeight: effectiveTestWeight,
+      talmidautWeight: effectiveTalmidautWeight,
     };
   }
 

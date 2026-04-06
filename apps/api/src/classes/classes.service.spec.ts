@@ -21,6 +21,8 @@ const mockClass: ClassResponseDto = {
   createdAt: new Date('2025-01-01'),
   genderType: 'MIXED',
   gradeLevel: 10,
+  testWeight: null,
+  talmidautWeight: null,
 };
 
 const createDto: CreateClassDto = {

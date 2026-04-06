@@ -9,9 +9,9 @@ import {
   Crown,
   Dumbbell,
   FileDown,
-  GraduationCap,
   LayoutDashboard,
   LogOut,
+  Settings2,
   ShieldAlert,
   Swords,
   Target,
@@ -149,8 +149,8 @@ const MAIN_NAV = [
 ] as const;
 
 const TOOLS_NAV = [
-  { href: '/norms',   label: 'טבלאות הישגים', icon: Target   },
-  { href: '/reports', label: 'הפקת דוחות',    icon: FileDown },
+  { href: '/norms',    label: 'טבלאות הישגים', icon: Target   },
+  { href: '/reports',  label: 'הפקת דוחות',    icon: FileDown },
 ] as const;
 
 const PE_NAV = [
@@ -316,7 +316,7 @@ export function Sidebar(): React.JSX.Element {
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
           style={{ border: `1px solid ${tok.pillBorder}`, backdropFilter: 'blur(8px)' }}
         >
-          <GraduationCap className={cn('h-[18px] w-[18px]', tok.navIconClass)} aria-hidden="true" />
+          <Dumbbell className={cn('h-[18px] w-[18px]', tok.navIconClass)} aria-hidden="true" />
         </motion.div>
       </div>
 
@@ -391,39 +391,47 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       {/* ── Navigation ─────────────────────────────────────────────────────── */}
-      <nav className="relative z-10 flex-1 overflow-y-auto py-3" aria-label="ניווט ראשי">
-        <div className="space-y-0.5">
-          {MAIN_NAV.map((item) => (
-            <NavItem key={item.href} {...item} />
-          ))}
+      <nav className="relative z-10 flex flex-1 flex-col overflow-y-auto py-3" aria-label="ניווט ראשי">
+        {/* Main scrollable links */}
+        <div className="flex-1">
+          <div className="space-y-0.5">
+            {MAIN_NAV.map((item) => (
+              <NavItem key={item.href} {...item} />
+            ))}
+          </div>
+
+          <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+          <div className="mb-2 px-5">
+            <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
+              כלים
+            </p>
+          </div>
+
+          <div className="space-y-0.5">
+            {TOOLS_NAV.map((item) => (
+              <NavItem key={item.href} {...item} />
+            ))}
+          </div>
+
+          <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+
+          <div className="mb-2 px-5">
+            <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
+              חינוך גופני
+            </p>
+          </div>
+
+          <div className="space-y-0.5">
+            {PE_NAV.map((item) => (
+              <NavItem key={item.href} {...item} />
+            ))}
+          </div>
         </div>
 
-        <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-
-        <div className="mb-2 px-5">
-          <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
-            כלים
-          </p>
-        </div>
-
-        <div className="space-y-0.5">
-          {TOOLS_NAV.map((item) => (
-            <NavItem key={item.href} {...item} />
-          ))}
-        </div>
-
-        <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
-
-        <div className="mb-2 px-5">
-          <p className="text-end text-[10px] font-bold uppercase tracking-[0.15em] text-white/35">
-            חינוך גופני
-          </p>
-        </div>
-
-        <div className="space-y-0.5">
-          {PE_NAV.map((item) => (
-            <NavItem key={item.href} {...item} />
-          ))}
+        {/* Settings — pinned to bottom of nav */}
+        <div className="mt-auto pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <NavItem href="/settings" label="הגדרות" icon={Settings2} />
         </div>
       </nav>
 

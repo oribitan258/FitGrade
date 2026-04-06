@@ -48,6 +48,8 @@ const CLASS_SELECT = {
   joinCode: true,
   joinCodeExpiresAt: true,
   gradeLevel: true,
+  testWeight: true,
+  talmidautWeight: true,
   createdAt: true,
   _count: { select: { enrollments: true } },
 } as const;
@@ -65,6 +67,8 @@ function toClassResponse(
     joinCode: raw.joinCode,
     joinCodeExpiresAt: raw.joinCodeExpiresAt,
     gradeLevel: raw.gradeLevel,
+    testWeight: raw.testWeight,
+    talmidautWeight: raw.talmidautWeight,
     studentCount: raw._count.enrollments,
     createdAt: raw.createdAt,
   };
@@ -138,6 +142,60 @@ export class ClassesRepository {
     ]);
 
     return { results, attendanceTotal, attendancePresent };
+  }
+
+  /**
+   * Updates per-class weight overrides. Pass null to clear an override (falls back to global defaults).
+   * Throws NotFoundException if the class doesn't belong to the teacher.
+   */
+  async updateWeights(
+    classId: string,
+    teacherId: string,
+    testWeight: number | null,
+    talmidautWeight: number | null,
+  ): Promise<ClassResponseDto> {
+    const existing = await this.prisma.class.findFirst({
+      where: { id: classId, teacherId },
+      select: { id: true },
+    });
+    if (existing === null) {
+      throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
+    }
+    const row = await this.prisma.class.update({
+      where: { id: classId },
+      data: { testWeight, talmidautWeight },
+      select: CLASS_SELECT,
+    });
+    return toClassResponse(row);
+  }
+
+  /**
+   * Overrides the effective grade for the most recent TestResult for a given
+   * (studentId, testTypeId) pair in the class.
+   * Throws NotFoundException if no result exists (student never took this test).
+   */
+  async quickGradeOverride(
+    classId: string,
+    studentId: string,
+    testTypeId: string,
+    gradeOverride: number | null,
+  ): Promise<{ effectiveGrade: number }> {
+    const result = await this.prisma.testResult.findFirst({
+      where: { studentId, session: { classId, testTypeId } },
+      orderBy: { session: { conductedAt: 'desc' } },
+      select: { id: true, calculatedGrade: true },
+    });
+    if (result === null) {
+      throw new NotFoundException(`לא נמצאה תוצאת מבחן לתלמיד זה בכיתה זו`);
+    }
+    const updated = await this.prisma.testResult.update({
+      where: { id: result.id },
+      data: { gradeOverride },
+      select: { gradeOverride: true, calculatedGrade: true },
+    });
+    return {
+      effectiveGrade: updated.gradeOverride ?? updated.calculatedGrade ?? 0,
+    };
   }
 
   /**

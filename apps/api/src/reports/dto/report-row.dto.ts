@@ -20,7 +20,13 @@ export class ReportRowDto {
   /** talmidautAvg minus (unexcusedAbsences × ABSENCE_PENALTY_PER_DAY), clamped to [0, 100]. */
   @ApiProperty() conductScore!: number;
 
-  /** Smart recommended grade: fitnessAvg × 0.85 + conductScore × 0.15, rounded. */
+  /** Effective fitness weight used to compute this row's recommendedFinalGrade (0–100 integer). */
+  @ApiProperty() fitnessWeight!: number;
+
+  /** Effective conduct weight used to compute this row's recommendedFinalGrade (0–100 integer). */
+  @ApiProperty() conductWeight!: number;
+
+  /** Recommended grade: fitnessAvg × fitnessWeight% + conductScore × conductWeight%, rounded. */
   @ApiProperty() recommendedFinalGrade!: number;
 
   /** Teacher's persisted override, or null if not yet set. */

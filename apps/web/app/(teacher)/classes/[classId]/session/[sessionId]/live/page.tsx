@@ -33,6 +33,7 @@ import type { LiveStudentResult, SessionDetail, SessionStudent } from '@fitgrade
 import { ApiError } from '@fitgrade/types';
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
+import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 
 // ─── Timer helpers ────────────────────────────────────────────────────────────
 
@@ -219,12 +220,15 @@ export default function LiveSessionPage(): React.JSX.Element {
   const [toast, setToast] = useState<string | null>(null);
   const showToast = useCallback((msg: string) => setToast(msg), []);
 
+  // ── Roster confirmed by PreTestRosterSelection ────────────────────────────
+  const [activeStudents, setActiveStudents] = useState<SessionStudent[] | null>(null);
+
   // ── Hydrate student list from API on load ──────────────────────────────────
   useEffect(() => {
-    if (!session) return;
+    if (!session || activeStudents === null) return;
 
     const studentMap = new Map<string, SessionStudent>(
-      session.students.map((s) => [s.id, s]),
+      activeStudents.map((s) => [s.id, s]),
     );
     setStudents(studentMap);
 
@@ -232,7 +236,7 @@ export default function LiveSessionPage(): React.JSX.Element {
 
     // Pending = enrolled students without a result yet
     setPendingIds(
-      session.students
+      activeStudents
         .filter((s) => !recordedIds.has(s.id))
         .map((s) => s.id),
     );
@@ -251,7 +255,7 @@ export default function LiveSessionPage(): React.JSX.Element {
     setCompleted(completedMap);
 
     if (session.completedAt) setSessionEnded(true);
-  }, [session]);
+  }, [session, activeStudents]);
 
   // ── RAF timer loop (writes directly to DOM span — zero React renders) ───────
   const tick = useCallback(() => {
@@ -395,7 +399,7 @@ export default function LiveSessionPage(): React.JSX.Element {
         // Re-insert in alphabetical position (by maintaining original order)
         const student = students.get(studentId);
         if (!student) return [studentId, ...prev];
-        const allIds = session?.students.map((s) => s.id) ?? [];
+        const allIds = activeStudents?.map((s) => s.id) ?? [];
         const merged = [studentId, ...prev];
         merged.sort((a, b) => {
           const ai = allIds.indexOf(a);
@@ -423,7 +427,7 @@ export default function LiveSessionPage(): React.JSX.Element {
         showToast(msg);
       }
     },
-    [completed, session, sessionId, showToast, students],
+    [activeStudents, completed, session, sessionId, showToast, students],
   );
 
   // ── Edit a result (delete + re-submit with corrected rawValue) ─────────────
@@ -502,6 +506,16 @@ export default function LiveSessionPage(): React.JSX.Element {
       <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
         לא ניתן לטעון את הסשן — נסה לרענן את הדף.
       </div>
+    );
+  }
+
+  if (activeStudents === null) {
+    return (
+      <PreTestRosterSelection
+        students={session.students}
+        testName={session.testNameHe}
+        onConfirm={setActiveStudents}
+      />
     );
   }
 

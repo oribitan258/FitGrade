@@ -10,7 +10,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { GlowingSearch } from '@/components/ui/glowing-search';
 import { cn } from '@/lib/utils';
 import type { TestType } from '@/hooks/use-test-types';
 
@@ -123,17 +123,12 @@ export function TestTypePicker({
     <div className={cn('flex flex-col gap-2', disabled && 'pointer-events-none opacity-50')}>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" aria-hidden="true" />
-        <input
-          type="search"
-          placeholder="חיפוש מבחן..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/80 ps-9 pe-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
-          aria-label="חיפוש סוג מבחן"
-        />
-      </div>
+      <GlowingSearch
+        value={search}
+        onChange={setSearch}
+        placeholder="חיפוש מבחן..."
+        aria-label="חיפוש סוג מבחן"
+      />
 
       {/* Category tabs */}
       <div

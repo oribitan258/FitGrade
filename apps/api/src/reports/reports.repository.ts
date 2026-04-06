@@ -45,18 +45,33 @@ export class ReportsRepository {
 
   /**
    * Verifies the class exists and belongs to the given teacher.
-   * Returns the class name.
+   * Returns the class name and its weight overrides (null = use teacher global defaults).
    */
-  async verifyClassOwnership(classId: string, teacherId: string): Promise<{ name: string }> {
+  async verifyClassOwnership(
+    classId: string,
+    teacherId: string,
+  ): Promise<{ name: string; testWeight: number | null; talmidautWeight: number | null }> {
     const cls = await this.prisma.class.findFirst({
       where: { id: classId, teacherId },
-      select: { name: true },
+      select: { name: true, testWeight: true, talmidautWeight: true },
     });
     if (cls === null) {
       const { NotFoundException } = await import('@nestjs/common');
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
     }
     return cls;
+  }
+
+  /**
+   * Returns the teacher's global grading policy defaults.
+   */
+  async findTeacherGradingDefaults(
+    teacherId: string,
+  ): Promise<{ defaultFitnessWeight: number; defaultConductWeight: number }> {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: teacherId },
+      select: { defaultFitnessWeight: true, defaultConductWeight: true },
+    });
   }
 
   /**

@@ -36,4 +36,18 @@ export class ClassResponseDto {
    */
   @ApiPropertyOptional({ nullable: true, example: 10 })
   gradeLevel!: number | null;
+
+  /**
+   * Per-class fitness-test weight override (0–100).
+   * null = use the teacher's global defaultFitnessWeight.
+   */
+  @ApiPropertyOptional({ nullable: true, example: 55 })
+  testWeight!: number | null;
+
+  /**
+   * Per-class Talmida'ut weight override (0–100).
+   * null = use the teacher's global defaultConductWeight.
+   */
+  @ApiPropertyOptional({ nullable: true, example: 45 })
+  talmidautWeight!: number | null;
 }

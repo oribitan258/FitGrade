@@ -57,6 +57,7 @@ import {
 } from 'recharts';
 
 import { useCurrentTeacher } from '@/hooks/use-current-teacher';
+import { useReportSettings } from '@/hooks/use-report-settings';
 import { useTodaySchedule } from '@/hooks/use-today-schedule';
 import type { TodayScheduleItem } from '@/hooks/use-today-schedule';
 import { useClassAverages } from '@/hooks/use-class-averages';
@@ -1481,6 +1482,7 @@ function AddReminderModal({ open, onClose }: { open: boolean; onClose: () => voi
 
 function HeroBanner(): React.JSX.Element {
   const { teacher } = useCurrentTeacher();
+  const { data: reportSettings } = useReportSettings();
   const { activeSemester } = useSemester();
   const { lessons, isLoading: scheduleLoading } = useTodaySchedule(activeSemester);
   const { data: classesData } = useClasses();
@@ -1489,7 +1491,8 @@ function HeroBanner(): React.JSX.Element {
   const [isAddClassOpen,    setIsAddClassOpen]    = useState(false);
   const [isAddReminderOpen, setIsAddReminderOpen] = useState(false);
 
-  const teacherFirstName = teacher?.name?.split(' ')[0] ?? '...';
+  // Prefer the teacher's custom name; fall back to first word of the Google display name.
+  const teacherFirstName = reportSettings?.teacherName ?? teacher?.name?.split(' ')[0] ?? '...';
   const teacherSchool    = teacher?.school ?? null;
 
   const studentCountMap = useMemo(() => {

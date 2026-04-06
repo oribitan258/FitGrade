@@ -20,6 +20,8 @@ import {
   ClipboardCopy,
   Dumbbell,
   Hash,
+  LayoutGrid,
+  LayoutList,
   Loader2,
   Lock,
   Pencil,
@@ -83,6 +85,9 @@ import { formatClassWithGender } from '@/lib/class-utils';
 import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
 import { SemesterPanel } from '@/components/ui/semester-panel';
 import { TestTypePicker } from '@/components/tests/test-type-picker';
+import { GradeMatrix } from '@/components/classes/grade-matrix';
+import { HoverBorderGradient } from '@/components/ui/hover-border-gradient';
+import { HoverGlowButton } from '@/components/ui/hover-glow-button';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -904,35 +909,9 @@ function CreateSessionModal({ classId, open, onOpenChange, gradeLevel }: CreateS
         },
       );
 
-      const isSprint10x4   = isStopwatch && (
-        selectedType?.nameHe.includes('10X4') === true ||
-        selectedType?.nameHe.includes('10x4') === true ||
-        selectedType?.nameHe.includes('4×10') === true ||
-        selectedType?.nameHe.includes('4x10') === true ||
-        (selectedType?.nameHe.includes('10') === true && selectedType?.nameHe.includes('4') === true && selectedType?.nameHe.includes('שאטל') === true)
-      );
-      const isSprint60     = selectedType?.nameHe.includes('60') === true || selectedType?.nameHe.includes('ספרינט') === true;
-      const isLongDistance = isStopwatch && (
-        selectedType?.nameHe.includes('800')  === true ||
-        selectedType?.nameHe.includes('1000') === true ||
-        selectedType?.nameHe.includes('1500') === true ||
-        selectedType?.nameHe.includes('2000') === true ||
-        selectedType?.nameHe.includes('מרחק') === true
-      );
-      const destination =
-        selectedType?.nameHe.includes('ביפ') === true
-          ? `/classes/${classId}/session/${session.id}/beep`
-          : isLongDistance
-            ? `/classes/${classId}/session/${session.id}/long-distance`
-            : isSprint10x4
-              ? `/classes/${classId}/session/${session.id}/sprint-10x4`
-              : isSprint60 && isStopwatch
-                ? `/classes/${classId}/session/${session.id}/sprint`
-                : isStopwatch
-                  ? `/classes/${classId}/session/${session.id}/live`
-                  : `/classes/${classId}/session/${session.id}/manual`;
-
-      router.push(destination);
+      // Route to the Prep Screen, which handles roster exclusions and then
+      // navigates to the correct execution screen (beep / live / manual / etc.)
+      router.push(`/classes/${classId}/session/${session.id}/prep`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'שגיאה ביצירת השיעור — נסה שוב');
       setIsSubmitting(false);
@@ -2862,6 +2841,7 @@ export default function ClassDetailPage(): React.JSX.Element {
   const [isCreateSessionOpen, setIsCreateSessionOpen]         = useState(false);
   const [isAiDispatchOpen, setIsAiDispatchOpen]               = useState(false);
   const [isAiControlCenterOpen, setIsAiControlCenterOpen]     = useState(false);
+  const [activeView, setActiveView]                           = useState<'list' | 'matrix'>('list');
   const [selectedTestId, setSelectedTestId]             = useState<string | null>(null);
   const [copied, setCopied]                             = useState(false);
 
@@ -2875,7 +2855,7 @@ export default function ClassDetailPage(): React.JSX.Element {
   const { activeSemester } = useSemester();
   const { data: cls,          error: classError,    isLoading: classLoading    } = useClass(classId);
   const { data: students,     error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
-  const { data: details,      isLoading: detailsLoading } = useClassDetails(classId, activeSemester);
+  const { data: details,      isLoading: detailsLoading, mutate: mutateDetails } = useClassDetails(classId, activeSemester);
   const { data: availability }                            = useComparisonAvailability(classId);
   const { data: testTypes } = useTestTypes();
 
@@ -3089,14 +3069,78 @@ export default function ClassDetailPage(): React.JSX.Element {
         className="space-y-6"
         style={{ perspective: 1200 }}
       >
-        {/* ── Breadcrumb ─────────────────────────────────────────────── */}
-        <motion.nav variants={ITEM} aria-label="ניווט עמודים" className="flex items-center gap-1.5 text-sm">
-          <Link href="/classes" className="font-medium text-slate-400 hover:text-indigo-600 transition-colors">
-            הכיתות שלי
-          </Link>
-          <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
-          <span className="font-semibold text-slate-700">{formatClassWithGender(cls.name, cls.genderType)}</span>
-        </motion.nav>
+        {/* ── Page Header ─────────────────────────────────────────────── */}
+        <motion.div variants={ITEM} className="flex flex-col items-center gap-3 pb-2 text-center">
+
+          {/* Breadcrumb — minimal, sits above the title */}
+          <nav aria-label="ניווט עמודים" className="flex items-center gap-1.5 text-xs text-slate-400">
+            <Link href="/classes" className="transition-colors hover:text-indigo-600">
+              הכיתות שלי
+            </Link>
+            <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
+            <span className="text-slate-500">{formatClassWithGender(cls.name, cls.genderType)}</span>
+          </nav>
+
+          {/* Class name — the hero element */}
+          <h1
+            className="text-4xl font-semibold tracking-tight drop-shadow-sm"
+            style={{
+              background: 'linear-gradient(135deg, #3b0764 0%, #3730a3 50%, #1e1b4b 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            {formatClassWithGender(cls.name, cls.genderType)}
+          </h1>
+
+          {/* Meta row — badges + stats */}
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            {/* Semester + year */}
+            <span className="rounded-full border border-indigo-200/70 bg-indigo-50 px-3 py-1 text-indigo-900">
+              {SEMESTER_LABELS[cls.semester]} · {cls.academicYear}
+            </span>
+
+            {/* Join code — copyable */}
+            <button
+              type="button"
+              onClick={() => { void copyJoinCode(); }}
+              className="flex items-center gap-1.5 rounded-full border border-indigo-300/60 bg-indigo-50 px-3 py-1 font-mono text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
+              aria-label="העתק קוד הצטרפות"
+            >
+              <Hash className="h-3 w-3 text-indigo-500" aria-hidden="true" />
+              {cls.joinCode}
+              <ClipboardCopy className="h-2.5 w-2.5 text-indigo-400" aria-hidden="true" />
+              <AnimatePresence>
+                {copied && (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
+                    transition={{ duration: 0.2 }}
+                    className="font-sans text-emerald-600"
+                  >
+                    הועתק!
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+
+            {/* Student count */}
+            <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-700">
+              <Users className="h-3 w-3 text-slate-500" aria-hidden="true" />
+              {cls.studentCount} תלמידים
+            </span>
+
+            {/* Attendance */}
+            <span className={cn(
+              'rounded-full border px-3 py-1',
+              attendancePct >= 80
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-amber-200 bg-amber-50 text-amber-800',
+            )}>
+              {attendancePct}% נוכחות
+            </span>
+          </div>
+        </motion.div>
 
         {/* ── Semester mismatch warning ───────────────────────────────── */}
         {cls.semester !== activeSemester && (
@@ -3107,7 +3151,7 @@ export default function ClassDetailPage(): React.JSX.Element {
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden="true" />
             <p className="text-sm text-amber-800">
-              <span className="font-bold">שים לב:</span>{' '}
+              <span className="font-semibold">שים לב:</span>{' '}
               כיתה זו שייכת ל{SEMESTER_LABELS[cls.semester]}, אך המערכת מוגדרת כעת ל{SEMESTER_LABELS[activeSemester]}.
               {' '}הנתונים נשמרים ל{SEMESTER_LABELS[cls.semester]}.
             </p>
@@ -3119,242 +3163,153 @@ export default function ClassDetailPage(): React.JSX.Element {
           visible={activeSemester === 'B' && testSummaries.length === 0}
         />
 
-        {/* ── Bento header grid ──────────────────────────────────────── */}
-        <motion.div variants={ITEM} className="grid grid-cols-1 gap-3 sm:grid-cols-3" style={{ perspective: 1200 }}>
-
-          {/* Card 1 — Class identity */}
-          <motion.div
-            whileHover={{ y: -5, scale: 1.015, boxShadow: '0 20px 52px rgba(99,102,241,0.45)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
-            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 p-6 shadow-[0_4px_28px_rgba(99,102,241,0.35)] sm:col-span-1"
-          >
-            <div className="pointer-events-none absolute -end-8 -top-8 h-28 w-28 rounded-full bg-white/8" />
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-200">
-              {cls.academicYear} · {SEMESTER_LABELS[cls.semester]}
-            </p>
-            <h1 className="mb-4 text-2xl font-extrabold leading-tight text-white">{formatClassWithGender(cls.name, cls.genderType)}</h1>
+        {/* ── Primary CTA ─────────────────────────────────────────────── */}
+        <motion.div variants={ITEM} className="flex justify-center">
+          <div className="relative">
+            {/* Pulsing ambient glow beneath the button */}
+            <motion.div
+              aria-hidden="true"
+              className="absolute inset-x-6 -bottom-2 h-6 rounded-full blur-xl"
+              animate={{ opacity: [0.4, 0.75, 0.4] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              style={{ background: 'linear-gradient(90deg, #7c3aed, #4f46e5, #a855f7)' }}
+            />
+            {/* Holographic button */}
             <button
               type="button"
-              onClick={() => { void copyJoinCode(); }}
-              className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 hover:bg-white/25 transition-colors"
-              aria-label="העתק קוד הצטרפות"
+              onClick={() => { setIsCreateSessionOpen(true); }}
+              className="relative h-14 w-72 overflow-hidden rounded-2xl text-sm font-semibold text-white shadow-[0_4px_24px_rgba(99,102,241,0.38)] transition-transform hover:scale-[1.025] active:scale-[0.975] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
             >
-              <Hash className="h-3.5 w-3.5 text-indigo-200" aria-hidden="true" />
-              <code className="font-mono text-sm font-bold tracking-widest text-white">{cls.joinCode}</code>
-              <ClipboardCopy className="h-3 w-3 text-indigo-300" aria-hidden="true" />
-              <AnimatePresence>
-                {copied && (
-                  <motion.span
-                    initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
-                    className="text-xs font-medium text-emerald-300"
-                  >
-                    הועתק!
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {/* Cycling holographic gradient background */}
+              <motion.div
+                aria-hidden="true"
+                className="absolute inset-0"
+                animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
+                transition={{ duration: 7, repeat: Infinity, ease: 'linear' }}
+                style={{
+                  background: 'linear-gradient(135deg, #3730a3, #6d28d9, #4f46e5, #7c3aed, #4338ca, #8b5cf6, #3730a3)',
+                  backgroundSize: '300% 300%',
+                }}
+              />
+              {/* Shimmer sweep */}
+              <motion.div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0"
+                animate={{ x: ['-100%', '220%'] }}
+                transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 2.5, ease: 'easeInOut' }}
+                style={{ background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.20) 50%, transparent 70%)' }}
+              />
+              {/* Label */}
+              <span className="relative z-10 flex items-center justify-center gap-2.5">
+                <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                הוסף שיעור / מבחן
+              </span>
             </button>
-          </motion.div>
-
-          {/* Card 2 — Quick stats (real attendance %) */}
-          <motion.div
-            whileHover={{ y: -5, scale: 1.015, boxShadow: '0 20px 52px rgba(16,185,129,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
-            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-600 p-6 shadow-[0_4px_28px_rgba(16,185,129,0.30)]"
-          >
-            <div className="pointer-events-none absolute -start-6 -bottom-6 h-24 w-24 rounded-full bg-white/10" />
-            <div className="flex items-center gap-2 mb-1">
-              <motion.div
-                animate={{ scale: [1, 1.18, 1] }}
-                transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-              >
-                <Users className="h-3.5 w-3.5 text-emerald-100" aria-hidden="true" />
-              </motion.div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-100">תלמידים רשומים</p>
-            </div>
-            <div className="text-4xl font-extrabold text-white mb-3">{cls.studentCount}</div>
-            <div className="flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
-                <div className="h-full rounded-full bg-white/80" style={{ width: `${attendancePct}%` }} />
-              </div>
-              <span className="shrink-0 text-sm font-bold text-white">{attendancePct}% נוכחות</span>
-            </div>
-          </motion.div>
-
-          {/* Card 3 — CTA */}
-          <motion.button
-            type="button"
-            onClick={() => setIsCreateSessionOpen(true)}
-            whileHover={{ y: -5, scale: 1.03, boxShadow: '0 24px 56px rgba(245,158,11,0.50)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
-            whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
-            className="relative flex cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-3xl bg-gradient-to-br from-amber-400 to-orange-500 p-6 text-center shadow-[0_4px_28px_rgba(245,158,11,0.35)]"
-          >
-            <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/12" />
-            <motion.div
-              animate={{ rotate: [0, 6, -6, 0], scale: [1, 1.1, 1] }}
-              transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <Plus className="h-8 w-8 text-white" aria-hidden="true" />
-            </motion.div>
-            <div className="text-lg font-extrabold text-white">הוסף שיעור / מבחן</div>
-            <div className="text-xs font-medium text-white/80">לחץ לפתיחת מבחן כושר חדש</div>
-          </motion.button>
-
+          </div>
         </motion.div>
 
-        {/* ── Smart Team Builder CTA ─────────────────────────────────── */}
-        <motion.div variants={ITEM}>
-          <Link href={`/classes/${classId}/team-builder`}>
-            <motion.div
-              whileHover={{ y: -4, boxShadow: '0 20px 52px rgba(139,92,246,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
-              whileTap={{ scale: 0.98 }}
-              className="relative flex cursor-pointer items-center gap-5 overflow-hidden rounded-3xl bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-600 px-7 py-5 shadow-[0_4px_28px_rgba(139,92,246,0.35)]"
-            >
-              <div className="pointer-events-none absolute -end-10 -bottom-10 h-32 w-32 rounded-full bg-white/8" />
-              <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/5" />
-              <motion.div
-                animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.1, 1] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
-              >
-                <Users className="h-6 w-6 text-white" aria-hidden="true" />
-              </motion.div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-lg font-extrabold text-white">חלוקת כוחות חכמה</p>
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white/90">AI</span>
+        {/* ── Tools Grid ──────────────────────────────────────────────── */}
+        <motion.div variants={ITEM} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+
+          {/* Tool 1 — Team Builder */}
+          <Link href={`/classes/${classId}/team-builder`} className="no-underline">
+            <div className="group h-full cursor-pointer rounded-2xl border border-white/70 bg-white/55 p-5 shadow-[0_2px_18px_rgba(99,102,241,0.09)] backdrop-blur-xl transition-all hover:bg-white/75 hover:shadow-[0_6px_26px_rgba(139,92,246,0.16)]">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 ring-1 ring-violet-200">
+                    <Users className="h-5 w-5 text-violet-600" aria-hidden="true" />
+                  </div>
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 ring-1 ring-indigo-200">AI</span>
                 </div>
-                <p className="mt-0.5 text-sm text-white/75">
-                  צור קבוצות מאוזנות אוטומטית לפי ציוני הכושר · אלגוריתם Snake Draft
-                </p>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">חלוקת כוחות חכמה</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">קבוצות מאוזנות · Snake Draft</p>
+                </div>
               </div>
-              <motion.div
-                animate={{ x: [0, 4, 0] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-                className="shrink-0"
-              >
-                <ChevronRight className="h-6 w-6 text-white/70" aria-hidden="true" />
-              </motion.div>
-            </motion.div>
+            </div>
           </Link>
-        </motion.div>
 
-        {/* ── Semester Comparison CTA ─────────────────────────────────── */}
-        <motion.div variants={ITEM}>
-          <motion.button
-            type="button"
-            onClick={() => { router.push(`/classes/${classId}/comparison`); }}
-            disabled={!availability?.hasSemesterBData}
-            whileHover={
-              availability?.hasSemesterBData
-                ? { y: -4, boxShadow: '0 20px 52px rgba(20,184,166,0.40)', transition: { type: 'spring', stiffness: 350, damping: 20 } }
-                : {}
-            }
-            whileTap={availability?.hasSemesterBData ? { scale: 0.98 } : {}}
+          {/* Tool 2 — Semester Comparison */}
+          <div
             className={cn(
-              'relative flex w-full cursor-pointer items-center gap-5 overflow-hidden rounded-3xl px-7 py-5 text-start shadow-[0_4px_28px_rgba(20,184,166,0.30)] transition-opacity',
+              'h-full rounded-2xl border bg-white/55 p-5 backdrop-blur-xl transition-all',
               availability?.hasSemesterBData
-                ? 'bg-gradient-to-br from-teal-500 to-cyan-600 opacity-100'
-                : 'cursor-not-allowed bg-gradient-to-br from-slate-400 to-slate-500 opacity-50',
+                ? 'cursor-pointer border-white/70 shadow-[0_2px_18px_rgba(20,184,166,0.08)] hover:bg-white/75 hover:shadow-[0_6px_26px_rgba(20,184,166,0.18)]'
+                : 'cursor-not-allowed border-white/40 opacity-50 shadow-[0_2px_12px_rgba(20,184,166,0.05)]',
             )}
+            onClick={availability?.hasSemesterBData ? () => { router.push(`/classes/${classId}/comparison`); } : undefined}
+            role="button"
             aria-disabled={!availability?.hasSemesterBData}
             title={!availability?.hasSemesterBData ? "אין נתוני מחצית ב' עדיין" : undefined}
           >
-            <div className="pointer-events-none absolute -end-10 -bottom-10 h-32 w-32 rounded-full bg-white/8" />
-            <div className="pointer-events-none absolute -start-6 -top-6 h-20 w-20 rounded-full bg-white/5" />
-            <motion.div
-              animate={availability?.hasSemesterBData ? { rotate: [0, 6, -6, 0], scale: [1, 1.08, 1] } : {}}
-              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
-            >
-              <BarChart2 className="h-6 w-6 text-white" aria-hidden="true" />
-            </motion.div>
-            <div className="flex-1 min-w-0">
-              <p className="text-lg font-extrabold text-white">השוואת מחציות</p>
-              <p className="mt-0.5 text-sm text-white/75">
-                {availability?.hasSemesterBData
-                  ? 'השווה ציונים בין מחצית א׳ למחצית ב׳ עם גרפים ופירוט לפי תלמיד'
-                  : "אין נתוני מחצית ב' עדיין — הכפתור יופעל לאחר הזנת ציונים"}
-              </p>
-            </div>
-            {availability?.hasSemesterBData && (
-              <motion.div
-                animate={{ x: [0, 4, 0] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-                className="shrink-0"
-              >
-                <ChevronRight className="h-6 w-6 text-white/70" aria-hidden="true" />
-              </motion.div>
-            )}
-          </motion.button>
-        </motion.div>
-
-        {/* ── AI Dispatch banner ─────────────────────────────────────── */}
-        {failingStudents.length > 0 && (
-          <motion.div variants={ITEM}>
-            <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-rose-200/80 bg-gradient-to-r from-rose-50 to-orange-50 px-5 py-4 shadow-sm backdrop-blur-sm">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-100">
-                <ShieldAlert className="h-5 w-5 text-rose-600" aria-hidden="true" />
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-100 ring-1 ring-teal-200">
+                  <BarChart2 className="h-5 w-5 text-teal-600" aria-hidden="true" />
+                </div>
+                {!availability?.hasSemesterBData && (
+                  <Lock className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-rose-900">
-                  זיהינו <strong>{failingStudents.length} תלמידים</strong> מתחת לנורמה
-                  {lockedStudents.length > 0 && (
-                    <span className="text-rose-600">
-                      {' '}({lockedStudents.length} מתוכם כבר בתוכנית פעילה ⏳)
-                    </span>
-                  )}.
+              <div>
+                <p className="text-sm font-semibold text-slate-900">השוואת מחציות</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  {availability?.hasSemesterBData ? 'גרפים ופירוט לפי תלמיד' : "יופעל לאחר נתוני מחצית ב'"}
                 </p>
-                {eligibleStudents.length > 0 ? (
-                  <p className="mt-0.5 text-xs text-rose-600">
-                    {eligibleStudents.length} תלמידים זכאים לתוכנית אימון AI חדשה
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    כל התלמידים כבר בתוכנית — ניתן לשלוח שוב בתום 4 שבועות
-                  </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tool 3 — AI Dispatch */}
+          <div
+            className={cn(
+              'h-full rounded-2xl border bg-white/55 p-5 backdrop-blur-xl transition-all',
+              failingStudents.length > 0 && eligibleStudents.length > 0
+                ? 'cursor-pointer border-rose-200/80 shadow-[0_2px_18px_rgba(244,63,94,0.09)] hover:bg-white/75 hover:shadow-[0_6px_26px_rgba(244,63,94,0.18)]'
+                : failingStudents.length > 0
+                  ? 'cursor-pointer border-white/70 shadow-[0_2px_18px_rgba(99,102,241,0.08)] hover:bg-white/75 hover:shadow-[0_6px_26px_rgba(139,92,246,0.16)]'
+                  : 'cursor-default border-white/40 opacity-50 shadow-[0_2px_12px_rgba(99,102,241,0.05)]',
+            )}
+            onClick={failingStudents.length > 0 ? () => {
+              if (eligibleStudents.length > 0) setIsAiDispatchOpen(true);
+              else setIsAiControlCenterOpen(true);
+            } : undefined}
+            role="button"
+            aria-disabled={failingStudents.length === 0}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div className={cn(
+                  'flex h-9 w-9 items-center justify-center rounded-xl ring-1',
+                  failingStudents.length > 0
+                    ? 'bg-rose-100 ring-rose-200'
+                    : 'bg-violet-100 ring-violet-200',
+                )}>
+                  {failingStudents.length > 0
+                    ? <ShieldAlert className="h-5 w-5 text-rose-600" aria-hidden="true" />
+                    : <ShieldCheck className="h-5 w-5 text-violet-600" aria-hidden="true" />
+                  }
+                </div>
+                {lockedStudents.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700 ring-1 ring-amber-200">
+                    {lockedStudents.length} פעיל
+                  </span>
                 )}
               </div>
-              <motion.button
-                type="button"
-                onClick={() => setIsAiDispatchOpen(true)}
-                disabled={eligibleStudents.length === 0}
-                whileHover={
-                  eligibleStudents.length > 0
-                    ? { scale: 1.04, boxShadow: '0 8px 28px rgba(139,92,246,0.42)', transition: { type: 'spring', stiffness: 400, damping: 22 } }
-                    : {}
-                }
-                whileTap={eligibleStudents.length > 0 ? { scale: 0.97 } : {}}
-                className={cn(
-                  'relative flex shrink-0 items-center gap-2 overflow-hidden rounded-xl px-4 py-2 text-sm font-bold text-white transition-colors',
-                  eligibleStudents.length > 0
-                    ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-[0_2px_16px_rgba(139,92,246,0.35)]'
-                    : 'cursor-not-allowed bg-slate-300',
-                )}
-              >
-                {eligibleStudents.length > 0 && (
-                  <motion.div
-                    className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent"
-                    animate={{ x: ['-100%', '200%'] }}
-                    transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.5 }}
-                  />
-                )}
-                <Sparkles className="relative z-10 h-4 w-4" aria-hidden="true" />
-                <span className="relative z-10">שלח תוכנית AI</span>
-              </motion.button>
-
-              {/* Secondary: open AI Control Center */}
-              <motion.button
-                type="button"
-                onClick={() => setIsAiControlCenterOpen(true)}
-                whileHover={{ scale: 1.04, transition: { type: 'spring', stiffness: 400, damping: 22 } }}
-                whileTap={{ scale: 0.97 }}
-                className="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
-              >
-                <Settings2 className="h-4 w-4 text-slate-500" aria-hidden="true" />
-                <span>⚙️ ניהול ומעקב</span>
-              </motion.button>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">תכנית AI</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  {failingStudents.length > 0
+                    ? eligibleStudents.length > 0
+                      ? `${failingStudents.length} מתחת לנורמה · ${eligibleStudents.length} זכאים`
+                      : 'כל התלמידים כבר בתוכנית'
+                    : 'אין תלמידים הדורשים תכנית כרגע'}
+                </p>
+              </div>
             </div>
-          </motion.div>
-        )}
+          </div>
+
+        </motion.div>
 
         {/* ── Test type selector — premium dropdown ──────────────────── */}
         <motion.div variants={ITEM}>
@@ -3488,36 +3443,72 @@ export default function ClassDetailPage(): React.JSX.Element {
           </AnimatePresence>
         )}
 
-        {/* ── Students Table ─────────────────────────────────────────── */}
+        {/* ── Students / Matrix Section ──────────────────────────────── */}
         <motion.div variants={ITEM}>
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-bold tracking-tight bg-gradient-to-l from-indigo-700 to-violet-700 bg-clip-text text-transparent">
-                רשימת תלמידים
+                {activeView === 'list' ? 'רשימת תלמידים' : 'מטריצת ציונים'}
                 {students && <span className="ms-2 text-sm font-normal text-slate-400">({students.length})</span>}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">לחץ על תלמיד לפרופיל מפורט</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {activeView === 'list' ? 'לחץ על תלמיד לפרופיל מפורט' : 'לחץ על תא לעריכת ציון מהירה'}
+              </p>
             </div>
-            <motion.button
-              type="button"
-              onClick={() => setIsAddStudentOpen(true)}
-              whileHover={{ y: -3, scale: 1.04, boxShadow: '0 8px 28px rgba(99,102,241,0.40)', transition: { type: 'spring', stiffness: 400, damping: 25 } }}
-              whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
-              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
-            >
-              <motion.span
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                className="inline-flex"
+            <div className="flex items-center gap-2">
+              {/* View switcher */}
+              <div className="flex items-center gap-0.5 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveView('list')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                    activeView === 'list'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700',
+                  )}
+                  aria-pressed={activeView === 'list'}
+                >
+                  <LayoutList className="h-3.5 w-3.5" aria-hidden="true" />
+                  רשימה
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveView('matrix')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                    activeView === 'matrix'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700',
+                  )}
+                  aria-pressed={activeView === 'matrix'}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+                  מטריצת ציונים
+                </button>
+              </div>
+              {/* Add student */}
+              <motion.button
+                type="button"
+                onClick={() => setIsAddStudentOpen(true)}
+                whileHover={{ y: -3, scale: 1.04, boxShadow: '0 8px 28px rgba(99,102,241,0.40)', transition: { type: 'spring', stiffness: 400, damping: 25 } }}
+                whileTap={{ scale: 0.97, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
+                className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
               >
-                <UserPlus className="h-4 w-4" aria-hidden="true" />
-              </motion.span>
-              הוסף תלמיד
-            </motion.button>
+                <motion.span
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                  className="inline-flex"
+                >
+                  <UserPlus className="h-4 w-4" aria-hidden="true" />
+                </motion.span>
+                הוסף תלמיד
+              </motion.button>
+            </div>
           </div>
 
-          {/* Search bar — only when students are loaded */}
-          {!studentsLoading && !studentsError && students && students.length > 0 && (
+          {/* Search bar — list view only */}
+          {!studentsLoading && !studentsError && students && students.length > 0 && activeView === 'list' && (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -3571,7 +3562,19 @@ export default function ClassDetailPage(): React.JSX.Element {
             </motion.div>
           )}
 
-          {!studentsLoading && students && students.length > 0 && (
+          {/* Grade Matrix view */}
+          {!studentsLoading && students && students.length > 0 && activeView === 'matrix' && (
+            <GradeMatrix
+              classId={classId}
+              students={students}
+              testSummaries={testSummaries}
+              testWeight={cls.testWeight ?? 55}
+              onRefresh={() => { void mutateDetails(); }}
+            />
+          )}
+
+          {/* Student list view */}
+          {!studentsLoading && students && students.length > 0 && activeView === 'list' && (
             <>
               {/* No-results empty state when search filters everything out */}
               <AnimatePresence mode="popLayout">
@@ -3626,7 +3629,7 @@ export default function ClassDetailPage(): React.JSX.Element {
                             <Link
                               href={`/classes/${classId}/students/${student.id}/report`}
                               className={cn(
-                                'text-sm font-medium underline underline-offset-2 transition-colors',
+                                'text-sm font-medium no-underline transition-colors',
                                 isExempt ? 'text-orange-600 hover:text-orange-700' : 'text-blue-600 hover:text-blue-800',
                               )}
                             >

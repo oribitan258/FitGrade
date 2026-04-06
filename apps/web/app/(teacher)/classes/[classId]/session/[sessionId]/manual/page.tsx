@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -8,6 +8,8 @@ import { ArrowRight, Check, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
+import type { SessionStudent } from '@fitgrade/types';
+import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 import { useSemester } from '@/contexts/semester-context';
 import { cn } from '@/lib/utils';
 
@@ -176,12 +178,15 @@ export default function ManualSessionPage(): React.JSX.Element {
   const inputRefs           = useRef<(HTMLInputElement | null)[]>([]);
   const [, forceRender]     = useReducer((n: number) => n + 1, 0);
 
+  // ── Roster confirmed by PreTestRosterSelection ────────────────────────────
+  const [activeStudents, setActiveStudents] = useState<SessionStudent[] | null>(null);
+
   // ── Hydrate slots from API response ───────────────────────────────────────
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || activeStudents === null) return;
     const next: SlotsMap = {};
-    for (const student of session.students) {
+    for (const student of activeStudents) {
       // Preserve any in-progress edits across SWR revalidations
       if (slotsRef.current[student.id] !== undefined) {
         next[student.id] = slotsRef.current[student.id]!;
@@ -194,7 +199,7 @@ export default function ManualSessionPage(): React.JSX.Element {
     }
     slotsRef.current = next;
     forceRender();
-  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session, activeStudents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -311,10 +316,20 @@ export default function ManualSessionPage(): React.JSX.Element {
     );
   }
 
+  if (activeStudents === null) {
+    return (
+      <PreTestRosterSelection
+        students={session.students}
+        testName={session.testNameHe}
+        onConfirm={setActiveStudents}
+      />
+    );
+  }
+
   const slots       = slotsRef.current;
   const isPassFail  = session.testInputType === 'PASS_FAIL';
   const savedCount  = Object.values(slots).filter((s) => s.status === 'saved').length;
-  const totalCount  = session.students.length;
+  const totalCount  = activeStudents.length;
   const progressPct = totalCount > 0 ? (savedCount / totalCount) * 100 : 0;
   const allDone     = savedCount === totalCount && totalCount > 0;
 
@@ -410,7 +425,7 @@ export default function ManualSessionPage(): React.JSX.Element {
         </div>
 
         <ul>
-          {session.students.map((student, index) => {
+          {activeStudents.map((student, index) => {
             const slot     = slots[student.id] ?? emptySlot();
             const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
 

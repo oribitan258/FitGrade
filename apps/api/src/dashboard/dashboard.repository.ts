@@ -245,6 +245,9 @@ export class DashboardRepository {
     for (const [classId, byType] of byClass) {
       const count = enrollmentCount.get(classId) ?? 0;
       for (const done of byType.values()) {
+        // Only count missing results for test types where grading has actually started.
+        // A session with zero results is "planned / not started" and should not contribute.
+        if (done.size === 0) continue;
         total += Math.max(0, count - done.size);
       }
     }
@@ -324,6 +327,9 @@ export class DashboardRepository {
     for (const [classId, byType] of combos) {
       const classStudents = studentsByClass.get(classId) ?? [];
       for (const meta of byType.values()) {
+        // Only surface missing results for test types where grading has actually started.
+        // If no student has a result yet, the session is "planned / not started".
+        if (meta.done.size === 0) continue;
         for (const student of classStudents) {
           if (!meta.done.has(student.id)) {
             items.push({

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -33,6 +34,7 @@ import {
 import { getHebrewGradeLabel, getGradeColorKey } from '@fitgrade/types';
 import type { ReportTestResult } from '@fitgrade/types';
 import { useStudentReport } from '@/hooks/use-student-report';
+import { useReportSettings } from '@/hooks/use-report-settings';
 import { useSemester } from '@/contexts/semester-context';
 import { cn, formatRawValue } from '@/lib/utils';
 
@@ -166,7 +168,10 @@ export default function StudentReportPage() {
   // When Full Year is active, pass undefined to the API (returns data for all semesters).
   const effectiveSemester = showFullYear ? undefined : semesterFilter;
 
+  const [isPrinting, setIsPrinting] = useState(false);
+
   const { data: report, isLoading, error } = useStudentReport(classId, studentId, effectiveSemester);
+  const { data: reportSettings } = useReportSettings();
 
   /** Export test results as a UTF-8 CSV file with BOM for Excel RTL support. */
   function handleExportExcel(): void {
@@ -262,16 +267,173 @@ export default function StudentReportPage() {
   const overallStyle = gradeStyle(finalGrade.recommendedGrade);
 
   return (
+    <>
+      {/* ── Print styles ──────────────────────────────────────────────────── */}
+      <style>{`
+        @page { margin: 10mm; size: A4 portrait; }
+
+        @media print {
+          /* ── 1. Exact colour rendering + Framer Motion inline-style reset ── */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            opacity: 1 !important;
+            transform: none !important;
+            filter: none !important;
+          }
+
+          /* ── 2. Unlock layout containers — removes h-screen clip ─────────── */
+          html, body, #__next, main,
+          div[class*="h-screen"], div[class*="overflow-hidden"], div[class*="overflow-auto"] {
+            height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+
+          /* ── 3. Isolate only the report content ─────────────────────────── */
+          body * { visibility: hidden; }
+          .print-report, .print-report * { visibility: visible; }
+          .print-report {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            direction: rtl;
+            font-size: 11px;
+            color: #0f172a;
+          }
+
+          /* ── 4. Glassmorphism → solid white for print ────────────────────── */
+          .print-report .prismatic-glass {
+            background: white !important;
+            border: 1px solid #e2e8f0 !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            box-shadow: none !important;
+          }
+
+          /* ── 5. Background colours — stat card icons + grade badges ─────── */
+          .print-report .bg-indigo-100  { background-color: #e0e7ff !important; }
+          .print-report .bg-violet-100  { background-color: #ede9fe !important; }
+          .print-report .bg-emerald-100 { background-color: #d1fae5 !important; }
+          .print-report .bg-amber-100   { background-color: #fef3c7 !important; }
+          .print-report .bg-emerald-50  { background-color: #ecfdf5 !important; }
+          .print-report .bg-blue-50     { background-color: #eff6ff !important; }
+          .print-report .bg-amber-50    { background-color: #fffbeb !important; }
+          .print-report .bg-red-50      { background-color: #fef2f2 !important; }
+          .print-report .bg-orange-50   { background-color: #fff7ed !important; }
+          .print-report .bg-violet-50   { background-color: #f5f3ff !important; }
+          .print-report .bg-indigo-50   { background-color: #eef2ff !important; }
+          .print-report .bg-slate-50    { background-color: #f8fafc !important; }
+          .print-report .bg-slate-100   { background-color: #f1f5f9 !important; }
+          /* Avatar gradient */
+          .print-report [class*="from-indigo-500"] { background: #6366f1 !important; }
+
+          /* ── 6. Text colours ─────────────────────────────────────────────── */
+          .print-report .text-slate-900  { color: #0f172a !important; }
+          .print-report .text-slate-800  { color: #1e293b !important; }
+          .print-report .text-slate-700  { color: #334155 !important; }
+          .print-report .text-slate-600  { color: #475569 !important; }
+          .print-report .text-slate-500  { color: #64748b !important; }
+          .print-report .text-slate-400  { color: #94a3b8 !important; }
+          .print-report .text-emerald-700 { color: #047857 !important; }
+          .print-report .text-emerald-600 { color: #059669 !important; }
+          .print-report .text-blue-700   { color: #1d4ed8 !important; }
+          .print-report .text-amber-700  { color: #b45309 !important; }
+          .print-report .text-red-700    { color: #b91c1c !important; }
+          .print-report .text-red-600    { color: #dc2626 !important; }
+          .print-report .text-violet-700 { color: #6d28d9 !important; }
+          .print-report .text-indigo-700 { color: #4338ca !important; }
+          .print-report .text-indigo-600 { color: #4f46e5 !important; }
+          .print-report .text-orange-700 { color: #c2410c !important; }
+          .print-report .text-orange-600 { color: #ea580c !important; }
+          .print-report .text-orange-500 { color: #f97316 !important; }
+
+          /* ── 7. bg-clip-text gradient → solid indigo ─────────────────────── */
+          .print-report .bg-clip-text {
+            -webkit-text-fill-color: #4338ca !important;
+            background: none !important;
+          }
+
+          /* ── 8. Recharts ─────────────────────────────────────────────────── */
+          .print-report .recharts-text,
+          .print-report text { fill: #334155 !important; }
+          .print-report .recharts-cartesian-grid line { stroke: #e2e8f0 !important; }
+          /* ResponsiveContainer inherits parent height — cap it */
+          .print-report .recharts-wrapper { overflow: visible !important; }
+
+          /* ── 9. Tables ───────────────────────────────────────────────────── */
+          .print-report table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+          }
+          .print-report thead { display: table-header-group; }
+          .print-report tr    { break-inside: avoid; page-break-inside: avoid; }
+          .print-report td, .print-report th {
+            padding: 5px 8px !important;
+            font-size: 9px !important;
+          }
+          /* Inline overflow-x-auto wrapper — must not clip in print */
+          .print-report .overflow-x-auto {
+            overflow: visible !important;
+            width: 100% !important;
+          }
+
+          /* ── 10. Compact spacing ─────────────────────────────────────────── */
+          .print-report .space-y-8 > * + * { margin-top: 10px !important; }
+          .print-report .space-y-6 > * + * { margin-top: 8px !important; }
+          .print-report .space-y-3 > * + * { margin-top: 5px !important; }
+          .print-report .gap-6 { gap: 8px !important; }
+          .print-report .gap-4 { gap: 6px !important; }
+          .print-report .gap-2 { gap: 4px !important; }
+          .print-report .p-6   { padding: 10px 14px !important; }
+          .print-report .p-5   { padding: 8px 12px !important; }
+          .print-report .p-3   { padding: 5px 8px !important; }
+          .print-report .mb-4  { margin-bottom: 6px !important; }
+          .print-report .mt-4  { margin-top: 6px !important; }
+          .print-report .mt-1\\.5  { margin-top: 3px !important; }
+          .print-report .py-12 { padding-top: 12px !important; padding-bottom: 12px !important; }
+
+          /* ── 11. Shrink oversized display numbers ────────────────────────── */
+          .print-report .text-2xl { font-size: 15px !important; line-height: 1.2 !important; }
+          .print-report .text-4xl { font-size: 20px !important; line-height: 1.1 !important; }
+          .print-report .text-xl  { font-size: 13px !important; }
+
+          /* ── 12. Break-inside: only for small atomic blocks, never for table wrappers ── */
+          .print-report .grid { break-inside: avoid; page-break-inside: avoid; }
+
+          /* ── 13. Signature footer spacing ────────────────────────────────── */
+          .print-report .mt-8  { margin-top: 16px !important; }
+
+          /* ── 14. Hide interactive / decorative chrome ────────────────────── */
+          button, [class*="animate-pulse"] { display: none !important; }
+        }
+      `}</style>
+
     <motion.div
-      className="mx-auto max-w-5xl space-y-8 p-6"
+      className="mx-auto max-w-5xl space-y-8 p-6 print-report print:block print:h-auto print:min-h-0 print:overflow-visible print:p-0 print:m-0 print:max-w-none"
       dir="rtl"
       variants={PAGE_ENTER}
-      initial="hidden"
+      initial={isPrinting ? false : 'hidden'}
       animate="show"
     >
 
-      {/* ── Breadcrumb ────────────────────────────────────────────────────── */}
-      <motion.div variants={ITEM} className="flex items-center justify-between gap-3 flex-wrap">
+      {/* ── Print-only school header ──────────────────────────────────── */}
+      {reportSettings?.schoolName && (
+        <div className="text-center border-b-2 border-slate-800 pb-4 mb-2">
+          <h1 className="text-xl font-bold text-slate-900">{reportSettings.schoolName}</h1>
+          <p className="mt-1 text-sm text-slate-500">דוח אישי לתלמיד/ה</p>
+        </div>
+      )}
+
+      {/* ── Breadcrumb — hidden in print; only report content prints ─────── */}
+      <motion.div variants={ITEM} className="flex items-center justify-between gap-3 flex-wrap print:hidden">
         <div className="flex items-center gap-3">
           <Link
             href={`/classes/${classId}`}
@@ -304,7 +466,11 @@ export default function StudentReportPage() {
             אקסל
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              flushSync(() => { setIsPrinting(true); });
+              window.print();
+              setIsPrinting(false);
+            }}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:border-indigo-300 hover:text-indigo-700 transition-colors"
           >
             <Printer className="h-4 w-4" />
@@ -380,7 +546,7 @@ export default function StudentReportPage() {
       </motion.div>
 
       {/* ── Stats Grid ────────────────────────────────────────────────────── */}
-      <motion.div variants={ITEM} className="grid grid-cols-2 gap-4 sm:grid-cols-4 [print-color-adjust:exact]">
+      <motion.div variants={ITEM} className="grid grid-cols-2 gap-4 sm:grid-cols-4 print:grid-cols-4 print:break-inside-avoid [print-color-adjust:exact]">
         <StatCard
           icon={<Dumbbell className="h-5 w-5" />}
           label="ממוצע כושר"
@@ -412,10 +578,10 @@ export default function StudentReportPage() {
       </motion.div>
 
       {/* ── Two-column layout: table + chart ──────────────────────────────── */}
-      <motion.div variants={ITEM} className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <motion.div variants={ITEM} className="grid gap-6 lg:grid-cols-[1fr_360px] print:block print:space-y-4">
 
         {/* Achievements Table */}
-        <div className="prismatic-glass overflow-hidden rounded-3xl">
+        <div className="prismatic-glass overflow-hidden rounded-3xl print:break-inside-auto print:overflow-visible">
           <div className="flex items-center gap-2 border-b border-white/20 px-5 py-4">
             <Dumbbell className="h-4 w-4 text-indigo-400" />
             <h2 className="font-bold text-slate-800">תוצאות מבחנים</h2>
@@ -504,10 +670,10 @@ export default function StudentReportPage() {
         </div>
 
         {/* Right column: Chart + Attendance */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 print:block print:space-y-3">
 
           {/* Bar Chart: student vs class */}
-          <div className="prismatic-glass rounded-3xl p-5">
+          <div className="prismatic-glass rounded-3xl p-5 print:break-inside-avoid print:h-[280px]">
             <div className="mb-4 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-indigo-400" />
               <h2 className="font-bold text-slate-800">תלמיד מול ממוצע כיתה</h2>
@@ -565,8 +731,8 @@ export default function StudentReportPage() {
               </span>
             </div>
 
-            {/* Progress bar */}
-            <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
+            {/* Progress bar — hidden in print; animated width can't be reliably forced */}
+            <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-100 print:hidden">
               <motion.div
                 className={cn(
                   'h-full rounded-full',
@@ -632,26 +798,42 @@ export default function StudentReportPage() {
       </motion.div>
 
       {/* ── Signature Footer (print only) ────────────────────────────────── */}
-      <div className="hidden print:block mt-24 border-t-2 border-gray-300 pt-8">
-        <div className="flex justify-between gap-12" dir="rtl">
+      <div className="mt-8 border-t-2 border-slate-300 pt-8 print:mt-6 print:break-inside-avoid" dir="rtl">
+        <div className="flex justify-between gap-12">
+          {/* Teacher signature */}
           <div className="flex-1 text-center">
-            <p className="text-sm text-gray-400 mb-10">___________________________</p>
-            <p className="text-sm font-semibold text-gray-700">חתימת המורה לחינוך גופני</p>
+            {reportSettings?.teacherSignature ? (
+              <div className="mb-2 flex justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={reportSettings.teacherSignature}
+                  alt="חתימת מורה"
+                  className="h-16 object-contain"
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 mb-10">___________________________</p>
+            )}
+            <p className="text-sm font-semibold text-slate-700">
+              {reportSettings?.teacherName ?? 'המורה לחינוך גופני'}
+            </p>
+            <p className="text-xs text-slate-400">חתימת המורה</p>
           </div>
+          {/* Date — filled automatically */}
           <div className="flex-1 text-center">
-            <p className="text-sm text-gray-400 mb-10">___________________________</p>
-            <p className="text-sm font-semibold text-gray-700">חתימת מנהל/ת בית הספר</p>
-          </div>
-          <div className="flex-1 text-center">
-            <p className="text-sm text-gray-400 mb-10">___________________________</p>
-            <p className="text-sm font-semibold text-gray-700">תאריך</p>
+            <div className="mb-2 flex h-16 items-center justify-center">
+              <p className="text-base font-bold text-slate-800">{new Date().toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+            </div>
+            <p className="text-sm font-semibold text-slate-700">&nbsp;</p>
+            <p className="text-xs text-slate-400">תאריך</p>
           </div>
         </div>
-        <p className="mt-6 text-center text-[10px] text-gray-400">
+        <p className="mt-6 text-center text-[10px] text-slate-400">
           דוח זה הופק ממערכת FitGrade · {formatDate(generatedAt)}
         </p>
       </div>
 
     </motion.div>
+    </>
   );
 }

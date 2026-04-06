@@ -25,6 +25,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { GlowingSearch } from '@/components/ui/glowing-search';
 import { useClasses, useStudents } from '@/hooks/use-classes';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError } from '@fitgrade/types';
@@ -386,51 +387,13 @@ export default function ExemptionsPage(): React.JSX.Element {
             className="flex flex-col gap-2 sm:flex-row"
           >
             {/* Search input */}
-            <div className="relative flex-1">
-              {/* Search icon — end side (right in RTL) */}
-              <Search
-                className="pointer-events-none absolute inset-y-0 end-0 my-auto me-3.5 h-4 w-4 text-slate-400"
-                aria-hidden="true"
-              />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); }}
-                placeholder="חיפוש לפי שם תלמיד..."
-                dir="rtl"
-                className={cn(
-                  'h-11 w-full rounded-2xl pe-10 text-sm text-slate-700 placeholder-slate-400',
-                  'outline-none transition-all duration-200',
-                  'focus:ring-2 focus:ring-orange-300/60',
-                  searchQuery ? 'ps-9' : 'ps-3.5',
-                )}
-                style={{
-                  background:           'rgba(255,255,255,0.68)',
-                  backdropFilter:       'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                  border:               '1px solid rgba(255,255,255,0.80)',
-                  boxShadow:            '0 4px 20px rgba(15,23,42,0.07)',
-                }}
-                aria-label="חיפוש לפי שם תלמיד"
-              />
-              {/* Clear button — start side (left in RTL) */}
-              <AnimatePresence>
-                {searchQuery && (
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, scale: 0.7 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.7 }}
-                    transition={{ duration: 0.15 }}
-                    onClick={() => { setSearchQuery(''); }}
-                    className="absolute inset-y-0 start-0 my-auto ms-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-200/80 text-slate-500 hover:bg-slate-300/80 transition-colors"
-                    aria-label="נקה חיפוש"
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </motion.button>
-                )}
-              </AnimatePresence>
-            </div>
+            <GlowingSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="חיפוש לפי שם תלמיד..."
+              aria-label="חיפוש לפי שם תלמיד"
+              className="flex-1"
+            />
 
             {/* Class filter dropdown */}
             <div className="relative shrink-0 sm:w-52">
