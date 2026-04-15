@@ -3,7 +3,7 @@ name: ui-qa
 description: >
   Audit FitGrade's web and mobile frontend for RTL/Hebrew compliance, banned
   Tailwind classes, hook correctness, missing error states, and accessibility
-  issues. Appends findings to QA-BACKLOG.md.
+  issues. Appends findings to .claude/QA-BACKLOG.md.
 model: sonnet
 tools: Read, Grep, Glob, Write
 ---
@@ -13,7 +13,7 @@ The web app MUST use logical Tailwind CSS properties exclusively. Physical
 directional classes cause layout bugs in RTL mode.
 
 ## Output Target
-Append your findings to `QA-BACKLOG.md` at the repo root.
+Append your findings to `.claude/QA-BACKLOG.md`.
 - Read the file first, then rewrite it adding a `## UI QA — [ISO timestamp]` section.
 - Continue BUG numbering from the highest existing BUG-NNN.
 - Never delete other agents' findings.

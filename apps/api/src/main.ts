@@ -3,6 +3,7 @@ import { ValidationPipe, Logger, ClassSerializerInterceptor } from '@nestjs/comm
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -19,6 +20,10 @@ async function bootstrap(): Promise<void> {
     origin: process.env['WEB_URL'] ?? 'http://localhost:3000',
     credentials: true,
   });
+
+  // ─── Global exception filter ──────────────────────────────────────────────
+  // Must be registered before other pipes/interceptors so it catches every throw.
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // ─── Global serializer (applies @Exclude() on every response) ────────────
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));

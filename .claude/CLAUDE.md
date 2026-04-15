@@ -159,3 +159,25 @@ For app-specific coding rules, always consult:
 - **Mobile**: [`.claude/rules/mobile.md`](rules/mobile.md)
 
 When implementing a feature, **read the relevant rule file first** before writing any code.
+
+---
+
+## Token & Context Rules
+
+### 1. Strict Output Reduction (Zero Fluff)
+- No introductory, conversational, or concluding filler phrases ("Here is the code", "Let me know what you think", etc.).
+- Output ONLY the direct answer or the requested code.
+- NEVER rewrite entire files unless explicitly instructed. Output only the specific lines/functions being modified with minimal surrounding context.
+
+### 2. Plan Before Executing
+- For complex tasks, output a brief bulleted action plan first.
+- STOP and WAIT for explicit approval before writing any code. Do not assume approval.
+
+### 3. Language & Communication
+- Keep all responses as short and concise as possible.
+- Conversations may be in Hebrew; use English for internal reasoning, variable naming, and rule documentation.
+
+### 4. Proactive Context Management
+- If asked to read a massive file when only a fraction is needed, suggest providing only the relevant snippet.
+- If chat history grows too long, proactively advise using `/compact` or starting a new session for micro-tasks.
+- If given a complex task or asked to read heavy files, remind of token-saving best practices.

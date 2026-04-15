@@ -30,7 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LiveStudentResult, SessionDetail, SessionStudent } from '@fitgrade/types';
-import { ApiError } from '@fitgrade/types';
+import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
 import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
@@ -780,7 +780,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                                 color:      '#6366f1',
                               }}
                             >
-                              {entry.calculatedGrade}
+                              {getHebrewGradeLabel(entry.calculatedGrade)}
                             </span>
                           )}
 

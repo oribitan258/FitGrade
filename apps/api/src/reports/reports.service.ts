@@ -1,8 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Semester } from '@prisma/client';
+import { AuditAction, Semester } from '@prisma/client';
 import { ReportsRepository } from './reports.repository';
 import type { ReportRowDto, TestBreakdownDto } from './dto/report-row.dto';
 import type { GradeOverrideDto } from './dto/save-report-grades.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 // ─── Ministry of Education verbal comments bank ─────────────────────────────
 
@@ -104,7 +105,10 @@ function suggestComment(params: {
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
 
-  constructor(private readonly reportsRepository: ReportsRepository) {}
+  constructor(
+    private readonly reportsRepository: ReportsRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   /**
    * Returns the full class report: one row per student with computed grades,
@@ -152,8 +156,10 @@ export class ReportsService {
     const overrideByStudent = new Map(finalGradeOverrides.map((o) => [o.studentId, o]));
 
     // Build attendance map: studentId → { absent: n, total: n }
+    // EXCUSED lessons are excluded from total to match individual student report logic.
     const attendanceMap = new Map<string, { absent: number; total: number }>();
     for (const row of attendanceStats) {
+      if (row.status === 'EXCUSED') continue;
       const entry = attendanceMap.get(row.studentId) ?? { absent: 0, total: 0 };
       entry.total += row.count;
       if (row.status === 'ABSENT') entry.absent += row.count;
@@ -260,6 +266,18 @@ export class ReportsService {
     this.logger.log(
       `Teacher ${teacherId} saved ${overrides.length} grade override(s) for class ${classId}`,
     );
+    for (const override of overrides) {
+      void this.auditLogService.log({
+        action: AuditAction.GRADE_OVERRIDE,
+        entityType: 'StudentFinalGrade',
+        entityId: `${classId}/${override.studentId}`,
+        actorId: teacherId,
+        newValue: {
+          teacherFinalGrade: override.teacherFinalGrade ?? null,
+          verbalComment: override.verbalComment ?? null,
+        },
+      });
+    }
   }
 
   /** Returns the Ministry comments bank (sent to frontend for the Combobox list). */

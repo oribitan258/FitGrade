@@ -6,6 +6,7 @@ import { ReportsModule } from '../reports/reports.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { TestsModule } from '../tests/tests.module';
 import { CopilotController } from './copilot.controller';
+import { CopilotRepository } from './copilot.repository';
 import { CopilotService } from './copilot.service';
 import { CopilotToolExecutor } from './copilot-tool-executor';
 import { ConversationHistoryStore } from './stores/conversation-history.store';
@@ -30,6 +31,7 @@ import { PendingActionStore } from './stores/pending-action.store';
   ],
   controllers: [CopilotController],
   providers: [
+    CopilotRepository,
     CopilotService,
     CopilotToolExecutor,
     ConversationHistoryStore,

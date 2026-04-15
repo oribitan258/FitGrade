@@ -9,13 +9,17 @@ import { GradingRepository } from './grading.repository';
 const mockGradingRepository = {
   findStudentById: jest.fn(),
   findNormRow: jest.fn(),
+  findTestTypeInputType: jest.fn(),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns a Date representing a person who is exactly `age` years old today. */
+/** Fixed session date used across all calculateGrade tests. */
+const SESSION_DATE = new Date('2025-09-01');
+
+/** Returns a Date representing a person who is exactly `age` years old at SESSION_DATE. */
 function dobForAge(age: number): Date {
-  const d = new Date();
+  const d = new Date(SESSION_DATE);
   d.setFullYear(d.getFullYear() - age);
   return d;
 }
@@ -40,6 +44,13 @@ describe('GradingService', () => {
   // ── calculateGrade ──────────────────────────────────────────────────────────
 
   describe('calculateGrade', () => {
+    beforeEach(() => {
+      // Default: norm-based test type (not PASS_FAIL)
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: 'REPS',
+      });
+    });
+
     it('returns the score from the matching norm row (happy path)', async () => {
       mockGradingRepository.findStudentById.mockResolvedValue({
         gender: 'MALE',
@@ -47,7 +58,7 @@ describe('GradingService', () => {
       });
       mockGradingRepository.findNormRow.mockResolvedValue({ score: 80 });
 
-      const result = await service.calculateGrade('student-1', 'test-1', 500);
+      const result = await service.calculateGrade('student-1', 'test-1', 500, SESSION_DATE);
 
       expect(result).toBe(80);
       expect(mockGradingRepository.findStudentById).toHaveBeenCalledWith(
@@ -68,7 +79,7 @@ describe('GradingService', () => {
       });
       mockGradingRepository.findNormRow.mockResolvedValue({ score: 65 });
 
-      const result = await service.calculateGrade('student-2', 'pushups', 15);
+      const result = await service.calculateGrade('student-2', 'pushups', 15, SESSION_DATE);
 
       expect(result).toBe(65);
       expect(mockGradingRepository.findNormRow).toHaveBeenCalledWith(
@@ -85,7 +96,7 @@ describe('GradingService', () => {
       );
 
       await expect(
-        service.calculateGrade('no-such-student', 'test-1', 300),
+        service.calculateGrade('no-such-student', 'test-1', 300, SESSION_DATE),
       ).rejects.toThrow(NotFoundException);
 
       expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
@@ -99,7 +110,7 @@ describe('GradingService', () => {
       mockGradingRepository.findNormRow.mockResolvedValue(null);
 
       await expect(
-        service.calculateGrade('student-1', 'test-1', 99999),
+        service.calculateGrade('student-1', 'test-1', 99999, SESSION_DATE),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -112,8 +123,32 @@ describe('GradingService', () => {
       mockGradingRepository.findNormRow.mockResolvedValue(null);
 
       await expect(
-        service.calculateGrade('student-1', 'test-1', 480),
+        service.calculateGrade('student-1', 'test-1', 480, SESSION_DATE),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns 100 for PASS_FAIL test when rawValue is 1 (pass)', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: 'PASS_FAIL',
+      });
+
+      const result = await service.calculateGrade('student-1', 'pf-test', 1, SESSION_DATE);
+
+      expect(result).toBe(100);
+      expect(mockGradingRepository.findStudentById).not.toHaveBeenCalled();
+      expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
+    });
+
+    it('returns 0 for PASS_FAIL test when rawValue is 0 (fail)', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: 'PASS_FAIL',
+      });
+
+      const result = await service.calculateGrade('student-1', 'pf-test', 0, SESSION_DATE);
+
+      expect(result).toBe(0);
+      expect(mockGradingRepository.findStudentById).not.toHaveBeenCalled();
+      expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
     });
   });
 

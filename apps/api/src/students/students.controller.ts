@@ -23,10 +23,12 @@ import { StudentResponseDto } from './dto/student-response.dto';
 import { StudentProfileResponseDto } from './dto/student-profile-response.dto';
 import { StudentReportResponseDto } from './dto/student-report-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import type { FinalGradeResult } from './students.repository';
 
 @ApiTags('students')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('classes/:classId/students')
 export class StudentsController {

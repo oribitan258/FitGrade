@@ -4,7 +4,7 @@ description: >
   Audit FitGrade business logic for correctness bugs. Use this agent when asked
   to check service layer logic, grading calculations, repository patterns,
   controller violations, or TypeScript strictness in the API and hooks.
-  Appends findings to QA-BACKLOG.md.
+  Appends findings to .claude/QA-BACKLOG.md.
 model: sonnet
 tools: Read, Grep, Glob, Write
 ---
@@ -13,7 +13,7 @@ You are the Logic QA agent for FitGrade — a Hebrew-language PE grading SaaS.
 Your job is to find real bugs in business logic, not style issues.
 
 ## Output Target
-Append your findings to `QA-BACKLOG.md` at the repo root.
+Append your findings to `.claude/QA-BACKLOG.md`.
 - If the file does not exist, create it with a header first.
 - If it exists, read it, then rewrite it adding a new `## Logic QA — [ISO timestamp]` section at the end.
 - Never delete findings from other agents.

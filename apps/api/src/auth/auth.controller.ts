@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiOperation,
   ApiResponse,
@@ -32,6 +33,15 @@ import type { TeacherRecord } from './auth.types';
 /** Refresh token cookie lifetime must match JWT_REFRESH_EXPIRES_IN (7 days). */
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_COOKIE_NAME = 'refresh_token';
+
+/**
+ * Short-lived httpOnly cookie used to ferry the access token from the OAuth
+ * callback redirect to the frontend WITHOUT exposing it in the URL.
+ * The frontend /auth/callback page must call POST /auth/exchange to retrieve
+ * the token and clear this cookie. TTL: 2 minutes (covers page load time).
+ */
+const LOGIN_TOKEN_COOKIE = 'login_token';
+const LOGIN_TOKEN_COOKIE_TTL_MS = 2 * 60 * 1000;
 
 /**
  * Short-lived cookie set before mobile OAuth to indicate the callback should
@@ -122,12 +132,56 @@ export class AuthController {
     res.clearCookie(MOBILE_AUTH_COOKIE, { path: '/api/auth' });
 
     if (isMobile) {
+      // Mobile deep-link: expo-web-browser intercepts fitgrade:// scheme.
+      // httpOnly cookies cannot be read by the native app after the deep link
+      // redirect, so the token is passed in the URL for the mobile flow.
+      // TODO(security): migrate mobile OAuth to a server-side code exchange flow
+      // to eliminate token-in-URL exposure for mobile (tracked separately).
       const mobileScheme = this.configService.get<string>('MOBILE_SCHEME', 'fitgrade://');
       res.redirect(`${mobileScheme}auth/callback?token=${encodeURIComponent(accessToken)}`);
     } else {
+      // Web flow: store token in a short-lived httpOnly cookie scoped to the
+      // exchange endpoint. The frontend /auth/callback page calls POST /auth/exchange
+      // to retrieve the token — it never appears in the URL, browser history, or logs.
       const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
-      res.redirect(`${webUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
+      res.cookie(LOGIN_TOKEN_COOKIE, accessToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env['NODE_ENV'] === 'production',
+        maxAge: LOGIN_TOKEN_COOKIE_TTL_MS,
+        path: '/api/auth/exchange',
+      });
+      res.redirect(`${webUrl}/auth/callback`);
     }
+  }
+
+  // ─── OAuth token exchange (web flow) ──────────────────────────────────────
+
+  /**
+   * Exchanges the short-lived login_token httpOnly cookie for the access token.
+   * Called by the web frontend's /auth/callback page immediately after the
+   * OAuth redirect. Clears the cookie after reading it so it cannot be reused.
+   *
+   * This endpoint exists solely to prevent the access token from ever appearing
+   * in a URL (address bar, server logs, Referer headers).
+   */
+  @Public()
+  @Post('exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Exchange login_token cookie for access token (web OAuth callback)' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Login token cookie missing or expired' })
+  exchange(
+    @Req() req: Request & { cookies: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
+  ): AuthResponseDto {
+    const accessToken = req.cookies[LOGIN_TOKEN_COOKIE];
+    if (!accessToken) {
+      throw new UnauthorizedException('טוקן כניסה חסר או פג תוקפו');
+    }
+    // Single-use: clear cookie immediately after reading.
+    res.clearCookie(LOGIN_TOKEN_COOKIE, { path: '/api/auth/exchange' });
+    return { accessToken };
   }
 
   // ─── Dev bypass login (local development only) ────────────────────────────
@@ -162,10 +216,13 @@ export class AuthController {
   @Public()
   @Post('student')
   @HttpCode(HttpStatus.OK)
+  /** מגבלת ניסיונות: 10 בקשות לדקה לכל IP — מניעת ניחוש סיסמאות */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({ summary: 'Student login (class code + student code + password)' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 429, description: 'Too many login attempts — try again later' })
   async studentLogin(
     @Body() dto: StudentLoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -194,9 +251,12 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  /** מגבלת ניסיונות: 20 בקשות לדקה לכל IP — מניעת ניצול טוקני רענון */
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @ApiOperation({ summary: 'Refresh access token using httpOnly cookie' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Missing, invalid, or expired refresh token' })
+  @ApiResponse({ status: 429, description: 'Too many refresh attempts — try again later' })
   async refresh(
     @Req() req: Request & { cookies: Record<string, string> },
   ): Promise<AuthResponseDto> {

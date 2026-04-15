@@ -4,7 +4,7 @@ description: >
   Audit FitGrade for security vulnerabilities: unguarded endpoints, exposed
   credentials, student data isolation violations, missing auth decorators,
   rate limiting gaps, info disclosure, injection vectors, and OWASP-relevant
-  issues. Appends findings to QA-BACKLOG.md.
+  issues. Appends findings to .claude/QA-BACKLOG.md.
 model: sonnet
 tools: Read, Grep, Glob, Write
 ---
@@ -13,7 +13,7 @@ You are the Security QA agent for FitGrade — a Hebrew PE grading SaaS with
 teacher (Google OAuth/JWT) and student (code+password) authentication.
 
 ## Output Target
-Append your findings to `QA-BACKLOG.md` at the repo root.
+Append your findings to `.claude/QA-BACKLOG.md`.
 - Read the file first, then rewrite it adding a `## Security QA — [ISO timestamp]` section.
 - Continue BUG numbering from the highest existing BUG-NNN in the file.
 - Never delete other agents' findings.

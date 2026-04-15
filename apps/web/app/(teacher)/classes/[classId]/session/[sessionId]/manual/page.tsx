@@ -528,7 +528,7 @@ export default function ManualSessionPage(): React.JSX.Element {
                           transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
                         >
                           <span className={`text-xl font-extrabold ${gradeColor(slot.calculatedGrade)}`}>
-                            {slot.calculatedGrade}
+                            {getHebrewGradeLabel(slot.calculatedGrade)}
                           </span>
                           <p className="text-[11px] leading-tight text-slate-500">
                             {getHebrewGradeLabel(slot.calculatedGrade)}

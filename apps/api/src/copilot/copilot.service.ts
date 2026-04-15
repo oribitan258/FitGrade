@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   GoogleGenerativeAI,
@@ -6,7 +6,7 @@ import {
 } from '@google/generative-ai';
 import type { Content, Part, ChatSession } from '@google/generative-ai';
 import type { CopilotSSEEvent, CopilotPageContext } from '@fitgrade/types';
-import { PrismaService } from '../prisma/prisma.service';
+import { CopilotRepository } from './copilot.repository';
 import { ConversationHistoryStore } from './stores/conversation-history.store';
 import { PendingActionStore, type StreamTokenPayload } from './stores/pending-action.store';
 import { GEMINI_TOOLS, getToolCategory, type ToolName } from './copilot-tools';
@@ -21,9 +21,6 @@ const MAX_TOKENS = 8_192;
 
 /** Max teacher name cache lifetime (5 minutes). */
 const TEACHER_CACHE_TTL_MS = 5 * 60 * 1_000;
-
-/** How many AiActionLog rows to return in the history list. */
-const HISTORY_PAGE_SIZE = 50;
 
 /** Emit callback type used throughout the streaming loop. */
 export type EmitFn = (event: CopilotSSEEvent) => void;
@@ -45,7 +42,7 @@ export class CopilotService {
 
   constructor(
     private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly repository: CopilotRepository,
     private readonly historyStore: ConversationHistoryStore,
     private readonly pendingStore: PendingActionStore,
     private readonly executor: CopilotToolExecutor,
@@ -115,7 +112,7 @@ export class CopilotService {
 
       // Persist the full conversation history (including the current exchange).
       const updatedHistory = await chat.getHistory();
-      this.historyStore.set(payload.conversationId, updatedHistory);
+      this.historyStore.set(payload.conversationId, updatedHistory, payload.teacherId);
 
       emit({ type: 'done' });
     } catch (err) {
@@ -237,11 +234,19 @@ export class CopilotService {
   // Conversation Management
   // ─────────────────────────────────────────────
 
-  deleteConversation(conversationId: string): void {
+  deleteConversationForOwner(conversationId: string, teacherId: string): void {
+    const ownerId = this.historyStore.getTeacherId(conversationId);
+    if (ownerId !== null && ownerId !== teacherId) {
+      throw new ForbiddenException();
+    }
     this.historyStore.delete(conversationId);
   }
 
-  deletePendingAction(actionId: string): void {
+  cancelActionForOwner(actionId: string, teacherId: string): void {
+    const entry = this.pendingStore.getPendingAction(actionId);
+    if (entry && entry.teacherId !== teacherId) {
+      throw new ForbiddenException();
+    }
     this.pendingStore.deletePendingAction(actionId);
   }
 
@@ -250,28 +255,7 @@ export class CopilotService {
   // ─────────────────────────────────────────────
 
   async getHistory(teacherId: string): Promise<AiActionLogDto[]> {
-    const logs = await this.prisma.aiActionLog.findMany({
-      where: { teacherId },
-      orderBy: { createdAt: 'desc' },
-      take: HISTORY_PAGE_SIZE,
-      select: {
-        id: true,
-        toolName: true,
-        summary: true,
-        params: true,
-        revertedAt: true,
-        createdAt: true,
-      },
-    });
-
-    return logs.map((log) => ({
-      id: log.id,
-      toolName: log.toolName,
-      summary: log.summary,
-      params: log.params as Record<string, unknown>,
-      revertedAt: log.revertedAt?.toISOString() ?? null,
-      createdAt: log.createdAt.toISOString(),
-    }));
+    return this.repository.findAiActionLogs(teacherId);
   }
 
   async revertAction(logId: string, teacherId: string): Promise<void> {
@@ -297,15 +281,15 @@ export class CopilotService {
     let classContext = '';
     if (context.classId) {
       try {
-        const cls = await this.prisma.class.findFirst({
-          where: { id: context.classId, teacherId },
-          select: { name: true },
-        });
-        if (cls) {
-          classContext = `\nהמורה נמצא כרגע בעמוד הכיתה: ${cls.name} (מזהה: ${context.classId}).`;
+        const className = await this.repository.findClassNameForTeacher(
+          context.classId,
+          teacherId,
+        );
+        if (className) {
+          classContext = `\nהמורה נמצא כרגע בעמוד הכיתה: ${className} (מזהה: ${context.classId}).`;
         }
-      } catch {
-        // Non-critical — skip class name enrichment.
+      } catch (err) {
+        this.logger.warn('Failed to enrich system prompt with class name', err);
       }
     }
 
@@ -330,12 +314,8 @@ export class CopilotService {
       return cached.name;
     }
 
-    const teacher = await this.prisma.user.findUnique({
-      where: { id: teacherId },
-      select: { name: true },
-    });
-
-    const name = teacher?.name ?? 'מורה';
+    const fetchedName = await this.repository.findTeacherName(teacherId);
+    const name = fetchedName ?? 'מורה';
     this.teacherCache.set(teacherId, { name, expiresAt: Date.now() + TEACHER_CACHE_TTL_MS });
     return name;
   }

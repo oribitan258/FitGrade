@@ -613,7 +613,6 @@ export default function ExerciseBankPage(): React.JSX.Element {
   const cooldownSteps = lesson.filter((s) => s.phase === 'cooldown');
 
   const handleGenerate = (): void => {
-    lessonKey += 1;
     setLesson(generateLesson(goal, difficulty));
     setAnimKey((k) => k + 1);
   };

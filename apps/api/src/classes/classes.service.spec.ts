@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Semester } from '@prisma/client';
 import { ClassesService } from './classes.service';
 import { ClassesRepository } from './classes.repository';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type { ClassResponseDto } from './dto/class-response.dto';
 import type { CreateClassDto } from './dto/create-class.dto';
 
@@ -49,6 +50,7 @@ describe('ClassesService', () => {
       providers: [
         ClassesService,
         { provide: ClassesRepository, useValue: mockClassesRepository },
+        { provide: AuditLogService, useValue: { log: jest.fn() } },
       ],
     }).compile();
 

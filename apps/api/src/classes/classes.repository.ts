@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -100,14 +101,18 @@ export class ClassesRepository {
     classId: string,
     teacherId: string,
   ): Promise<ClassResponseDto> {
-    const row = await this.prisma.class.findFirst({
-      where: { id: classId, teacherId },
-      select: CLASS_SELECT,
+    const row = await this.prisma.class.findUnique({
+      where: { id: classId },
+      select: { ...CLASS_SELECT, teacherId: true },
     });
     if (row === null) {
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
     }
-    return toClassResponse(row);
+    if (row.teacherId !== teacherId) {
+      throw new ForbiddenException();
+    }
+    const { teacherId: _tid, ...rest } = row;
+    return toClassResponse(rest);
   }
 
   /**
@@ -137,7 +142,8 @@ export class ClassesRepository {
         },
         orderBy: { session: { conductedAt: 'asc' } },
       }),
-      this.prisma.attendanceRecord.count({ where: { classId, ...(semester !== undefined ? { semester } : {}) } }),
+      // Count only PRESENT + ABSENT — EXCUSED lessons do not count against the student
+      this.prisma.attendanceRecord.count({ where: { classId, status: { not: 'EXCUSED' }, ...(semester !== undefined ? { semester } : {}) } }),
       this.prisma.attendanceRecord.count({ where: { classId, status: 'PRESENT', ...(semester !== undefined ? { semester } : {}) } }),
     ]);
 
@@ -180,22 +186,24 @@ export class ClassesRepository {
     testTypeId: string,
     gradeOverride: number | null,
   ): Promise<{ effectiveGrade: number }> {
-    const result = await this.prisma.testResult.findFirst({
-      where: { studentId, session: { classId, testTypeId } },
-      orderBy: { session: { conductedAt: 'desc' } },
-      select: { id: true, calculatedGrade: true },
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.testResult.findFirst({
+        where: { studentId, session: { classId, testTypeId } },
+        orderBy: { session: { conductedAt: 'desc' } },
+        select: { id: true, calculatedGrade: true },
+      });
+      if (result === null) {
+        throw new NotFoundException(`לא נמצאה תוצאת מבחן לתלמיד זה בכיתה זו`);
+      }
+      const updated = await tx.testResult.update({
+        where: { id: result.id },
+        data: { gradeOverride },
+        select: { gradeOverride: true, calculatedGrade: true },
+      });
+      return {
+        effectiveGrade: updated.gradeOverride ?? updated.calculatedGrade ?? 0,
+      };
     });
-    if (result === null) {
-      throw new NotFoundException(`לא נמצאה תוצאת מבחן לתלמיד זה בכיתה זו`);
-    }
-    const updated = await this.prisma.testResult.update({
-      where: { id: result.id },
-      data: { gradeOverride },
-      select: { gradeOverride: true, calculatedGrade: true },
-    });
-    return {
-      effectiveGrade: updated.gradeOverride ?? updated.calculatedGrade ?? 0,
-    };
   }
 
   /**

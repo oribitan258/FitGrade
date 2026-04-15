@@ -22,6 +22,8 @@ import {
 import { Observable, Subject } from 'rxjs';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { CopilotService } from './copilot.service';
 import { CopilotChatDto } from './dto/copilot-chat.dto';
@@ -29,6 +31,7 @@ import { AiActionLogDto } from './dto/ai-action-log.dto';
 import type { CopilotSSEEvent } from '@fitgrade/types';
 
 @ApiTags('copilot')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('copilot')
 export class CopilotController {
@@ -66,6 +69,7 @@ export class CopilotController {
 
   @Sse('stream/:token')
   @Public() // EventSource cannot send Authorization headers; the streamToken is the auth mechanism
+  @Throttle({ default: { ttl: 60_000, limit: 20 } }) // Stricter limit — stream token is the sole auth
   @ApiOperation({ summary: 'Open SSE stream for a previously initiated chat' })
   @ApiResponse({ status: 200, description: 'Server-Sent Events stream of CopilotSSEEvent' })
   @ApiResponse({ status: 404, description: 'Stream token invalid or expired' })
@@ -121,10 +125,12 @@ export class CopilotController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Cancel a pending Copilot WRITE action (no audit entry written)' })
   @ApiResponse({ status: 204, description: 'Action cancelled' })
+  @ApiResponse({ status: 403, description: 'Action does not belong to this teacher' })
   cancelAction(
     @Param('actionId') actionId: string,
+    @CurrentUser() user: JwtPayload,
   ): void {
-    this.copilotService.deletePendingAction(actionId);
+    this.copilotService.cancelActionForOwner(actionId, user.sub);
   }
 
   // ─────────────────────────────────────────────
@@ -164,7 +170,11 @@ export class CopilotController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Clear conversation history (called when the Copilot panel closes)' })
   @ApiResponse({ status: 204, description: 'Conversation cleared' })
-  deleteConversation(@Param('conversationId') conversationId: string): void {
-    this.copilotService.deleteConversation(conversationId);
+  @ApiResponse({ status: 403, description: 'Conversation does not belong to this teacher' })
+  deleteConversation(
+    @Param('conversationId') conversationId: string,
+    @CurrentUser() user: JwtPayload,
+  ): void {
+    this.copilotService.deleteConversationForOwner(conversationId, user.sub);
   }
 }

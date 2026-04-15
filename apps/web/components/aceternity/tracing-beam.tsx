@@ -44,7 +44,7 @@ export function TracingBeam({ children, className }: TracingBeamProps): React.JS
         <motion.div
           transition={{ duration: 0.2, delay: 0.5 }}
           animate={{ boxShadow: scrollYProgress.get() > 0 ? 'none' : 'rgba(139,92,246,0.4) 0 4px 14px 0' }}
-          className="border-netural-200 relative ml-[27px] flex h-4 w-4 items-center justify-center rounded-full border shadow-sm"
+          className="border-netural-200 relative ms-[27px] flex h-4 w-4 items-center justify-center rounded-full border shadow-sm"
           style={{ background: 'rgba(139,92,246,0.20)' }}
         >
           <div className="h-2 w-2 rounded-full border border-violet-400 bg-violet-500" />
@@ -53,7 +53,7 @@ export function TracingBeam({ children, className }: TracingBeamProps): React.JS
           viewBox={`0 0 20 ${svgHeight}`}
           width="20"
           height={svgHeight}
-          className="ml-4 block"
+          className="ms-4 block"
           aria-hidden="true"
         >
           <motion.path

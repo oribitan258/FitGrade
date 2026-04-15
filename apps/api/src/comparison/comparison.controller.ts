@@ -12,9 +12,11 @@ import {
   ComparisonAvailabilityDto,
 } from './dto/comparison.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('comparison')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('classes/:classId/comparison')
 export class ComparisonController {

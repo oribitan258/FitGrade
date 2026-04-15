@@ -19,9 +19,11 @@ import { SaveReportGradesDto } from './dto/save-report-grades.dto';
 import { ReportRowDto } from './dto/report-row.dto';
 import { SemesterQueryDto } from '../classes/dto/semester-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('reports')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('reports')
 export class ReportsController {

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -119,9 +120,11 @@ export interface CreateTalmidautInput {
   notes?: string;
 }
 
-/** Default weights applied when a class has no per-class override. */
-const DEFAULT_TEST_WEIGHT = 55;
-const DEFAULT_TALMIDAUT_WEIGHT = 45;
+export interface RawGradeComponents {
+  cls: { testWeight: number | null; talmidautWeight: number | null };
+  testResults: Array<{ calculatedGrade: number | null; gradeOverride: number | null; testTypeId: string }>;
+  talmidautRecords: Array<{ participation: number; uniform: number; behavior: number }>;
+}
 
 export interface FinalGradeResult {
   fitnessAvg: number;
@@ -154,12 +157,15 @@ export class StudentsRepository {
     classId: string,
     teacherId: string,
   ): Promise<void> {
-    const cls = await this.prisma.class.findFirst({
-      where: { id: classId, teacherId },
-      select: { id: true },
+    const cls = await this.prisma.class.findUnique({
+      where: { id: classId },
+      select: { id: true, teacherId: true },
     });
     if (cls === null) {
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
+    }
+    if (cls.teacherId !== teacherId) {
+      throw new ForbiddenException();
     }
   }
 
@@ -233,7 +239,8 @@ export class StudentsRepository {
           },
           orderBy: { session: { conductedAt: 'asc' } },
         }),
-        this.prisma.attendanceRecord.count({ where: { studentId, classId } }),
+        // Count only PRESENT + ABSENT — EXCUSED lessons do not count against the student
+        this.prisma.attendanceRecord.count({ where: { studentId, classId, status: { not: 'EXCUSED' } } }),
         this.prisma.attendanceRecord.count({
           where: { studentId, classId, status: 'PRESENT' },
         }),
@@ -280,14 +287,13 @@ export class StudentsRepository {
   }
 
   /**
-   * Creates a new TalmidautRecord and recomputes the StudentFinalGrade.
-   * Returns the updated final grade breakdown.
+   * Creates a new TalmidautRecord. Grade recalculation is the caller's responsibility.
    */
   async createTalmidautRecord(
     studentId: string,
     classId: string,
     input: CreateTalmidautInput,
-  ): Promise<FinalGradeResult> {
+  ): Promise<void> {
     await this.prisma.talmidautRecord.create({
       data: {
         studentId,
@@ -298,18 +304,16 @@ export class StudentsRepository {
         notes: input.notes,
       },
     });
-
-    return this.recalculateFinalGrade(studentId, classId);
   }
 
   /**
-   * Recomputes the recommended final grade from all talmidaut records and test results,
-   * then upserts the StudentFinalGrade row.
+   * Loads the raw inputs required to compute the recommended final grade.
+   * The caller (service layer) performs the arithmetic.
    */
-  async recalculateFinalGrade(
+  async findGradeComponents(
     studentId: string,
     classId: string,
-  ): Promise<FinalGradeResult> {
+  ): Promise<RawGradeComponents> {
     const [cls, testResults, talmidautRecords] = await Promise.all([
       this.prisma.class.findUniqueOrThrow({
         where: { id: classId },
@@ -317,50 +321,44 @@ export class StudentsRepository {
       }),
       this.prisma.testResult.findMany({
         where: { studentId, session: { classId } },
-        select: { calculatedGrade: true, gradeOverride: true },
-      }),
+        select: { calculatedGrade: true, gradeOverride: true, session: { select: { testTypeId: true } } },
+      }).then((rows) => rows.map((r) => ({ ...r, testTypeId: r.session.testTypeId }))),
       this.prisma.talmidautRecord.findMany({
         where: { studentId, classId },
         select: { participation: true, uniform: true, behavior: true },
       }),
     ]);
 
-    const fitnessAvg =
-      testResults.length > 0
-        ? Math.round(
-            testResults.reduce((s, r) => s + (r.gradeOverride ?? r.calculatedGrade ?? 0), 0) /
-              testResults.length,
-          )
-        : 0;
+    return { cls, testResults, talmidautRecords };
+  }
 
-    const talmidautAvg =
-      talmidautRecords.length > 0
-        ? Math.round(
-            talmidautRecords.reduce((s, r) => s + (r.participation + r.uniform + r.behavior) / 3, 0) /
-              talmidautRecords.length,
-          )
-        : 0;
+  /**
+   * Returns the teacher's global default grading weights.
+   * Used as the fallback when a class has no per-class weight override.
+   */
+  async findTeacherWeightDefaults(
+    teacherId: string,
+  ): Promise<{ defaultFitnessWeight: number; defaultConductWeight: number }> {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: teacherId },
+      select: { defaultFitnessWeight: true, defaultConductWeight: true },
+    });
+  }
 
-    const effectiveTestWeight = cls.testWeight ?? DEFAULT_TEST_WEIGHT;
-    const effectiveTalmidautWeight = cls.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
-
-    const recommendedGrade = Math.round(
-      fitnessAvg * (effectiveTestWeight / 100) + talmidautAvg * (effectiveTalmidautWeight / 100),
-    );
-
+  /**
+   * Persists the computed final grade breakdown into StudentFinalGrade.
+   * All arithmetic is performed by the caller (service layer).
+   */
+  async upsertFinalGrade(
+    studentId: string,
+    classId: string,
+    data: { fitnessAvg: number; talmidautAvg: number; recommendedGrade: number },
+  ): Promise<void> {
     await this.prisma.studentFinalGrade.upsert({
       where: { classId_studentId: { classId, studentId } },
-      create: { classId, studentId, fitnessAvg, talmidautAvg, recommendedGrade },
-      update: { fitnessAvg, talmidautAvg, recommendedGrade },
+      create: { classId, studentId, ...data },
+      update: data,
     });
-
-    return {
-      fitnessAvg,
-      talmidautAvg,
-      recommendedGrade,
-      testWeight: effectiveTestWeight,
-      talmidautWeight: effectiveTalmidautWeight,
-    };
   }
 
   /**
@@ -498,26 +496,38 @@ export class StudentsRepository {
       );
     }
 
-    return this.prisma.$transaction(
-      async (tx: Prisma.TransactionClient): Promise<StudentResponseDto> => {
-        const student = await tx.student.create({
-          data: {
-            firstName: input.firstName,
-            lastName: input.lastName,
-            dateOfBirth: input.dateOfBirth,
-            gender: input.gender,
-            studentCode: input.studentCode,
-            passwordHash: input.passwordHash,
-          },
-          select: STUDENT_SELECT,
-        });
+    try {
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient): Promise<StudentResponseDto> => {
+          const student = await tx.student.create({
+            data: {
+              firstName: input.firstName,
+              lastName: input.lastName,
+              dateOfBirth: input.dateOfBirth,
+              gender: input.gender,
+              studentCode: input.studentCode,
+              passwordHash: input.passwordHash,
+            },
+            select: STUDENT_SELECT,
+          });
 
-        await tx.classEnrollment.create({
-          data: { classId, studentId: student.id },
-        });
+          await tx.classEnrollment.create({
+            data: { classId, studentId: student.id, studentCode: input.studentCode },
+          });
 
-        return student;
-      },
-    );
+          return student;
+        },
+      );
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `קוד תלמיד "${input.studentCode}" כבר קיים בכיתה זו`,
+        );
+      }
+      throw e;
+    }
   }
 }

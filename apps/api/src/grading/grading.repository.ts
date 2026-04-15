@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Gender, Prisma } from '@prisma/client';
+import { FitnessInputType, Gender, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Minimal student data required for grade calculation. */
@@ -24,6 +24,16 @@ export class GradingRepository {
         gender: true,
         dateOfBirth: true,
       },
+    });
+  }
+
+  /** Returns the inputType of a test type. Throws NotFoundException if not found. */
+  async findTestTypeInputType(
+    testTypeId: string,
+  ): Promise<{ inputType: FitnessInputType }> {
+    return this.prisma.fitnessTestType.findUniqueOrThrow({
+      where: { id: testTypeId },
+      select: { inputType: true },
     });
   }
 

@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { AuditAction } from '@prisma/client';
 import type { AttendanceStatus } from '@prisma/client';
 import { AttendanceRepository } from './attendance.repository';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type { BulkAttendanceDto } from './dto/bulk-attendance.dto';
 import type { AttendanceResponseDto } from './dto/attendance-response.dto';
 
@@ -8,7 +10,10 @@ import type { AttendanceResponseDto } from './dto/attendance-response.dto';
 export class AttendanceService {
   private readonly logger = new Logger(AttendanceService.name);
 
-  constructor(private readonly attendanceRepository: AttendanceRepository) {}
+  constructor(
+    private readonly attendanceRepository: AttendanceRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   /**
    * Returns all attendance records for a class on a given date.
@@ -51,6 +56,17 @@ export class AttendanceService {
     this.logger.log(
       `Attendance saved: class=${classId} date=${dto.date} records=${dto.records.length} teacher=${teacherId}`,
     );
+
+    // Log one audit entry per saved attendance record.
+    for (const record of result) {
+      void this.auditLogService.log({
+        action: AuditAction.ATTENDANCE_CHANGE,
+        entityType: 'AttendanceRecord',
+        entityId: record.id,
+        actorId: teacherId,
+        newValue: { status: record.status, date: dto.date, classId },
+      });
+    }
 
     return result;
   }

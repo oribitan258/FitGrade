@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AuditAction } from '@prisma/client';
 import { GradingService } from '../grading/grading.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { TestsRepository } from './tests.repository';
 import type { CreateSessionDto } from './dto/create-session.dto';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
@@ -17,6 +19,7 @@ export class TestsService {
   constructor(
     private readonly testsRepository: TestsRepository,
     private readonly gradingService: GradingService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   /** Returns all available FitnessTestTypes (system catalog). */
@@ -123,6 +126,17 @@ export class TestsService {
       `Grade overridden: result=${resultId} session=${sessionId} override=${dto.gradeOverride} teacher=${teacherId}`,
     );
 
+    void this.auditLogService.log({
+      action: AuditAction.GRADE_OVERRIDE,
+      entityType: 'TestResult',
+      entityId: result.id,
+      actorId: teacherId,
+      newValue: {
+        gradeOverride: dto.gradeOverride,
+        overrideReason: dto.overrideReason ?? null,
+      },
+    });
+
     return result;
   }
 
@@ -140,6 +154,13 @@ export class TestsService {
     this.logger.log(
       `Result deleted: session=${sessionId} student=${studentId} teacher=${teacherId}`,
     );
+    void this.auditLogService.log({
+      action: AuditAction.RESULT_EDIT,
+      entityType: 'TestResult',
+      entityId: `${sessionId}/${studentId}`,
+      actorId: teacherId,
+      newValue: { deleted: true },
+    });
   }
 
   /**
@@ -154,15 +175,14 @@ export class TestsService {
     dto: SubmitResultDto,
     teacherId: string,
   ): Promise<ResultResponseDto> {
-    const { testTypeId } = await this.testsRepository.findSessionWithOwnership(
-      sessionId,
-      teacherId,
-    );
+    const { testTypeId, conductedAt } =
+      await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
 
     const calculatedGrade = await this.gradingService.calculateGrade(
       dto.studentId,
       testTypeId,
       dto.rawValue,
+      conductedAt,
     );
 
     const result = await this.testsRepository.createResult(
@@ -175,6 +195,19 @@ export class TestsService {
     this.logger.log(
       `Result submitted: session=${sessionId} student=${dto.studentId} rawValue=${dto.rawValue} grade=${calculatedGrade}`,
     );
+
+    void this.auditLogService.log({
+      action: AuditAction.GRADE_ENTRY,
+      entityType: 'TestResult',
+      entityId: result.id,
+      actorId: teacherId,
+      newValue: {
+        sessionId,
+        studentId: dto.studentId,
+        rawValue: dto.rawValue,
+        calculatedGrade,
+      },
+    });
 
     return result;
   }

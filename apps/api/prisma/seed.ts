@@ -506,7 +506,7 @@ async function seedClass(opts: {
         gender:      def.gender,
         studentCode: def.code,
         passwordHash,
-        enrollments: { create: { classId: cls.id } },
+        enrollments: { create: { classId: cls.id, studentCode: def.code } },
       },
       select: { id: true },
     });

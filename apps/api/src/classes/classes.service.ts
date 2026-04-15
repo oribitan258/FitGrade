@@ -1,5 +1,5 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import type { Semester } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { AuditAction, type Semester } from '@prisma/client';
 import { ClassesRepository } from './classes.repository';
 import type { CreateClassDto } from './dto/create-class.dto';
 import type { ClassResponseDto } from './dto/class-response.dto';
@@ -12,6 +12,7 @@ import type {
 } from './dto/class-details-response.dto';
 import type { UpdateClassWeightsDto } from './dto/update-class-weights.dto';
 import type { QuickGradeOverrideDto } from './dto/quick-grade-override.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 /** Hebrew month labels for the progress chart X-axis. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -37,7 +38,10 @@ const JOIN_CODE_MAX_ATTEMPTS = 3;
 export class ClassesService {
   private readonly logger = new Logger(ClassesService.name);
 
-  constructor(private readonly classesRepository: ClassesRepository) {}
+  constructor(
+    private readonly classesRepository: ClassesRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   /**
    * Returns all classes for the authenticated teacher (year-round, no semester filter).
@@ -181,9 +185,15 @@ export class ClassesService {
     dto: UpdateClassWeightsDto,
   ): Promise<ClassResponseDto> {
     const { testWeight, talmidautWeight } = dto;
-    const { BadRequestException } = await import('@nestjs/common');
+    const onlyOneIsNull =
+      (testWeight === null) !== (talmidautWeight === null);
+    if (onlyOneIsNull) {
+      throw new BadRequestException(
+        'יש לאפס את שני המשקלים יחד, או לספק ערך לשניהם',
+      );
+    }
     if (testWeight !== null && talmidautWeight !== null) {
-      if (testWeight + talmidautWeight !== 100) {
+      if (Math.abs((testWeight + talmidautWeight) - 100) > 0.5) {
         throw new BadRequestException('משקל הכושר ומשקל התלמידות חייבים לסכום ל-100');
       }
     }
@@ -205,12 +215,20 @@ export class ClassesService {
     teacherId: string,
   ): Promise<{ effectiveGrade: number }> {
     await this.classesRepository.findOneByIdAndTeacher(classId, teacherId);
-    return this.classesRepository.quickGradeOverride(
+    const result = await this.classesRepository.quickGradeOverride(
       classId,
       studentId,
       dto.testTypeId,
       dto.gradeOverride,
     );
+    void this.auditLogService.log({
+      action: AuditAction.GRADE_OVERRIDE,
+      entityType: 'TestResult',
+      entityId: `${classId}/${studentId}`,
+      actorId: teacherId,
+      newValue: { gradeOverride: dto.gradeOverride, testTypeId: dto.testTypeId },
+    });
+    return result;
   }
 
   /**

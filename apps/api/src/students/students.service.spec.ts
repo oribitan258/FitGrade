@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Gender } from '@prisma/client';
 import { StudentsService } from './students.service';
 import { StudentsRepository } from './students.repository';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type { StudentResponseDto } from './dto/student-response.dto';
 import type { CreateStudentDto } from './dto/create-student.dto';
 
@@ -36,6 +37,16 @@ const mockStudentsRepository = {
   verifyClassOwnership: jest.fn(),
   findByClassId: jest.fn(),
   createWithEnrollment: jest.fn(),
+  verifyStudentInClass: jest.fn(),
+  findRawStudentProfile: jest.fn(),
+  findReportData: jest.fn(),
+  createTalmidautRecord: jest.fn(),
+  findGradeComponents: jest.fn(),
+  upsertFinalGrade: jest.fn(),
+};
+
+const mockAuditLogService = {
+  log: jest.fn().mockResolvedValue(undefined),
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -48,6 +59,7 @@ describe('StudentsService', () => {
       providers: [
         StudentsService,
         { provide: StudentsRepository, useValue: mockStudentsRepository },
+        { provide: AuditLogService, useValue: mockAuditLogService },
       ],
     }).compile();
 

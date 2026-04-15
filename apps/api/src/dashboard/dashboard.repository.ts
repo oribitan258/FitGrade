@@ -12,6 +12,7 @@ export interface RawResult {
   sessionClassId: string;
   studentId: string;
   calculatedGrade: number;
+  gradeOverride: number | null;
 }
 
 export interface ClassAttendanceStat {
@@ -140,6 +141,7 @@ export class DashboardRepository {
       },
       select: {
         calculatedGrade: true,
+        gradeOverride: true,
         studentId: true,
         session: { select: { classId: true } },
       },
@@ -147,7 +149,8 @@ export class DashboardRepository {
     return results.map((r) => ({
       sessionClassId: r.session.classId,
       studentId: r.studentId,
-      calculatedGrade: r.calculatedGrade ?? 0,
+      calculatedGrade: r.gradeOverride ?? r.calculatedGrade ?? 0,
+      gradeOverride: r.gradeOverride,
     }));
   }
 

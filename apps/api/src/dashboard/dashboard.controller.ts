@@ -18,9 +18,11 @@ import {
   TopStudentPerClassItemDto,
 } from './dto/dashboard-stats-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('dashboard')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('dashboard')
 export class DashboardController {

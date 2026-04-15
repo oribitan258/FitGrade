@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AttendanceStatus, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AttendanceResponseDto } from './dto/attendance-response.dto';
@@ -25,12 +25,15 @@ export class AttendanceRepository {
    * Throws NotFoundException if not found.
    */
   async verifyClassOwnership(classId: string, teacherId: string): Promise<void> {
-    const cls = await this.prisma.class.findFirst({
-      where: { id: classId, teacherId },
-      select: { id: true },
+    const cls = await this.prisma.class.findUnique({
+      where: { id: classId },
+      select: { id: true, teacherId: true },
     });
     if (cls === null) {
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
+    }
+    if (cls.teacherId !== teacherId) {
+      throw new ForbiddenException();
     }
   }
 

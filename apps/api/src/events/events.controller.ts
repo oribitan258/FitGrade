@@ -18,9 +18,11 @@ import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('events')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('events')
 export class EventsController {

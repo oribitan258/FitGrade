@@ -19,9 +19,11 @@ import { BulkAttendanceDto } from './dto/bulk-attendance.dto';
 import { GetAttendanceQueryDto } from './dto/get-attendance-query.dto';
 import { AttendanceResponseDto } from './dto/attendance-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('attendance')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('classes/:classId/attendance')
 export class AttendanceController {

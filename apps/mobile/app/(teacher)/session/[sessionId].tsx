@@ -25,10 +25,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { getHebrewGradeLabel } from '@fitgrade/types';
+import { getHebrewGradeLabel, ApiError } from '@fitgrade/types';
 import type { StudentData } from '@fitgrade/types';
 import { useClassStudents } from '../../../hooks/use-class-students';
 import { api } from '../../../lib/api';
+import { enqueueOfflineTap } from '../../../lib/storage';
 import type { TestResult } from '../../../hooks/use-test-session';
 import {
   COLORS,
@@ -93,6 +94,8 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [tapped, setTapped] = useState<TappedEntry[]>([]);
   const tappedIds = new Set(tapped.map((t) => t.studentId));
+  /** Students whose tap failed both attempts — shown with a red "נכשל — נסה שוב" overlay. */
+  const [errorIds, setErrorIds] = useState<Set<string>>(new Set());
 
   const handleStudentTap = useCallback(
     async (student: StudentData): Promise<void> => {
@@ -101,16 +104,24 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
       const elapsedMs = Date.now() - startedAtMs.current;
       const rawValue = elapsedMs / 1000; // seconds (decimal)
 
+      // Clear any prior error state so the row reverts to "pending" visually.
+      setErrorIds((prev) => {
+        const next = new Set(prev);
+        next.delete(student.id);
+        return next;
+      });
+
       // Optimistic: mark as pending immediately
       setPendingIds((prev) => new Set([...prev, student.id]));
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      try {
-        const result = await api.post<TestResult>(`/sessions/${sessionId}/results`, {
+      const submitOnce = (): Promise<TestResult> =>
+        api.post<TestResult>(`/sessions/${sessionId}/results`, {
           studentId: student.id,
           rawValue,
         });
 
+      const recordSuccess = (result: TestResult): void => {
         setTapped((prev) => [
           ...prev,
           {
@@ -121,9 +132,39 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
             grade: result.calculatedGrade,
           },
         ]);
-      } catch {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('נכשל', 'רישום הזמן נכשל. נסה שוב.');
+      };
+
+      try {
+        recordSuccess(await submitOnce());
+      } catch (firstErr) {
+        if (firstErr instanceof ApiError && firstErr.statusCode === 409) {
+          // Duplicate tap — result already recorded server-side. No retry, no queue.
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          Alert.alert('כבר נרשם', 'תוצאה לתלמיד זה כבר קיימת במפגש זה');
+        } else {
+          // Transient network failure — auto-retry once after 2 seconds.
+          await new Promise<void>((resolve) => setTimeout(resolve, 2_000));
+          try {
+            recordSuccess(await submitOnce());
+          } catch (retryErr) {
+            if (retryErr instanceof ApiError && retryErr.statusCode === 409) {
+              // Race: another device recorded the same tap between retries.
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('כבר נרשם', 'תוצאה לתלמיד זה כבר קיימת במפגש זה');
+            } else {
+              // Both network attempts failed — show error row and queue for offline replay.
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              setErrorIds((prev) => new Set([...prev, student.id]));
+              enqueueOfflineTap({
+                sessionId,
+                studentId: student.id,
+                elapsedMs,
+                rawValue,
+                queuedAt: Date.now(),
+              });
+            }
+          }
+        }
       } finally {
         setPendingIds((prev) => {
           const next = new Set(prev);
@@ -200,18 +241,25 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
 
           if (item.kind === 'pending') {
             const isPending = pendingIds.has(item.student.id);
+            const isError = errorIds.has(item.student.id);
             return (
               <TouchableOpacity
-                style={styles.stopwatchRow}
+                style={[styles.stopwatchRow, isError && styles.stopwatchRowError]}
                 onPress={() => void handleStudentTap(item.student)}
                 disabled={isPending}
                 accessibilityRole="button"
-                accessibilityLabel={`רשום זמן עבור ${fullName}`}
+                accessibilityLabel={
+                  isError
+                    ? `רישום נכשל עבור ${fullName} — לחץ לניסיון נוסף`
+                    : `רשום זמן עבור ${fullName}`
+                }
               >
-                {/* RTL row: name on RIGHT, icon on LEFT */}
+                {/* RTL row: name on RIGHT, indicator on LEFT */}
                 <Text style={styles.stopwatchName}>{fullName}</Text>
                 {isPending ? (
                   <ActivityIndicator color={COLORS.primary} style={styles.rowIcon} />
+                ) : isError ? (
+                  <Text style={styles.errorTag}>נכשל — נסה שוב</Text>
                 ) : (
                   <Text style={styles.tapIcon}>⏱</Text>
                 )}
@@ -598,6 +646,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     textAlign: 'right',
+  },
+  stopwatchRowError: {
+    backgroundColor: '#fef2f2',
+    borderStartWidth: 4,
+    borderStartColor: '#dc2626',
+  },
+  errorTag: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#dc2626',
+    marginStart: 8,
   },
   tapIcon: {
     fontSize: 24,

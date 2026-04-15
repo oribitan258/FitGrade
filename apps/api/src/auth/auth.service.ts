@@ -48,13 +48,21 @@ export class AuthService {
     studentCode: string,
     password: string,
   ): Promise<StudentLoginRecord> {
-    const record = await this.authRepository.findStudentForLogin(
-      classCode,
-      studentCode,
-    );
+    let record: StudentLoginRecord;
+    try {
+      record = await this.authRepository.findStudentForLogin(classCode, studentCode);
+    } catch {
+      this.logger.warn(
+        `Failed student login — student/class not found: classCode=${classCode} studentCode=${studentCode}`,
+      );
+      throw new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים');
+    }
 
     const isValid = await bcrypt.compare(password, record.passwordHash);
     if (!isValid) {
+      this.logger.warn(
+        `Failed student login — wrong password: classCode=${classCode} studentCode=${studentCode}`,
+      );
       throw new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים');
     }
 

@@ -863,7 +863,7 @@ export default function LessonPage(): React.JSX.Element {
                                     transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
                                   >
                                     <span className={`text-lg font-extrabold ${gradeColor(slot.calculatedGrade)}`}>
-                                      {slot.calculatedGrade}
+                                      {getHebrewGradeLabel(slot.calculatedGrade)}
                                     </span>
                                     <p className="text-[10px] leading-tight text-slate-400">
                                       {getHebrewGradeLabel(slot.calculatedGrade)}

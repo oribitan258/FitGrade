@@ -358,7 +358,7 @@ export function BeepTestSummary({
                   ) : row.calculatedGrade !== null ? (
                     <>
                       <span className="text-base font-black tabular-nums text-white">
-                        {row.calculatedGrade}
+                        {getHebrewGradeLabel(row.calculatedGrade)}
                       </span>
                       <span className="text-[10px] font-semibold text-white/40">
                         {getHebrewGradeLabel(row.calculatedGrade)}

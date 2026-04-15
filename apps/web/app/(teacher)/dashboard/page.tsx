@@ -2026,8 +2026,7 @@ function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void 
               className="flex items-center gap-3 rounded-2xl bg-red-50 border border-red-200/60 px-4 py-3"
             >
               <div className="shrink-0 flex flex-col items-center justify-center w-11 h-11 rounded-xl bg-red-500 text-white">
-                <span className="text-sm font-extrabold leading-none">{item.score}</span>
-                <span className="text-[9px] leading-none opacity-80 mt-0.5">{getHebrewGradeLabel(item.score)}</span>
+                <span className="text-sm font-extrabold leading-none">{getHebrewGradeLabel(item.score)}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-800 truncate">{item.studentName}</p>

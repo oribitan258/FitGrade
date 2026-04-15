@@ -10,9 +10,11 @@ import { TodayScheduleItemDto } from './dto/today-schedule-item.dto';
 import { UpsertScheduleEntryDto } from './dto/upsert-schedule-entry.dto';
 import { SemesterQueryDto } from '../common/dto/semester-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('schedule')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('schedule')
 export class ScheduleController {

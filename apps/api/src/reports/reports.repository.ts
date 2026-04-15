@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AttendanceStatus, Semester } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -51,15 +51,18 @@ export class ReportsRepository {
     classId: string,
     teacherId: string,
   ): Promise<{ name: string; testWeight: number | null; talmidautWeight: number | null }> {
-    const cls = await this.prisma.class.findFirst({
-      where: { id: classId, teacherId },
-      select: { name: true, testWeight: true, talmidautWeight: true },
+    const cls = await this.prisma.class.findUnique({
+      where: { id: classId },
+      select: { name: true, testWeight: true, talmidautWeight: true, teacherId: true },
     });
     if (cls === null) {
-      const { NotFoundException } = await import('@nestjs/common');
       throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
     }
-    return cls;
+    if (cls.teacherId !== teacherId) {
+      throw new ForbiddenException();
+    }
+    const { teacherId: _teacherId, ...result } = cls;
+    return result;
   }
 
   /**

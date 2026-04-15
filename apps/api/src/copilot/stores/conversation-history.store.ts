@@ -12,6 +12,7 @@ const CLEANUP_INTERVAL_MS = 60_000;
 
 interface HistoryEntry {
   contents: Content[];
+  teacherId: string;
   expiresAt: number;
 }
 
@@ -48,14 +49,22 @@ export class ConversationHistoryStore implements OnModuleDestroy {
    * Trims to MAX_TURNS to prevent unbounded growth.
    * Also refreshes the TTL so active conversations stay alive.
    */
-  set(conversationId: string, contents: Content[]): void {
+  set(conversationId: string, contents: Content[], teacherId: string): void {
     const trimmed = contents.length > MAX_TURNS
       ? contents.slice(contents.length - MAX_TURNS)
       : contents;
     this.store.set(conversationId, {
       contents: trimmed,
+      teacherId,
       expiresAt: Date.now() + TTL_MS,
     });
+  }
+
+  /** Returns the teacherId who owns this conversation, or null if not found/expired. */
+  getTeacherId(conversationId: string): string | null {
+    const entry = this.store.get(conversationId);
+    if (!entry || entry.expiresAt < Date.now()) return null;
+    return entry.teacherId;
   }
 
   /**

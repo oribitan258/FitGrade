@@ -23,9 +23,11 @@ import { SemesterQueryDto } from './dto/semester-query.dto';
 import { ClassResponseDto } from './dto/class-response.dto';
 import { ClassDetailsResponseDto } from './dto/class-details-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('classes')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('classes')
 export class ClassesController {

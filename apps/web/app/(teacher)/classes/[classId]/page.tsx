@@ -48,7 +48,7 @@ import {
   type StudentData,
   type TestSummary,
 } from '@fitgrade/types';
-import { ApiError } from '@fitgrade/types';
+import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import { useClass, useClassDetails, useStudents } from '@/hooks/use-classes';
 import { useComparisonAvailability } from '@/hooks/use-comparison';
 import { useSemester } from '@/contexts/semester-context';
@@ -1251,7 +1251,7 @@ function Podium({ entries }: { entries: PodiumEntry[] }): React.JSX.Element {
             </motion.div>
             <div className="text-center">
               <p className="text-xs font-bold text-slate-800 leading-tight max-w-[88px] truncate">{displayName}</p>
-              <p className="text-xs font-semibold text-slate-500">{entry.score}</p>
+              <p className="text-xs font-semibold text-slate-500">{getHebrewGradeLabel(entry.score)}</p>
               {entry.rawValue !== null && entry.unit && (() => {
                 const fmtRaw = formatRawValue(entry.rawValue, entry.inputType);
                 return fmtRaw !== null ? (
@@ -1794,7 +1794,7 @@ function AiControlCenterModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="fixed left-[50%] top-[50%] z-[9999] w-full max-w-2xl translate-x-[-50%] translate-y-[-50%] rounded-3xl border-0 bg-white/85 p-0 shadow-2xl shadow-slate-900/25 backdrop-blur-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <DialogContent className="fixed start-[50%] top-[50%] z-[9999] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border-0 bg-white/85 p-0 shadow-2xl shadow-slate-900/25 backdrop-blur-2xl overflow-hidden flex flex-col max-h-[90vh]">
 
         {/* ── Dark-glass header ─────────────────────────────────────── */}
         <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-br from-slate-800 via-slate-700 to-indigo-900 px-7 py-6">

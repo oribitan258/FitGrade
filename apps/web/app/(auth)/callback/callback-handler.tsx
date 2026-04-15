@@ -1,27 +1,34 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { setToken } from '@/lib/api-client';
 
 /**
- * Reads the `token` query parameter injected by the backend redirect,
- * persists it to localStorage, then navigates to the dashboard.
- * Falls back to /login if the token is missing (e.g. OAuth was denied).
+ * Called by the browser after Google OAuth redirect.
+ * Exchanges the short-lived `login_token` httpOnly cookie for the access token
+ * via POST /api/auth/exchange, then navigates to the dashboard.
+ * Falls back to /login on any failure (cookie missing/expired, network error).
  */
 export function CallbackHandler(): null {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    if (token !== null && token !== '') {
-      setToken(token);
-      router.replace('/dashboard');
-    } else {
-      router.replace('/login');
-    }
-  }, [router, searchParams]);
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/exchange', { method: 'POST', credentials: 'include' });
+        if (!res.ok) {
+          router.replace('/login');
+          return;
+        }
+        const data = (await res.json()) as { accessToken: string };
+        setToken(data.accessToken);
+        router.replace('/dashboard');
+      } catch {
+        router.replace('/login');
+      }
+    })();
+  }, [router]);
 
   return null;
 }

@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AuditAction } from '@prisma/client';
 import type { Semester } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { StudentsRepository } from './students.repository';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type { CreateStudentDto } from './dto/create-student.dto';
 import type { CreateTalmidautDto } from './dto/create-talmidaut.dto';
 import type { StudentResponseDto } from './dto/student-response.dto';
@@ -16,11 +18,7 @@ import type {
   ReportTestResultDto,
   StudentReportResponseDto,
 } from './dto/student-report-response.dto';
-import type { FinalGradeResult } from './students.repository';
-
-/** Fallback weights when a class has no per-class override. */
-const DEFAULT_TEST_WEIGHT = 55;
-const DEFAULT_TALMIDAUT_WEIGHT = 45;
+import type { FinalGradeResult, RawGradeComponents } from './students.repository';
 
 /** Hebrew month labels for building per-student history points. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -36,7 +34,10 @@ const BCRYPT_SALT_ROUNDS = 12;
 export class StudentsService {
   private readonly logger = new Logger(StudentsService.name);
 
-  constructor(private readonly studentsRepository: StudentsRepository) {}
+  constructor(
+    private readonly studentsRepository: StudentsRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   /**
    * Returns all students enrolled in the given class.
@@ -86,6 +87,7 @@ export class StudentsService {
       nameHe: string;
       unit: string | null;
       inputType: string;
+      bestGrade: number;
       latestRawValue: number | null;
       history: { month: string; grade: number }[];
     }
@@ -102,33 +104,29 @@ export class StudentsService {
           nameHe: testType.nameHe,
           unit: testType.unit,
           inputType: testType.inputType,
+          bestGrade: 0,
           latestRawValue: null,
           history: [],
         });
       }
       const acc = testMap.get(testTypeId)!;
       acc.history.push({ month, grade });
+      acc.bestGrade = Math.max(acc.bestGrade, grade);
       // Always overwrite: results are ordered oldest→newest, so the last wins
       acc.latestRawValue = result.rawValue !== null ? Number(result.rawValue) : null;
     }
 
     // ── Build testHistories ────────────────────────────────────────────────────
     const testHistories: StudentTestHistoryDto[] = [...testMap.entries()].map(
-      ([testTypeId, acc]) => {
-        const latestGrade =
-          acc.history.length > 0
-            ? acc.history[acc.history.length - 1]!.grade
-            : 0;
-        return {
-          testTypeId,
-          nameHe: acc.nameHe,
-          unit: acc.unit,
-          inputType: acc.inputType,
-          latestGrade,
-          latestRawValue: acc.latestRawValue,
-          history: acc.history,
-        };
-      },
+      ([testTypeId, acc]) => ({
+        testTypeId,
+        nameHe: acc.nameHe,
+        unit: acc.unit,
+        inputType: acc.inputType,
+        latestGrade: acc.bestGrade,
+        latestRawValue: acc.latestRawValue,
+        history: acc.history,
+      }),
     );
 
     const overallAvg =
@@ -161,8 +159,16 @@ export class StudentsService {
           )
         : 0;
 
-    const effectiveTestWeight = classWeights.testWeight ?? DEFAULT_TEST_WEIGHT;
-    const effectiveTalmidautWeight = classWeights.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
+    let effectiveTestWeight: number;
+    let effectiveTalmidautWeight: number;
+    if (classWeights.testWeight !== null && classWeights.talmidautWeight !== null) {
+      effectiveTestWeight = classWeights.testWeight;
+      effectiveTalmidautWeight = classWeights.talmidautWeight;
+    } else {
+      const teacherDefaults = await this.studentsRepository.findTeacherWeightDefaults(teacherId);
+      effectiveTestWeight = teacherDefaults.defaultFitnessWeight;
+      effectiveTalmidautWeight = teacherDefaults.defaultConductWeight;
+    }
 
     const recommendedGrade = Math.round(
       overallAvg * (effectiveTestWeight / 100) +
@@ -232,37 +238,36 @@ export class StudentsService {
       return Math.round(acc.sum / acc.count);
     };
 
-    // ── Group student results by testTypeId, keeping the most recent ──────────
+    // ── Group student results by testTypeId, tracking the best grade ──────────
     interface TestAcc {
       nameHe: string;
       unit: string | null;
       inputType: string;
       latestConductedAt: Date;
-      latestGrade: number;
+      bestGrade: number;
       latestRawValue: number | null;
       count: number;
     }
 
     const testMap = new Map<string, TestAcc>();
 
-    // Results arrive oldest-first from the repository; later entries overwrite earlier ones.
+    // Results arrive oldest-first from the repository; track best grade seen.
     for (const r of studentResults) {
       const { testTypeId, conductedAt, testType } = r.session;
       const grade = r.gradeOverride ?? r.calculatedGrade ?? 0;
 
       const existing = testMap.get(testTypeId);
       testMap.set(testTypeId, {
-        nameHe:           testType.nameHe,
-        unit:             testType.unit,
-        inputType:        testType.inputType,
+        nameHe:            testType.nameHe,
+        unit:              testType.unit,
+        inputType:         testType.inputType,
         latestConductedAt: conductedAt,
-        latestGrade:      grade,
-        latestRawValue:   r.rawValue !== null ? Number(r.rawValue) : null,
-        count:            (existing?.count ?? 0) + 1,
+        bestGrade:         Math.max(existing?.bestGrade ?? 0, grade),
+        latestRawValue:    r.rawValue !== null ? Number(r.rawValue) : null,
+        count:             (existing?.count ?? 0) + 1,
       });
     }
 
-    // Sort best grade first — natural order for a formal report
     const testResults: ReportTestResultDto[] = [...testMap.entries()]
       .map(([testTypeId, acc]): ReportTestResultDto => ({
         testTypeId,
@@ -270,18 +275,18 @@ export class StudentsService {
         unit:         acc.unit,
         inputType:    acc.inputType,
         conductedAt:  acc.latestConductedAt.toISOString(),
-        grade:        acc.latestGrade,
+        grade:        acc.bestGrade,
         rawValue:     acc.latestRawValue,
         classAvg:     classAvgFor(testTypeId),
         sessionCount: acc.count,
-      }))
-      .sort((a, b) => b.grade - a.grade);
+      }));
 
     // ── Attendance ─────────────────────────────────────────────────────────────
     const present = attendanceCounts['PRESENT']  ?? 0;
     const absent  = attendanceCounts['ABSENT']   ?? 0;
     const excused = attendanceCounts['EXCUSED']  ?? 0;
-    const total   = present + absent + excused;
+    // Denominator excludes EXCUSED — excused absences do not penalise attendance %
+    const total   = present + absent;
 
     const attendance: ReportAttendanceDto = {
       total,
@@ -307,8 +312,16 @@ export class StudentsService {
           )
         : 0;
 
-    const reportTestWeight = cls.testWeight ?? DEFAULT_TEST_WEIGHT;
-    const reportTalmidautWeight = cls.talmidautWeight ?? DEFAULT_TALMIDAUT_WEIGHT;
+    let reportTestWeight: number;
+    let reportTalmidautWeight: number;
+    if (cls.testWeight !== null && cls.talmidautWeight !== null) {
+      reportTestWeight = cls.testWeight;
+      reportTalmidautWeight = cls.talmidautWeight;
+    } else {
+      const teacherDefaults = await this.studentsRepository.findTeacherWeightDefaults(teacherId);
+      reportTestWeight = teacherDefaults.defaultFitnessWeight;
+      reportTalmidautWeight = teacherDefaults.defaultConductWeight;
+    }
 
     const finalGrade: FinalGradeDto = {
       fitnessAvg,
@@ -359,7 +372,7 @@ export class StudentsService {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
     await this.studentsRepository.verifyStudentInClass(studentId, classId);
 
-    const result = await this.studentsRepository.createTalmidautRecord(studentId, classId, {
+    await this.studentsRepository.createTalmidautRecord(studentId, classId, {
       participation: dto.participation,
       uniform: dto.uniform,
       behavior: dto.behavior,
@@ -370,7 +383,75 @@ export class StudentsService {
       `Talmidaut recorded: student=${studentId} class=${classId} composite=${Math.round((dto.participation + dto.uniform + dto.behavior) / 3)}`,
     );
 
-    return result;
+    return this.recomputeAndPersistFinalGrade(studentId, classId, teacherId);
+  }
+
+  /**
+   * Fetches the raw grade components from the repository, computes the recommended
+   * final grade, and persists the result. Centralises all final-grade arithmetic
+   * in the service layer per the Controller → Service → Repository rule.
+   */
+  private async recomputeAndPersistFinalGrade(
+    studentId: string,
+    classId: string,
+    teacherId: string,
+  ): Promise<FinalGradeResult> {
+    const { cls, testResults, talmidautRecords }: RawGradeComponents =
+      await this.studentsRepository.findGradeComponents(studentId, classId);
+
+    // Group by testTypeId and take the best effective grade per type,
+    // matching the logic in getStudentProfile() and getStudentReport().
+    const gradesByTestType = new Map<string, number>();
+    for (const r of testResults) {
+      const effective = r.gradeOverride ?? r.calculatedGrade ?? 0;
+      const current = gradesByTestType.get(r.testTypeId) ?? 0;
+      gradesByTestType.set(r.testTypeId, Math.max(current, effective));
+    }
+    const perTestBests = Array.from(gradesByTestType.values());
+    const fitnessAvg =
+      perTestBests.length > 0
+        ? Math.round(perTestBests.reduce((s, g) => s + g, 0) / perTestBests.length)
+        : 0;
+
+    const talmidautAvg =
+      talmidautRecords.length > 0
+        ? Math.round(
+            talmidautRecords.reduce(
+              (s, r) => s + (r.participation + r.uniform + r.behavior) / 3,
+              0,
+            ) / talmidautRecords.length,
+          )
+        : 0;
+
+    let effectiveTestWeight: number;
+    let effectiveTalmidautWeight: number;
+    if (cls.testWeight !== null && cls.talmidautWeight !== null) {
+      effectiveTestWeight = cls.testWeight;
+      effectiveTalmidautWeight = cls.talmidautWeight;
+    } else {
+      const teacherDefaults = await this.studentsRepository.findTeacherWeightDefaults(teacherId);
+      effectiveTestWeight = teacherDefaults.defaultFitnessWeight;
+      effectiveTalmidautWeight = teacherDefaults.defaultConductWeight;
+    }
+
+    const recommendedGrade = Math.round(
+      fitnessAvg * (effectiveTestWeight / 100) +
+        talmidautAvg * (effectiveTalmidautWeight / 100),
+    );
+
+    await this.studentsRepository.upsertFinalGrade(studentId, classId, {
+      fitnessAvg,
+      talmidautAvg,
+      recommendedGrade,
+    });
+
+    return {
+      fitnessAvg,
+      talmidautAvg,
+      recommendedGrade,
+      testWeight: effectiveTestWeight,
+      talmidautWeight: effectiveTalmidautWeight,
+    };
   }
 
   /**
@@ -405,6 +486,14 @@ export class StudentsService {
     this.logger.log(
       `Student created: id=${student.id} code=${dto.studentCode} class=${classId}`,
     );
+
+    void this.auditLogService.log({
+      action: AuditAction.STUDENT_ENROLLED,
+      entityType: 'ClassEnrollment',
+      entityId: student.id,
+      actorId: teacherId,
+      newValue: { classId, studentCode: dto.studentCode },
+    });
 
     return student;
   }

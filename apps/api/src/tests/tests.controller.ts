@@ -28,6 +28,7 @@ import { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import { ResultResponseDto } from './dto/result-response.dto';
 import { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 /**
@@ -39,6 +40,7 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
  * Using @Controller() with no prefix allows these varied path patterns
  * to live in one cohesive module without forcing an artificial prefix.
  */
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller()
 export class TestsController {

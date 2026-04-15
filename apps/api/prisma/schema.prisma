@@ -170,8 +170,11 @@ model Student {
 // ─────────────────────────────────────────────
 
 model ClassEnrollment {
-  id         String   @id @default(cuid())
-  enrolledAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  enrolledAt  DateTime @default(now())
+  // Denormalized from Student to enable a DB-level unique constraint on (classId, studentCode).
+  // This guarantees no two students share the same code within a class, even under concurrent inserts.
+  studentCode String
 
   classId String
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
@@ -180,6 +183,7 @@ model ClassEnrollment {
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([classId, studentId])
+  @@unique([classId, studentCode])
   @@index([classId])
   @@index([studentId])
   @@map("class_enrollments")
@@ -260,12 +264,14 @@ model TestSession {
   class   Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   testTypeId String
-  testType   FitnessTestType @relation(fields: [testTypeId], references: [id])
+  testType   FitnessTestType @relation(fields: [testTypeId], references: [id], onDelete: Restrict)
 
   results           TestResult[]
   attendanceRecords AttendanceRecord[]
 
   @@index([classId])
+  @@index([classId, testTypeId])
+  @@index([testTypeId])
   @@map("test_sessions")
 }
 
@@ -315,11 +321,12 @@ model AttendanceRecord {
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   sessionId String?      // Optional: link to the test session this attendance was taken for
-  session   TestSession? @relation(fields: [sessionId], references: [id])
+  session   TestSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@unique([classId, studentId, date])
   @@index([classId, date])
   @@index([classId, semester])
+  @@index([studentId])
   @@map("attendance_records")
 }
 
@@ -352,6 +359,7 @@ model TalmidautRecord {
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([classId, studentId])
+  @@index([studentId])
   @@map("talmidaut_records")
 }
 
@@ -484,12 +492,12 @@ model AuditLog {
   action     AuditAction
   entityType String      // "TestResult" | "AttendanceRecord" | "ClassEnrollment" | "TalmidautRecord"
   entityId   String      // ID of the affected record
-  oldValue   String?     // JSON snapshot before change
-  newValue   String?     // JSON snapshot after change
+  oldValue   Json?       // JSON snapshot before change
+  newValue   Json?       // JSON snapshot after change
   createdAt  DateTime    @default(now())
 
   actorId String // userId (teacher) who performed the action
-  actor   User   @relation(fields: [actorId], references: [id])
+  actor   User   @relation(fields: [actorId], references: [id], onDelete: Cascade)
 
   @@index([entityType, entityId])
   @@index([actorId])

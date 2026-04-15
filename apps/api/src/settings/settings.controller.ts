@@ -15,9 +15,11 @@ import {
   UpdateReportSettingsDto,
 } from './dto/report-settings.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 @ApiTags('settings')
+@Roles('TEACHER')
 @ApiBearerAuth()
 @Controller('settings')
 export class SettingsController {

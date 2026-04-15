@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsEnum, IsOptional, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsEnum, IsOptional, ValidateNested } from 'class-validator';
 import { Semester } from '@prisma/client';
 import { AttendanceEntryDto } from './attendance-entry.dto';
 
@@ -25,7 +25,9 @@ export class BulkAttendanceDto {
     type: [AttendanceEntryDto],
     description: 'One entry per student — existing records are updated, new ones are created',
   })
+  /** כיתה ישראלית מונה לכל היותר 200 תלמידים — ערך זה חוסם בקשות DoS */
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => AttendanceEntryDto)
   records!: AttendanceEntryDto[];

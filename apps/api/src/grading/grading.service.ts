@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { FitnessInputType, Prisma } from '@prisma/client';
 import { GradingRepository } from './grading.repository';
 
 @Injectable()
@@ -12,7 +12,7 @@ export class GradingService {
    * Calculates the grade (0–100) for a single test result.
    *
    * 1. Fetches the student's gender and date of birth.
-   * 2. Computes the student's age at today's date.
+   * 2. Computes the student's age at the session date (not today).
    * 3. Looks up the NormTable row that matches (testType, gender, age, rawValue).
    * 4. Returns the score, or throws NotFoundException when no norm row covers
    *    the given combination.
@@ -29,10 +29,23 @@ export class GradingService {
     studentId: string,
     testTypeId: string,
     rawValue: number,
+    sessionDate: Date,
   ): Promise<number> {
+    const { inputType } =
+      await this.gradingRepository.findTestTypeInputType(testTypeId);
+
+    // PASS_FAIL tests have no norm table — rawValue 1 = pass (100), 0 = fail (0).
+    if (inputType === FitnessInputType.PASS_FAIL) {
+      const score = rawValue >= 1 ? 100 : 0;
+      this.logger.log(
+        `Graded student=${studentId} test=${testTypeId} PASS_FAIL rawValue=${rawValue} → score=${score}`,
+      );
+      return score;
+    }
+
     const student = await this.gradingRepository.findStudentById(studentId);
 
-    const age = this.computeAge(student.dateOfBirth, new Date());
+    const age = this.computeAge(student.dateOfBirth, sessionDate);
 
     const rawValueDecimal = new Prisma.Decimal(rawValue);
 

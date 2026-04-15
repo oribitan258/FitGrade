@@ -6,6 +6,7 @@ import { Award, BookOpen, ChevronDown, Filter, Info, Search, TrendingUp } from '
 import { useTestTypes } from '@/hooks/use-test-types';
 import { useTestTypeNorms, type NormBand } from '@/hooks/use-norms';
 import { cn } from '@/lib/utils';
+import { getHebrewGradeLabel } from '@fitgrade/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
                 >
                   {/* Score */}
                   <span className={cn('text-base font-extrabold', b.text)}>
-                    {band.score}
+                    {getHebrewGradeLabel(band.score)}
                   </span>
 
                   {/* Level badge */}
