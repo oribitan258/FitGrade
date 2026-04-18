@@ -77,16 +77,21 @@ export class StudentsService {
         ? Math.round((attendancePresent / attendanceTotal) * 100)
         : 0;
 
-    // Map attendance records → 100 (present) or 0 (absent/late/excused)
-    const attendanceTrend = recentAttendance.map((r) =>
-      r.status === 'PRESENT' ? 100 : 0,
-    );
+    // Map attendance records → 100 (present) or 0 (absent/late).
+    // EXCUSED records are excluded — they don't represent actual attendance performance
+    // and must not artificially lower the trend chart toward 0.
+    const attendanceTrend = recentAttendance
+      .filter((r) => r.status !== 'EXCUSED')
+      .map((r) => (r.status === 'PRESENT' ? 100 : 0));
 
     // ── Group results by test type, preserving chronological order ────────────
     interface TestAcc {
       nameHe: string;
       unit: string | null;
       inputType: string;
+      // Most recent effective grade (last-write-wins: results ordered oldest→newest)
+      latestGrade: number;
+      // Best grade across all sessions for this test type (used for avg, matches report logic)
       bestGrade: number;
       latestRawValue: number | null;
       history: { month: string; grade: number }[];
@@ -104,6 +109,7 @@ export class StudentsService {
           nameHe: testType.nameHe,
           unit: testType.unit,
           inputType: testType.inputType,
+          latestGrade: 0,
           bestGrade: 0,
           latestRawValue: null,
           history: [],
@@ -111,8 +117,9 @@ export class StudentsService {
       }
       const acc = testMap.get(testTypeId)!;
       acc.history.push({ month, grade });
+      // Always overwrite: results are ordered oldest→newest, so the last wins = most recent
+      acc.latestGrade = grade;
       acc.bestGrade = Math.max(acc.bestGrade, grade);
-      // Always overwrite: results are ordered oldest→newest, so the last wins
       acc.latestRawValue = result.rawValue !== null ? Number(result.rawValue) : null;
     }
 
@@ -123,17 +130,18 @@ export class StudentsService {
         nameHe: acc.nameHe,
         unit: acc.unit,
         inputType: acc.inputType,
-        latestGrade: acc.bestGrade,
+        latestGrade: acc.latestGrade,
         latestRawValue: acc.latestRawValue,
         history: acc.history,
       }),
     );
 
+    // Best-grade average — matches getStudentReport strategy for consistency
     const overallAvg =
-      testHistories.length > 0
+      testMap.size > 0
         ? Math.round(
-            testHistories.reduce((s, t) => s + t.latestGrade, 0) /
-              testHistories.length,
+            [...testMap.values()].reduce((s, t) => s + t.bestGrade, 0) /
+              testMap.size,
           )
         : 0;
 
@@ -215,6 +223,7 @@ export class StudentsService {
     semester?: Semester,
   ): Promise<StudentReportResponseDto> {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
+    await this.studentsRepository.verifyStudentInClass(studentId, classId);
 
     const { student, cls, studentResults, attendanceCounts, classResults, talmidautRecords } =
       await this.studentsRepository.findReportData(studentId, classId, semester);
@@ -356,12 +365,15 @@ export class StudentsService {
   }
 
   /**
-   * Records a new talmidaut entry for a student in a class and recomputes
-   * the recommended final grade.
+   * Records a new talmidaut entry for a student in a class and atomically
+   * recomputes the recommended final grade.
    *
-   * - Verifies the class belongs to the teacher.
-   * - Verifies the student is enrolled in the class.
-   * - Creates the TalmidautRecord and upserts StudentFinalGrade.
+   * - Verifies the class belongs to the teacher and student enrollment.
+   * - Reads existing grade components before inserting the new record.
+   * - Includes the new record in the grade computation (avoids a second DB round-trip).
+   * - Atomically creates the TalmidautRecord and upserts StudentFinalGrade in one $transaction (BUG-021).
+   * - Recommended grade is computed using only populated categories — a missing fitness
+   *   average does not drag the grade toward 0 (BUG-022).
    */
   async addTalmidautRecord(
     studentId: string,
@@ -372,57 +384,32 @@ export class StudentsService {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
     await this.studentsRepository.verifyStudentInClass(studentId, classId);
 
-    await this.studentsRepository.createTalmidautRecord(studentId, classId, {
-      participation: dto.participation,
-      uniform: dto.uniform,
-      behavior: dto.behavior,
-      notes: dto.notes,
-    });
-
-    this.logger.log(
-      `Talmidaut recorded: student=${studentId} class=${classId} composite=${Math.round((dto.participation + dto.uniform + dto.behavior) / 3)}`,
-    );
-
-    return this.recomputeAndPersistFinalGrade(studentId, classId, teacherId);
-  }
-
-  /**
-   * Fetches the raw grade components from the repository, computes the recommended
-   * final grade, and persists the result. Centralises all final-grade arithmetic
-   * in the service layer per the Controller → Service → Repository rule.
-   */
-  private async recomputeAndPersistFinalGrade(
-    studentId: string,
-    classId: string,
-    teacherId: string,
-  ): Promise<FinalGradeResult> {
     const { cls, testResults, talmidautRecords }: RawGradeComponents =
       await this.studentsRepository.findGradeComponents(studentId, classId);
 
-    // Group by testTypeId and take the best effective grade per type,
-    // matching the logic in getStudentProfile() and getStudentReport().
+    // ── Fitness avg (best grade per test type) ────────────────────────────────
     const gradesByTestType = new Map<string, number>();
     for (const r of testResults) {
       const effective = r.gradeOverride ?? r.calculatedGrade ?? 0;
-      const current = gradesByTestType.get(r.testTypeId) ?? 0;
-      gradesByTestType.set(r.testTypeId, Math.max(current, effective));
+      gradesByTestType.set(r.testTypeId, Math.max(gradesByTestType.get(r.testTypeId) ?? 0, effective));
     }
     const perTestBests = Array.from(gradesByTestType.values());
-    const fitnessAvg =
-      perTestBests.length > 0
-        ? Math.round(perTestBests.reduce((s, g) => s + g, 0) / perTestBests.length)
-        : 0;
+    const hasTests = perTestBests.length > 0;
+    const fitnessAvg = hasTests
+      ? Math.round(perTestBests.reduce((s, g) => s + g, 0) / perTestBests.length)
+      : 0;
 
-    const talmidautAvg =
-      talmidautRecords.length > 0
-        ? Math.round(
-            talmidautRecords.reduce(
-              (s, r) => s + (r.participation + r.uniform + r.behavior) / 3,
-              0,
-            ) / talmidautRecords.length,
-          )
-        : 0;
+    // ── Talmidaut avg — include the new record being inserted ─────────────────
+    const allTalmidautRecords = [
+      ...talmidautRecords,
+      { participation: dto.participation, uniform: dto.uniform, behavior: dto.behavior },
+    ];
+    const talmidautAvg = Math.round(
+      allTalmidautRecords.reduce((s, r) => s + (r.participation + r.uniform + r.behavior) / 3, 0) /
+        allTalmidautRecords.length,
+    );
 
+    // ── Weights ───────────────────────────────────────────────────────────────
     let effectiveTestWeight: number;
     let effectiveTalmidautWeight: number;
     if (cls.testWeight !== null && cls.talmidautWeight !== null) {
@@ -434,16 +421,24 @@ export class StudentsService {
       effectiveTalmidautWeight = teacherDefaults.defaultConductWeight;
     }
 
-    const recommendedGrade = Math.round(
-      fitnessAvg * (effectiveTestWeight / 100) +
-        talmidautAvg * (effectiveTalmidautWeight / 100),
+    // ── Recommended grade — only blend populated categories (BUG-022) ─────────
+    const recommendedGrade = hasTests
+      ? Math.round(fitnessAvg * (effectiveTestWeight / 100) + talmidautAvg * (effectiveTalmidautWeight / 100))
+      : talmidautAvg;
+
+    const lessonDate = dto.lessonDate !== undefined ? new Date(dto.lessonDate) : undefined;
+
+    // ── Atomic write: create record + upsert final grade (BUG-021) ────────────
+    await this.studentsRepository.createTalmidautAndUpsertFinalGrade(
+      studentId,
+      classId,
+      { participation: dto.participation, uniform: dto.uniform, behavior: dto.behavior, notes: dto.notes, lessonDate },
+      { fitnessAvg, talmidautAvg, recommendedGrade },
     );
 
-    await this.studentsRepository.upsertFinalGrade(studentId, classId, {
-      fitnessAvg,
-      talmidautAvg,
-      recommendedGrade,
-    });
+    this.logger.log(
+      `Talmidaut recorded: student=${studentId} class=${classId} composite=${Math.round((dto.participation + dto.uniform + dto.behavior) / 3)}`,
+    );
 
     return {
       fitnessAvg,

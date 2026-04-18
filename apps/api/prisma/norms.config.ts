@@ -137,6 +137,36 @@ export const NORM_CONFIG: TestNormConfig[] = [
     ],
   },
 
+  // ── ריצת 800 מטר (TIME: seconds, lower=better) ───────────────────────────
+  {
+    testKey: 'run800', nameHe: 'ריצת 800 מטר',
+    descriptionHe: 'ריצת סיבולת 800 מטר — בנות וגילאי ז\'–י"ב',
+    inputType: 'TIME', unit: 'שניות', higherIsBetter: false,
+    minGrade: 7, maxGrade: 12, category: 'ENDURANCE',
+    ageGroups: [
+      { minAge: 12, maxAge: 13, byGender: { MALE: lin6(180, 285), FEMALE: lin6(200, 315) } },  // ז'
+      { minAge: 13, maxAge: 14, byGender: { MALE: lin6(175, 280), FEMALE: lin6(195, 310) } },  // ח'
+      { minAge: 14, maxAge: 15, byGender: { MALE: lin6(170, 275), FEMALE: lin6(190, 305) } },  // ט'
+      { minAge: 15, maxAge: 16, byGender: { MALE: lin6(165, 270), FEMALE: lin6(187, 302) } },  // י'
+      { minAge: 16, maxAge: 17, byGender: { MALE: lin6(162, 267), FEMALE: lin6(184, 299) } },  // י"א
+      { minAge: 17, maxAge: 18, byGender: { MALE: lin6(158, 263), FEMALE: lin6(182, 297) } },  // י"ב
+    ],
+  },
+
+  // ── ריצת 3000 מטר (TIME: seconds, lower=better) ──────────────────────────
+  {
+    testKey: 'run3000', nameHe: 'ריצת 3000 מטר',
+    descriptionHe: 'ריצת סיבולת 3000 מטר — בנים ט\'–י"ב',
+    inputType: 'TIME', unit: 'שניות', higherIsBetter: false,
+    minGrade: 9, maxGrade: 12, category: 'ENDURANCE',
+    ageGroups: [
+      { minAge: 14, maxAge: 15, byGender: { MALE: lin6(840, 1200), FEMALE: lin6(960, 1380) } },  // ט'
+      { minAge: 15, maxAge: 16, byGender: { MALE: lin6(810, 1170), FEMALE: lin6(930, 1350) } },  // י'
+      { minAge: 16, maxAge: 17, byGender: { MALE: lin6(780, 1140), FEMALE: lin6(900, 1320) } },  // י"א
+      { minAge: 17, maxAge: 18, byGender: { MALE: lin6(750, 1110), FEMALE: lin6(870, 1290) } },  // י"ב
+    ],
+  },
+
   // ── ריצת 1000 מטר (TIME: seconds, lower=better, elementary) ──────────────
   {
     testKey: 'run1000', nameHe: 'ריצת 1000 מטר',

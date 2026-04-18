@@ -86,7 +86,7 @@ export class ClassesRepository {
    */
   async findAllByTeacher(teacherId: string): Promise<ClassResponseDto[]> {
     const rows = await this.prisma.class.findMany({
-      where: { teacherId },
+      where: { teacherId, deletedAt: null },
       select: CLASS_SELECT,
       orderBy: { createdAt: 'desc' },
     });
@@ -95,14 +95,14 @@ export class ClassesRepository {
 
   /**
    * Returns a single class owned by `teacherId`.
-   * Throws NotFoundException if the class doesn't exist or belongs to another teacher.
+   * Throws NotFoundException if the class doesn't exist, is soft-deleted, or belongs to another teacher.
    */
   async findOneByIdAndTeacher(
     classId: string,
     teacherId: string,
   ): Promise<ClassResponseDto> {
-    const row = await this.prisma.class.findUnique({
-      where: { id: classId },
+    const row = await this.prisma.class.findFirst({
+      where: { id: classId, deletedAt: null },
       select: { ...CLASS_SELECT, teacherId: true },
     });
     if (row === null) {
@@ -161,7 +161,7 @@ export class ClassesRepository {
     talmidautWeight: number | null,
   ): Promise<ClassResponseDto> {
     const existing = await this.prisma.class.findFirst({
-      where: { id: classId, teacherId },
+      where: { id: classId, teacherId, deletedAt: null },
       select: { id: true },
     });
     if (existing === null) {
@@ -203,6 +203,24 @@ export class ClassesRepository {
       return {
         effectiveGrade: updated.gradeOverride ?? updated.calculatedGrade ?? 0,
       };
+    });
+  }
+
+  /**
+   * Soft-deletes a class. Sets deletedAt; cascaded data is preserved.
+   * Throws NotFoundException if the class doesn't belong to the teacher.
+   */
+  async softDelete(classId: string, teacherId: string): Promise<void> {
+    const existing = await this.prisma.class.findFirst({
+      where: { id: classId, teacherId, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing === null) {
+      throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
+    }
+    await this.prisma.class.update({
+      where: { id: classId },
+      data: { deletedAt: new Date() },
     });
   }
 

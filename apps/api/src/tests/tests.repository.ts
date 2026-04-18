@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
@@ -60,8 +60,8 @@ export class TestsRepository {
    * Throws NotFoundException if not found.
    */
   async verifyClassOwnership(classId: string, teacherId: string): Promise<void> {
-    const cls = await this.prisma.class.findUnique({
-      where: { id: classId },
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, deletedAt: null },
       select: { id: true, teacherId: true },
     });
     if (cls === null) {
@@ -116,15 +116,15 @@ export class TestsRepository {
   async findSessionWithOwnership(
     sessionId: string,
     teacherId: string,
-  ): Promise<{ testTypeId: string; conductedAt: Date }> {
+  ): Promise<{ testTypeId: string; conductedAt: Date; inputType: import('@prisma/client').FitnessInputType; testNameHe: string }> {
     const session = await this.prisma.testSession.findFirst({
       where: { id: sessionId, class: { teacherId } },
-      select: { testTypeId: true, conductedAt: true },
+      select: { testTypeId: true, conductedAt: true, testType: { select: { inputType: true, nameHe: true } } },
     });
     if (session === null) {
       throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
     }
-    return session;
+    return { testTypeId: session.testTypeId, conductedAt: session.conductedAt, inputType: session.testType.inputType, testNameHe: session.testType.nameHe };
   }
 
   /**
@@ -234,15 +234,25 @@ export class TestsRepository {
   /**
    * Deletes a test result identified by (sessionId, studentId).
    * Throws NotFoundException if no such result exists.
+   * Throws UnprocessableEntityException if the result is older than undoWindowMs.
    */
-  async deleteResult(sessionId: string, studentId: string): Promise<void> {
+  async deleteResult(
+    sessionId: string,
+    studentId: string,
+    undoWindowMs: number,
+  ): Promise<void> {
     const result = await this.prisma.testResult.findFirst({
       where: { sessionId, studentId },
-      select: { id: true },
+      select: { id: true, recordedAt: true },
     });
     if (result === null) {
       throw new NotFoundException(
         `תוצאה לתלמיד ${studentId} בסשן ${sessionId} לא נמצאה`,
+      );
+    }
+    if (Date.now() - result.recordedAt.getTime() > undoWindowMs) {
+      throw new UnprocessableEntityException(
+        'לא ניתן לבטל תוצאה לאחר 30 שניות מרישומה',
       );
     }
     await this.prisma.testResult.delete({ where: { id: result.id } });
@@ -305,12 +315,12 @@ export class TestsRepository {
   async overrideResultGrade(
     resultId: string,
     gradeOverride: number,
-    overrideReason: string | undefined,
+    overrideReason: string,
   ): Promise<ResultResponseDto> {
     try {
       const result = await this.prisma.testResult.update({
         where: { id: resultId },
-        data: { gradeOverride, overrideReason: overrideReason ?? null },
+        data: { gradeOverride, overrideReason },
         select: RESULT_SELECT,
       });
       return {

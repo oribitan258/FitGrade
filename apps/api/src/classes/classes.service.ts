@@ -21,10 +21,14 @@ const HEBREW_MONTH_LABELS: Record<number, string> = {
   9: "ספט'",  10: "אוק'", 11: "נוב'", 12: "דצמ'",
 };
 
-/** Grade thresholds matching the frontend gradeLevel() function. */
+/**
+ * Grade thresholds for the distribution chart.
+ * Must match the constants in packages/types/src/grade-labels.ts exactly.
+ * GRADE_PASS = 55: grades 55–59 are "עובר" (pass), not "fail".
+ */
 const GRADE_EXCELLENT = 90;
 const GRADE_GOOD      = 75;
-const GRADE_PASS      = 60;
+const GRADE_PASS      = 55;
 
 /** Alphanumeric chars with visually ambiguous characters removed (0/O, 1/I). */
 const JOIN_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

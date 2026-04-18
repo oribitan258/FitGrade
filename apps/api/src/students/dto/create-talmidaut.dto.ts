@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateTalmidautDto {
   @ApiProperty({ description: 'ציון השתתפות (0–100)', minimum: 0, maximum: 100 })
@@ -24,4 +24,9 @@ export class CreateTalmidautDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'תאריך השיעור (ISO date string, ברירת מחדל: היום)', example: '2025-03-14' })
+  @IsOptional()
+  @IsDateString()
+  lessonDate?: string;
 }

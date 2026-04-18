@@ -7,7 +7,9 @@ import {
   Param,
   Patch,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -62,6 +64,58 @@ export class ReportsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<void> {
     await this.reportsService.saveGradeOverrides(classId, user.sub, dto.grades);
+  }
+
+  /**
+   * Streams a UTF-8 BOM CSV of the class final-grades report.
+   * Columns: שם פרטי, שם משפחה, קוד תלמיד, ממוצע כושר, ניהול, ציון מומלץ, ציון מורה, הערה.
+   */
+  @Get('class/:classId/export/csv')
+  @ApiOperation({ summary: 'Download class final-grades as CSV' })
+  @ApiResponse({ status: 200, description: 'CSV file download' })
+  @ApiResponse({ status: 403, description: 'Not a teacher or class not owned' })
+  @ApiResponse({ status: 404, description: 'Class not found' })
+  async exportClassCsv(
+    @Param('classId') classId: string,
+    @Query() query: SemesterQueryDto,
+    @CurrentUser() user: JwtPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rows = await this.reportsService.getClassReport(classId, user.sub, query.semester);
+
+    const HEADERS = ['שם פרטי', 'שם משפחה', 'קוד תלמיד', 'ממוצע כושר', 'ניהול', 'ציון מומלץ', 'ציון מורה', 'הערה'];
+
+    const escape = (v: string | number | null | undefined): string => {
+      const s = String(v ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const lines = [
+      HEADERS.join(','),
+      ...rows.map((r) =>
+        [
+          r.firstName,
+          r.lastName,
+          r.studentCode,
+          r.fitnessAvg,
+          r.conductScore,
+          r.recommendedFinalGrade,
+          r.teacherFinalGrade ?? '',
+          r.verbalComment ?? r.suggestedComment,
+        ]
+          .map(escape)
+          .join(','),
+      ),
+    ];
+
+    // UTF-8 BOM so Excel opens Hebrew correctly
+    const csv = '\uFEFF' + lines.join('\r\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="fitgrade-class-${classId}.csv"`);
+    res.send(csv);
   }
 
   /**

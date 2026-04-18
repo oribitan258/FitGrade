@@ -14,7 +14,6 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EventsModule } from './events/events.module';
 import { ReportsModule } from './reports/reports.module';
-import { CopilotModule } from './copilot/copilot.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { ComparisonModule } from './comparison/comparison.module';
 import { SettingsModule } from './settings/settings.module';
@@ -50,7 +49,6 @@ import { RolesGuard } from './auth/guards/roles.guard';
     DashboardModule,
     EventsModule,
     ReportsModule,
-    CopilotModule,
     ScheduleModule,
     ComparisonModule,
     SettingsModule,

@@ -198,6 +198,40 @@ function generateBandsFromThresholds(
   return bands;
 }
 
+/**
+ * Validates that no two bands for the same (gender, minAge, maxAge) group overlap
+ * on the raw value range [minValue, maxValue).
+ *
+ * Throws if any overlap is detected — ensures seed data integrity (BUG-017).
+ */
+function validateNoBandOverlaps(testKey: string, bands: NormBandInput[]): void {
+  // Group bands by (gender, minAge, maxAge)
+  const groups = new Map<string, NormBandInput[]>();
+  for (const b of bands) {
+    const key = `${b.gender}|${b.minAge}|${b.maxAge}`;
+    const group = groups.get(key) ?? [];
+    group.push(b);
+    groups.set(key, group);
+  }
+
+  for (const [groupKey, groupBands] of groups) {
+    // Sort by minValue ascending
+    const sorted = [...groupBands].sort((a, b) => parseFloat(a.minValue) - parseFloat(b.minValue));
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const cur = sorted[i];
+      const next = sorted[i + 1];
+      const curMax = parseFloat(cur.maxValue);
+      const nextMin = parseFloat(next.minValue);
+      if (curMax > nextMin) {
+        throw new Error(
+          `Overlapping NormTable bands in test "${testKey}" group [${groupKey}]: ` +
+          `score ${cur.score} maxValue=${curMax} > score ${next.score} minValue=${nextMin}`,
+        );
+      }
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STUDENT ROSTERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -452,6 +486,9 @@ async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
       },
       select: { id: true },
     });
+
+    // Validate no overlapping value bands before inserting (BUG-017)
+    validateNoBandOverlaps(config.testKey, bands);
 
     testTypeIds.set(config.testKey, created.id);
     const groupCount = config.ageGroups.reduce((n, g) => n + Object.keys(g.byGender).length, 0);

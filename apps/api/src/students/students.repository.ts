@@ -118,6 +118,8 @@ export interface CreateTalmidautInput {
   uniform: number;
   behavior: number;
   notes?: string;
+  /** Calendar date of the lesson. Defaults to today when omitted. */
+  lessonDate?: Date;
 }
 
 export interface RawGradeComponents {
@@ -157,8 +159,8 @@ export class StudentsRepository {
     classId: string,
     teacherId: string,
   ): Promise<void> {
-    const cls = await this.prisma.class.findUnique({
-      where: { id: classId },
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, deletedAt: null },
       select: { id: true, teacherId: true },
     });
     if (cls === null) {
@@ -170,15 +172,33 @@ export class StudentsRepository {
   }
 
   /**
-   * Returns all students enrolled in a class, ordered alphabetically by last name.
+   * Returns all active (non-deleted) students enrolled in a class, ordered alphabetically by last name.
    */
   async findByClassId(classId: string): Promise<StudentResponseDto[]> {
     const enrollments = await this.prisma.classEnrollment.findMany({
-      where: { classId },
+      where: { classId, student: { deletedAt: null } },
       select: { student: { select: STUDENT_SELECT } },
       orderBy: { student: { lastName: 'asc' } },
     });
     return enrollments.map((e) => e.student);
+  }
+
+  /**
+   * Soft-deletes a student by setting deletedAt. Historical data (results, attendance) is preserved.
+   * Throws NotFoundException if the student is not found in this class.
+   */
+  async softDeleteStudent(studentId: string, classId: string): Promise<void> {
+    const enrollment = await this.prisma.classEnrollment.findFirst({
+      where: { studentId, classId, student: { deletedAt: null } },
+      select: { id: true },
+    });
+    if (enrollment === null) {
+      throw new NotFoundException(`תלמיד ${studentId} אינו רשום לכיתה זו`);
+    }
+    await this.prisma.student.update({
+      where: { id: studentId },
+      data: { deletedAt: new Date() },
+    });
   }
 
   /**
@@ -212,8 +232,8 @@ export class StudentsRepository {
   ): Promise<RawStudentProfile> {
     const [student, results, attendanceTotal, attendancePresent, recentAttendance, talmidautRecords, classData] =
       await Promise.all([
-        this.prisma.student.findUnique({
-          where: { id: studentId },
+        this.prisma.student.findFirst({
+          where: { id: studentId, deletedAt: null },
           select: {
             id: true,
             firstName: true,
@@ -262,8 +282,8 @@ export class StudentsRepository {
             recordedAt: true,
           },
         }),
-        this.prisma.class.findUniqueOrThrow({
-          where: { id: classId },
+        this.prisma.class.findFirstOrThrow({
+          where: { id: classId, deletedAt: null },
           select: { testWeight: true, talmidautWeight: true },
         }),
       ]);
@@ -287,23 +307,44 @@ export class StudentsRepository {
   }
 
   /**
-   * Creates a new TalmidautRecord. Grade recalculation is the caller's responsibility.
+   * Creates a TalmidautRecord and atomically upserts StudentFinalGrade.
+   * Both writes are wrapped in a single $transaction for atomicity (BUG-021).
+   * Throws ConflictException if a record already exists for this (classId, studentId, lessonDate).
    */
-  async createTalmidautRecord(
+  async createTalmidautAndUpsertFinalGrade(
     studentId: string,
     classId: string,
     input: CreateTalmidautInput,
+    finalGradeData: { fitnessAvg: number; talmidautAvg: number; recommendedGrade: number },
   ): Promise<void> {
-    await this.prisma.talmidautRecord.create({
-      data: {
-        studentId,
-        classId,
-        participation: input.participation,
-        uniform: input.uniform,
-        behavior: input.behavior,
-        notes: input.notes,
-      },
-    });
+    try {
+      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.talmidautRecord.create({
+          data: {
+            studentId,
+            classId,
+            participation: input.participation,
+            uniform: input.uniform,
+            behavior: input.behavior,
+            notes: input.notes,
+            ...(input.lessonDate !== undefined ? { lessonDate: input.lessonDate } : {}),
+          },
+        });
+        await tx.studentFinalGrade.upsert({
+          where: { classId_studentId: { classId, studentId } },
+          create: { classId, studentId, ...finalGradeData },
+          update: finalGradeData,
+        });
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException('כבר קיים רישום תלמידאות לתלמיד זה בשיעור זה');
+      }
+      throw e;
+    }
   }
 
   /**
@@ -315,8 +356,8 @@ export class StudentsRepository {
     classId: string,
   ): Promise<RawGradeComponents> {
     const [cls, testResults, talmidautRecords] = await Promise.all([
-      this.prisma.class.findUniqueOrThrow({
-        where: { id: classId },
+      this.prisma.class.findFirstOrThrow({
+        where: { id: classId, deletedAt: null },
         select: { testWeight: true, talmidautWeight: true },
       }),
       this.prisma.testResult.findMany({
@@ -384,7 +425,7 @@ export class StudentsRepository {
       await Promise.all([
         // ── 1. Student + class in a single join ────────────────────────────────
         this.prisma.classEnrollment.findFirst({
-          where: { studentId, classId },
+          where: { studentId, classId, student: { deletedAt: null } },
           select: {
             student: {
               select: {

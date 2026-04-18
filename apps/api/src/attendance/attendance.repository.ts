@@ -25,8 +25,8 @@ export class AttendanceRepository {
    * Throws NotFoundException if not found.
    */
   async verifyClassOwnership(classId: string, teacherId: string): Promise<void> {
-    const cls = await this.prisma.class.findUnique({
-      where: { id: classId },
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, deletedAt: null },
       select: { id: true, teacherId: true },
     });
     if (cls === null) {

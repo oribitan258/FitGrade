@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@n
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { AuthRepository } from './auth.repository';
 import type {
   GoogleTeacherProfile,
@@ -15,6 +16,10 @@ import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  /** One-time codes issued for the mobile OAuth deep-link exchange. TTL: 2 minutes. */
+  private readonly mobileCodeStore = new Map<string, { accessToken: string; expiresAt: number }>();
+  private static readonly MOBILE_CODE_TTL_MS = 2 * 60 * 1000;
 
   constructor(
     private readonly authRepository: AuthRepository,
@@ -99,6 +104,35 @@ export class AuthService {
     const payload: JwtPayload = { sub: teacher.id, role: 'TEACHER' };
     this.logger.warn('Dev login used — should never happen in production');
     return this.issueTokenPair(payload);
+  }
+
+  // ─── Mobile one-time code exchange ────────────────────────────────────────
+
+  /**
+   * Stores the access token under a random 64-hex-char one-time code.
+   * The code is passed in the deep-link URL instead of the token itself.
+   * Expires after MOBILE_CODE_TTL_MS (2 minutes).
+   */
+  createMobileCode(accessToken: string): string {
+    const code = randomBytes(32).toString('hex');
+    this.mobileCodeStore.set(code, {
+      accessToken,
+      expiresAt: Date.now() + AuthService.MOBILE_CODE_TTL_MS,
+    });
+    return code;
+  }
+
+  /**
+   * Redeems a one-time mobile code and returns the associated access token.
+   * Throws UnauthorizedException if the code is missing, expired, or already used.
+   */
+  redeemMobileCode(code: string): string {
+    const entry = this.mobileCodeStore.get(code);
+    this.mobileCodeStore.delete(code); // Single-use — delete before checking validity
+    if (!entry || Date.now() > entry.expiresAt) {
+      throw new UnauthorizedException('קוד אימות נייד חסר, פג תוקפו, או כבר נוצל');
+    }
+    return entry.accessToken;
   }
 
   // ─── Token issuing ─────────────────────────────────────────────────────────

@@ -218,40 +218,50 @@ export class DashboardRepository {
    * This prevents duplicate counts when a teacher runs the same test multiple
    * times for different sub-groups of students.
    */
+  /**
+   * Counts missing results using DB-level _count aggregations instead of
+   * hydrating result arrays into Node.js memory (BUG-026 performance fix).
+   *
+   * A student is "missing" for a test type if they have NO result across ALL
+   * sessions of that test type in that class. Only test types where grading has
+   * actually started (at least one result exists) contribute to the count.
+   */
   async findPendingResultsCount(classIds: string[], semester?: Semester): Promise<number> {
     if (classIds.length === 0) return 0;
 
+    // Fetch sessions with result counts and enrollment counts — no studentId arrays
     const sessions = await this.prisma.testSession.findMany({
       where: { classId: { in: classIds }, ...(semester !== undefined ? { semester } : {}) },
       select: {
         classId: true,
         testTypeId: true,
-        results: { select: { studentId: true } },
+        _count: { select: { results: true } },
         class: { select: { _count: { select: { enrollments: true } } } },
       },
     });
 
-    // classId → testTypeId → Set of student IDs that have at least one result
-    const byClass = new Map<string, Map<string, Set<string>>>();
+    // classId → testTypeId → { totalResultCount, enrollmentCount }
+    // Multiple sessions of the same testType are summed (each student can only have
+    // one result per session due to @@unique([sessionId, studentId]), so summing
+    // across sessions of the same type gives the total distinct completions).
+    const byClass = new Map<string, Map<string, number>>();
     const enrollmentCount = new Map<string, number>();
 
     for (const session of sessions) {
       if (!byClass.has(session.classId)) byClass.set(session.classId, new Map());
       const byType = byClass.get(session.classId)!;
-      if (!byType.has(session.testTypeId)) byType.set(session.testTypeId, new Set());
-      const done = byType.get(session.testTypeId)!;
-      for (const r of session.results) done.add(r.studentId);
+      const prev = byType.get(session.testTypeId) ?? 0;
+      byType.set(session.testTypeId, prev + session._count.results);
       enrollmentCount.set(session.classId, session.class._count.enrollments);
     }
 
     let total = 0;
     for (const [classId, byType] of byClass) {
       const count = enrollmentCount.get(classId) ?? 0;
-      for (const done of byType.values()) {
-        // Only count missing results for test types where grading has actually started.
-        // A session with zero results is "planned / not started" and should not contribute.
-        if (done.size === 0) continue;
-        total += Math.max(0, count - done.size);
+      for (const doneCount of byType.values()) {
+        // Skip test types where no results have been recorded yet
+        if (doneCount === 0) continue;
+        total += Math.max(0, count - doneCount);
       }
     }
     return total;

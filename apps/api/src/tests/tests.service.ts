@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { AuditAction } from '@prisma/client';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { AuditAction, FitnessInputType, Gender } from '@prisma/client';
 import { GradingService } from '../grading/grading.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { TestsRepository } from './tests.repository';
@@ -140,9 +140,28 @@ export class TestsService {
     return result;
   }
 
+  /** Maximum ms after recording that a result may be deleted via undo. */
+  private static readonly UNDO_WINDOW_MS = 30_000;
+
+  /** Minimum rawValue (seconds) accepted for TIME-type tests. Prevents 0-second or absurd entries. */
+  private static readonly MIN_TIME_SECONDS = 30;
+
+  /**
+   * Distance-run gender restrictions per Ministry of Education curriculum.
+   * Key: substring that appears in the test nameHe (e.g. '800', '1500').
+   * Value: the ONLY gender permitted to take that distance test.
+   */
+  private static readonly DISTANCE_GENDER_RESTRICTIONS: Record<string, Gender> = {
+    '800':  Gender.FEMALE,
+    '1500': Gender.FEMALE,
+    '2000': Gender.MALE,
+    '3000': Gender.MALE,
+  };
+
   /**
    * Deletes a single test result (undo / correction).
    * Verifies the session belongs to the teacher's class before deleting.
+   * Enforces the 30-second undo window: results older than 30s cannot be deleted.
    */
   async deleteResult(
     sessionId: string,
@@ -150,7 +169,11 @@ export class TestsService {
     teacherId: string,
   ): Promise<void> {
     await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
-    await this.testsRepository.deleteResult(sessionId, studentId);
+    await this.testsRepository.deleteResult(
+      sessionId,
+      studentId,
+      TestsService.UNDO_WINDOW_MS,
+    );
     this.logger.log(
       `Result deleted: session=${sessionId} student=${studentId} teacher=${teacherId}`,
     );
@@ -175,8 +198,26 @@ export class TestsService {
     dto: SubmitResultDto,
     teacherId: string,
   ): Promise<ResultResponseDto> {
-    const { testTypeId, conductedAt } =
+    const { testTypeId, conductedAt, inputType, testNameHe } =
       await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+
+    if (inputType === FitnessInputType.TIME && Number(dto.rawValue) < TestsService.MIN_TIME_SECONDS) {
+      throw new BadRequestException(`ערך זמן מינימלי הוא ${TestsService.MIN_TIME_SECONDS} שניות`);
+    }
+
+    // Gender restriction validation for distance-run tests
+    if (inputType === FitnessInputType.TIME) {
+      const restrictionEntry = Object.entries(TestsService.DISTANCE_GENDER_RESTRICTIONS)
+        .find(([distanceKey]) => testNameHe.includes(distanceKey));
+      if (restrictionEntry !== undefined) {
+        const [, requiredGender] = restrictionEntry;
+        const studentGender = await this.gradingService.getStudentGender(dto.studentId);
+        const genderLabel = requiredGender === Gender.FEMALE ? 'בנות' : 'בנים';
+        if (studentGender !== requiredGender) {
+          throw new BadRequestException(`מבחן זה מיועד ל${genderLabel} בלבד`);
+        }
+      }
+    }
 
     const calculatedGrade = await this.gradingService.calculateGrade(
       dto.studentId,

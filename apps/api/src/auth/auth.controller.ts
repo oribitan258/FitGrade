@@ -23,6 +23,7 @@ import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { StudentLoginDto } from './dto/student-login.dto';
+import { MobileExchangeDto } from './dto/mobile-exchange.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { TeacherProfileDto } from './dto/teacher-profile.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -132,13 +133,13 @@ export class AuthController {
     res.clearCookie(MOBILE_AUTH_COOKIE, { path: '/api/auth' });
 
     if (isMobile) {
-      // Mobile deep-link: expo-web-browser intercepts fitgrade:// scheme.
-      // httpOnly cookies cannot be read by the native app after the deep link
-      // redirect, so the token is passed in the URL for the mobile flow.
-      // TODO(security): migrate mobile OAuth to a server-side code exchange flow
-      // to eliminate token-in-URL exposure for mobile (tracked separately).
+      // Mobile deep-link: expo-web-browser intercepts the fitgrade:// scheme.
+      // A one-time code is passed in the URL instead of the access token;
+      // the app immediately POSTs the code to /auth/mobile-exchange to retrieve
+      // the actual token. The code expires in 2 minutes and is single-use.
       const mobileScheme = this.configService.get<string>('MOBILE_SCHEME', 'fitgrade://');
-      res.redirect(`${mobileScheme}auth/callback?token=${encodeURIComponent(accessToken)}`);
+      const mobileCode = this.authService.createMobileCode(accessToken);
+      res.redirect(`${mobileScheme}auth/callback?code=${mobileCode}`);
     } else {
       // Web flow: store token in a short-lived httpOnly cookie scoped to the
       // exchange endpoint. The frontend /auth/callback page calls POST /auth/exchange
@@ -181,6 +182,26 @@ export class AuthController {
     }
     // Single-use: clear cookie immediately after reading.
     res.clearCookie(LOGIN_TOKEN_COOKIE, { path: '/api/auth/exchange' });
+    return { accessToken };
+  }
+
+  // ─── Mobile one-time code exchange ────────────────────────────────────────
+
+  /**
+   * Exchanges the one-time code passed in the mobile deep-link URL for the
+   * actual access token. The code is valid for 2 minutes and single-use.
+   * Called by the Expo app immediately after the deep-link redirect completes.
+   */
+  @Public()
+  @Post('mobile-exchange')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Exchange one-time mobile OAuth code for access token' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Code missing, expired, or already used' })
+  @ApiResponse({ status: 429, description: 'Too many exchange attempts' })
+  mobileExchange(@Body() dto: MobileExchangeDto): AuthResponseDto {
+    const accessToken = this.authService.redeemMobileCode(dto.code);
     return { accessToken };
   }
 

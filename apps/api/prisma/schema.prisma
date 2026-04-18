@@ -94,7 +94,6 @@ model User {
   classes         Class[]
   auditLogs       AuditLog[]
   events          Event[]
-  aiActionLogs    AiActionLog[]
   scheduleEntries ScheduleEntry[]
 
   @@map("users")
@@ -111,6 +110,7 @@ model Class {
   semester          Semester
   joinCode          String    @unique // 6-char alphanumeric
   joinCodeExpiresAt DateTime? // null = never expires
+  deletedAt         DateTime? // null = active; non-null = soft-deleted
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -146,15 +146,16 @@ model Class {
 // ─────────────────────────────────────────────
 
 model Student {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   firstName    String
   lastName     String
-  dateOfBirth  DateTime // Used for age-based norm table lookup
+  dateOfBirth  DateTime  // Used for age-based norm table lookup
   gender       Gender
-  studentCode  String   // Teacher-assigned code (unique per class, enforced in service layer)
-  passwordHash String   // bcrypt hash
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  studentCode  String    // Teacher-assigned code (unique per class, enforced in service layer)
+  passwordHash String    // bcrypt hash
+  deletedAt    DateTime? // null = active; non-null = soft-deleted
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   enrollments       ClassEnrollment[]
   testResults       TestResult[]
@@ -349,6 +350,9 @@ model TalmidautRecord {
   behavior      Int // 0–100
 
   notes      String?
+  /// Calendar date of the lesson this record belongs to (date-only, no time component).
+  /// Enforced unique per (classId, studentId, lessonDate) to prevent duplicate entries for the same lesson.
+  lessonDate DateTime @default(now()) @db.Date
   recordedAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -358,6 +362,7 @@ model TalmidautRecord {
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
+  @@unique([classId, studentId, lessonDate])
   @@index([classId, studentId])
   @@index([studentId])
   @@map("talmidaut_records")
@@ -416,42 +421,6 @@ model Event {
 
   @@index([teacherId, eventDate])
   @@map("events")
-}
-
-// ─────────────────────────────────────────────
-// AI ACTION LOG (Copilot WRITE actions — reversible)
-// One row per executed WRITE tool call. Stores a pre-write snapshot
-// to enable teacher-triggered rollback via POST /api/copilot/actions/:id/revert.
-// ─────────────────────────────────────────────
-
-model AiActionLog {
-  id       String @id @default(cuid())
-  teacherId String
-  teacher  User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-
-  // Which tool was executed (e.g. "save_attendance", "generate_exercise_plan")
-  toolName String
-
-  // Pre-generated Hebrew description shown in the History tab
-  // e.g. "שמירת נוכחות ל-15 תלמידים בכיתה י׳"
-  summary String
-
-  // Exact params passed to the tool (stored for expand detail view)
-  params Json
-
-  // State snapshot captured BEFORE the write, used to revert the action:
-  //   save_attendance       → { attendanceRecords: { studentId, status }[] }
-  //   generate_exercise_plan → { existingPlan: ExercisePlan | null }
-  //   submit_test_result     → { existingResultId: string | null }
-  snapshot Json
-
-  // null = action is still active; non-null = teacher reverted it
-  revertedAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  @@index([teacherId, createdAt])
-  @@map("ai_action_logs")
 }
 
 // ─────────────────────────────────────────────

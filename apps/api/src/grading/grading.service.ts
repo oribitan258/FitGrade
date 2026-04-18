@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { FitnessInputType, Prisma } from '@prisma/client';
+import { FitnessInputType, Gender, Prisma } from '@prisma/client';
 import { GradingRepository } from './grading.repository';
 
 @Injectable()
@@ -79,6 +79,12 @@ export class GradingService {
    *
    * @internal Exposed as package-private for testing purposes.
    */
+  /** Returns the gender of a student for external validation. */
+  async getStudentGender(studentId: string): Promise<Gender> {
+    const student = await this.gradingRepository.findStudentById(studentId);
+    return student.gender;
+  }
+
   computeAge(dateOfBirth: Date, referenceDate: Date): number {
     const birthYear = dateOfBirth.getFullYear();
     const birthMonth = dateOfBirth.getMonth(); // 0-indexed

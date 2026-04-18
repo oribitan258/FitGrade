@@ -1,5 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class OverrideGradeDto {
   @ApiProperty({ description: 'Override grade set by teacher (0–100)', minimum: 0, maximum: 100 })
@@ -8,8 +8,8 @@ export class OverrideGradeDto {
   @Max(100)
   gradeOverride!: number;
 
-  @ApiPropertyOptional({ description: 'Reason for the grade override' })
-  @IsOptional()
+  @ApiProperty({ description: 'Mandatory reason for the grade override' })
   @IsString()
-  overrideReason?: string;
+  @MinLength(3)
+  overrideReason!: string;
 }

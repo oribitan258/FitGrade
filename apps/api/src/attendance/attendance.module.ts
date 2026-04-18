@@ -6,6 +6,6 @@ import { AttendanceRepository } from './attendance.repository';
 @Module({
   controllers: [AttendanceController],
   providers: [AttendanceService, AttendanceRepository],
-  exports: [AttendanceService], // CopilotModule imports AttendanceService
+  exports: [AttendanceService], 
 })
 export class AttendanceModule {}

@@ -18,8 +18,8 @@ export class GradingRepository {
    * Never returns passwordHash.
    */
   async findStudentById(studentId: string): Promise<StudentForGrading> {
-    return this.prisma.student.findUniqueOrThrow({
-      where: { id: studentId },
+    return this.prisma.student.findFirstOrThrow({
+      where: { id: studentId, deletedAt: null },
       select: {
         gender: true,
         dateOfBirth: true,
@@ -57,7 +57,7 @@ export class GradingRepository {
         testTypeId,
         gender,
         minAge: { lte: age },
-        maxAge: { gte: age },
+        maxAge: { gt: age },
         minValue: { lte: rawValue },
         maxValue: { gt: rawValue },
       },
