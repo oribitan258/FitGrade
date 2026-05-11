@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import CountUp from 'react-countup';
@@ -9,14 +10,13 @@ import type {
   ClassGenderType,
   DashboardStats,
   EventData,
+  Gender,
   MissingResultItem,
   RecentSession,
-  TopAchievementItem,
 } from '@fitgrade/types';
 import { formatClassWithGender } from '@/lib/class-utils';
 import { useClasses } from '@/hooks/use-classes';
 import { useDashboardStats } from '@/hooks/use-dashboard-stats';
-import { useTopAchievements } from '@/hooks/use-top-achievements';
 import { useUpcomingEvent } from '@/hooks/use-events';
 import {
   Activity,
@@ -26,10 +26,12 @@ import {
   Calendar,
   CalendarDays,
   CalendarPlus,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardX,
   Dumbbell,
+  FileText,
   GraduationCap,
   Heart,
   History,
@@ -37,11 +39,14 @@ import {
   Loader2,
   Plus,
   Timer,
+  Trash2,
   TrendingDown,
   TrendingUp,
   Trophy,
+  Upload,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -63,13 +68,14 @@ import type { TodayScheduleItem } from '@/hooks/use-today-schedule';
 import { useClassAverages } from '@/hooks/use-class-averages';
 import type { MonthlyClassAverage } from '@/hooks/use-class-averages';
 import { SemesterPanel } from '@/components/ui/semester-panel';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, apiUpload } from '@/lib/api-client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AddClassModal } from '@/components/classes/add-class-modal';
 import { getHebrewGradeLabel } from '@fitgrade/types';
-import { TopResultsTicker } from '@/components/ui/top-results-ticker';
 import { useSemester } from '@/contexts/semester-context';
 import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 
 // ─── Animation presets ────────────────────────────────────────────────────────
 
@@ -795,10 +801,12 @@ interface QuickActionButtonProps {
   iconGlow: string;
   rippleColor: string;
   onClick: () => void;
+  variant?: 'light' | 'glass';
 }
 
-function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick }: QuickActionButtonProps): React.JSX.Element {
+function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick, variant = 'light' }: QuickActionButtonProps): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
+  const isGlass = variant === 'glass';
 
   return (
     <motion.button
@@ -808,8 +816,17 @@ function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick
       onHoverEnd={() => setHovered(false)}
       whileHover={{ scale: 1.025, transition: { type: 'spring', stiffness: 380, damping: 24 } }}
       whileTap={{ scale: 0.97 }}
-      className="relative w-full flex items-center gap-3 rounded-2xl px-3.5 py-3 text-start overflow-hidden cursor-pointer"
-      style={{
+      className="relative w-full flex flex-col items-center gap-1.5 rounded-2xl px-2 py-2.5 text-center overflow-hidden cursor-pointer md:flex-row md:items-center md:gap-3 md:px-3.5 md:py-3 md:text-start"
+      style={isGlass ? {
+        background: hovered ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.15)',
+        border: hovered ? `1px solid ${iconBg}55` : '1px solid rgba(255,255,255,0.35)',
+        backdropFilter: 'blur(16px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+        boxShadow: hovered
+          ? `0 6px 24px ${iconGlow}, inset 0 1px 0 rgba(255,255,255,0.50)`
+          : 'inset 0 1px 0 rgba(255,255,255,0.40)',
+        transition: 'background 0.18s, box-shadow 0.18s, border-color 0.18s',
+      } : {
         background: hovered ? 'rgba(241,245,249,1.0)' : 'rgba(248,250,252,0.90)',
         border: '1px solid rgba(226,232,240,0.80)',
         boxShadow: hovered ? '0 4px 12px rgba(15,23,42,0.08)' : '0 1px 4px rgba(15,23,42,0.04)',
@@ -838,7 +855,9 @@ function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick
         style={{
           width: 38, height: 38,
           background: iconBg,
-          boxShadow: `0 0 14px ${iconGlow}, 0 2px 6px rgba(0,0,0,0.15)`,
+          boxShadow: isGlass
+            ? `0 0 18px ${iconGlow}, 0 0 6px ${iconGlow}`
+            : `0 0 14px ${iconGlow}, 0 2px 6px rgba(0,0,0,0.15)`,
         }}
         aria-hidden="true"
       >
@@ -850,7 +869,7 @@ function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick
       </div>
 
       {/* Label */}
-      <span className="relative z-10 text-sm font-bold text-slate-800 leading-tight">{label}</span>
+      <span className="relative z-10 text-[11px] font-bold leading-tight text-slate-800 md:text-sm">{label}</span>
     </motion.button>
   );
 }
@@ -860,10 +879,12 @@ function QuickActionButton({ icon, label, iconBg, iconGlow, rippleColor, onClick
 interface QuickActionsPanelProps {
   onAddStudent: () => void;
   onAddClass: () => void;
+  variant?: 'light' | 'glass';
 }
 
-function QuickActionsPanel({ onAddStudent, onAddClass }: QuickActionsPanelProps): React.JSX.Element {
+function QuickActionsPanel({ onAddStudent, onAddClass, variant = 'light' }: QuickActionsPanelProps): React.JSX.Element {
   const router = useRouter();
+  const isGlass = variant === 'glass';
 
   const actions: QuickActionButtonProps[] = [
     {
@@ -897,15 +918,21 @@ function QuickActionsPanel({ onAddStudent, onAddClass }: QuickActionsPanelProps)
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ease: EASE, duration: 0.45, delay: 0.35 }}
-      className="mt-3 flex flex-col gap-2 rounded-3xl p-2"
-      style={{
+      className="mt-3 grid grid-cols-3 gap-2 rounded-3xl p-2 md:flex md:flex-col"
+      style={isGlass ? {
+        background: 'rgba(255,255,255,0.55)',
+        border: '1px solid rgba(255,255,255,0.70)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+      } : {
         background: 'rgba(255,255,255,0.70)',
         border: '1px solid rgba(226,232,240,0.80)',
         boxShadow: '0 4px 16px rgba(15,23,42,0.06)',
       }}
     >
       {actions.map((action) => (
-        <QuickActionButton key={action.label} {...action} />
+        <QuickActionButton key={action.label} {...action} variant={variant} />
       ))}
     </motion.div>
   );
@@ -1002,31 +1029,38 @@ function AddStudentModal({
   classes: ClassData[];
 }): React.JSX.Element {
   const router = useRouter();
-  const [classId, setClassId]         = useState('');
-  const [firstName, setFirstName]     = useState('');
-  const [lastName, setLastName]       = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState('');
-  const [gender, setGender]           = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
-  const [studentCode, setStudentCode] = useState('');
-  const [password, setPassword]       = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [classId,   setClassId]   = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [gender,    setGender]    = useState<Gender>('MALE');
+  const [nationalId, setNationalId] = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
 
   function reset(): void {
     setClassId(''); setFirstName(''); setLastName('');
-    setDateOfBirth(''); setGender('MALE'); setStudentCode('');
-    setPassword(''); setError(null);
+    setGender('MALE'); setNationalId(''); setError(null);
   }
+
+  const selectedClass = classes.find((c) => c.id === classId) ?? null;
+
+  const genderMismatch: string | null = (() => {
+    if (!selectedClass || selectedClass.genderType === 'MIXED') return null;
+    if (selectedClass.genderType === 'BOYS'  && gender === 'FEMALE') return 'לא ניתן להוסיף תלמידה לכיתת בנים';
+    if (selectedClass.genderType === 'GIRLS' && gender === 'MALE')   return 'לא ניתן להוסיף תלמיד לכיתת בנות';
+    return null;
+  })();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
-    if (classId === '') { setError('יש לבחור כיתה'); return; }
-    setLoading(true);
-    setError(null);
+    if (classId === '')    { setError('יש לבחור כיתה'); return; }
+    if (genderMismatch)    { setError(genderMismatch);   return; }
+    if (!/^\d{1,9}$/.test(nationalId)) { setError('תעודת זהות חייבת להכיל ספרות בלבד (עד 9)'); return; }
+    setLoading(true); setError(null);
     try {
       await apiRequest(`/classes/${classId}/students`, {
         method: 'POST',
-        body: JSON.stringify({ firstName, lastName, dateOfBirth, gender, studentCode, password }),
+        body: JSON.stringify({ firstName, lastName, gender, nationalId }),
       });
       router.refresh();
       onClose();
@@ -1038,28 +1072,58 @@ function AddStudentModal({
     }
   }
 
-  const INPUT_CLS = 'w-full rounded-xl border border-white/30 bg-white/20 px-4 py-2.5 text-sm font-semibold text-violet-950 placeholder:text-violet-950/40 outline-none focus:ring-2 focus:ring-violet-500/60 transition-shadow';
-  const LABEL_CLS = 'block text-xs font-black text-slate-600 mb-1.5 tracking-wide';
+  const INPUT_CLS = 'w-full rounded-xl border border-slate-200/80 bg-white/60 px-4 py-2.5 text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-violet-400/50 focus:border-violet-300 transition-all backdrop-blur-sm';
+  const LABEL_CLS = 'block text-xs font-bold text-slate-500 mb-1.5 tracking-wide uppercase';
+
+  const GENDER_OPTIONS: Array<{ value: Gender; label: string; icon: string }> = [
+    { value: 'MALE',   label: 'זכר',  icon: '♂' },
+    { value: 'FEMALE', label: 'נקבה', icon: '♀' },
+    { value: 'OTHER',  label: 'אחר',  icon: '◎' },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); reset(); } }}>
-      <DialogContent className="max-w-md" dir="rtl">
-        <DialogHeader>
-          <DialogTitle className="text-start text-lg font-black text-violet-950">הוספת תלמיד חדש</DialogTitle>
-        </DialogHeader>
+      <DialogContent
+        className="w-[calc(100vw-2rem)] max-w-md overflow-hidden rounded-3xl p-0"
+        dir="rtl"
+        style={{
+          background:           'rgba(255,255,255,0.92)',
+          backdropFilter:       'blur(32px)',
+          WebkitBackdropFilter: 'blur(32px)',
+          border:               '1px solid rgba(255,255,255,0.80)',
+          boxShadow:            '0 24px 64px rgba(109,40,217,0.14), inset 0 1px 0 rgba(255,255,255,0.9)',
+        } as React.CSSProperties}
+      >
+        {/* Header band */}
+        <div
+          className="px-6 py-5"
+          style={{ background: 'linear-gradient(135deg, rgba(109,40,217,0.08) 0%, rgba(124,58,237,0.04) 100%)', borderBottom: '1px solid rgba(109,40,217,0.10)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100">
+              <UserPlus className="h-5 w-5 text-violet-600" aria-hidden="true" />
+            </div>
+            <div>
+              <DialogHeader>
+                <DialogTitle className="text-start text-base font-black text-slate-800">הוספת תלמיד חדש</DialogTitle>
+              </DialogHeader>
+              <p className="text-xs text-slate-500 mt-0.5">ת.ז משמשת כסיסמת כניסה ברירת מחדל</p>
+            </div>
+          </div>
+        </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-1" noValidate>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-6" noValidate>
           {/* Class */}
           <div>
             <label className={LABEL_CLS}>כיתה</label>
-            <select value={classId} onChange={(e) => setClassId(e.target.value)} required className={INPUT_CLS}>
+            <select value={classId} onChange={(e) => { setClassId(e.target.value); setError(null); }} required className={INPUT_CLS}>
               <option value="">בחר כיתה...</option>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
 
           {/* Name row */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={LABEL_CLS}>שם פרטי</label>
               <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)}
@@ -1072,173 +1136,78 @@ function AddStudentModal({
             </div>
           </div>
 
-          {/* DOB + Gender row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={LABEL_CLS}>תאריך לידה</label>
-              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)}
-                required className={INPUT_CLS} style={{ colorScheme: 'light' }} />
+          {/* Gender pill selector */}
+          <div>
+            <label className={LABEL_CLS}>מין</label>
+            <div className="grid grid-cols-3 gap-2">
+              {GENDER_OPTIONS.map(({ value, label, icon }) => {
+                const active = gender === value;
+                const blocked = (selectedClass?.genderType === 'BOYS' && value === 'FEMALE')
+                             || (selectedClass?.genderType === 'GIRLS' && value === 'MALE');
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={blocked}
+                    onClick={() => { setGender(value); setError(null); }}
+                    className="flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                    style={active ? {
+                      background: 'linear-gradient(135deg,#6d28d9,#7c3aed)',
+                      color: '#fff',
+                      boxShadow: '0 4px 14px rgba(109,40,217,0.35)',
+                    } : {
+                      background: 'rgba(248,250,252,0.80)',
+                      color: '#64748b',
+                      border: '1px solid rgba(226,232,240,0.80)',
+                    }}
+                  >
+                    <span aria-hidden="true">{icon}</span>
+                    {label}
+                  </button>
+                );
+              })}
             </div>
-            <div>
-              <label className={LABEL_CLS}>מין</label>
-              <select value={gender} onChange={(e) => setGender(e.target.value as 'MALE' | 'FEMALE' | 'OTHER')}
-                required className={INPUT_CLS}>
-                <option value="MALE">זכר</option>
-                <option value="FEMALE">נקבה</option>
-                <option value="OTHER">אחר</option>
-              </select>
-            </div>
+            {genderMismatch !== null && (
+              <p className="mt-1.5 text-[11px] font-semibold text-red-500">{genderMismatch}</p>
+            )}
           </div>
 
-          {/* Code + Password row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={LABEL_CLS}>קוד תלמיד</label>
-              <input type="text" value={studentCode} onChange={(e) => setStudentCode(e.target.value)}
-                placeholder="301" required maxLength={10} className={INPUT_CLS} />
-            </div>
-            <div>
-              <label className={LABEL_CLS}>סיסמה</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="לפחות 8 תווים" required minLength={8} className={INPUT_CLS} />
-            </div>
+          {/* National ID */}
+          <div>
+            <label className={LABEL_CLS}>תעודת זהות (ת.ז)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="\d{1,9}"
+              maxLength={9}
+              value={nationalId}
+              onChange={(e) => { setNationalId(e.target.value.replace(/\D/g, '')); setError(null); }}
+              placeholder="123456789"
+              required
+              className={INPUT_CLS}
+            />
+            <p className="mt-1 text-[11px] text-slate-400">ת.ז תשמש גם כסיסמת כניסה ראשונית לתלמיד</p>
           </div>
 
           {error !== null && (
-            <div className="rounded-xl px-3 py-2 text-xs font-semibold text-red-700"
-              style={{ background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)' }}>
+            <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold text-red-700"
+              style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.18)' }}>
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {error}
             </div>
           )}
 
-          <motion.button type="submit" disabled={loading}
-            whileHover={!loading ? { y: -1, boxShadow: '0 8px 24px rgba(109,40,217,0.45)', transition: { type: 'spring', stiffness: 380, damping: 24 } } : {}}
+          <motion.button
+            type="submit"
+            disabled={loading || genderMismatch !== null}
+            whileHover={!loading ? { y: -1, boxShadow: '0 10px 28px rgba(109,40,217,0.45)' } : {}}
             whileTap={!loading ? { scale: 0.98 } : {}}
-            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #6d28d9, #7c3aed)', boxShadow: '0 4px 16px rgba(109,40,217,0.35)' }}>
+            className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-black text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', boxShadow: '0 4px 16px rgba(109,40,217,0.32)' }}
+          >
             {loading
               ? <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /><span>שומר...</span></>
-              : <span>הוסף תלמיד</span>}
-          </motion.button>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Add Class Modal ──────────────────────────────────────────────────────────
-
-const GRADE_OPTIONS = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ז'", "ח'", "ט'", "י'", 'י"א', 'י"ב'] as const;
-type GradeOption = typeof GRADE_OPTIONS[number];
-
-/** Maps the Hebrew grade label to its numeric school grade level (1–12). */
-const GRADE_OPTION_TO_INT: Record<GradeOption, number> = {
-  "א'": 1, "ב'": 2, "ג'": 3, "ד'": 4, "ה'": 5, "ו'": 6,
-  "ז'": 7, "ח'": 8, "ט'": 9, "י'": 10, 'י"א': 11, 'י"ב': 12,
-};
-
-function AddClassModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
-  const router = useRouter();
-  const [grade, setGrade]           = useState<GradeOption>("א'");
-  const [classNumber, setClassNumber] = useState('1');
-  const [semester, setSemester]     = useState<'A' | 'B'>('A');
-  const [genderType, setGenderType] = useState<ClassGenderType>('MIXED');
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-
-  function reset(): void {
-    setGrade("א'"); setClassNumber('1'); setSemester('A'); setGenderType('MIXED'); setError(null);
-  }
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    const now = new Date();
-    const year = now.getFullYear();
-    const academicYear = now.getMonth() >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-    const name = `כיתה ${grade} ${classNumber}`;
-    try {
-      await apiRequest('/classes', { method: 'POST', body: JSON.stringify({ name, academicYear, semester, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }) });
-      router.refresh();
-      onClose();
-      reset();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'שגיאה ביצירת הכיתה');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const INPUT_CLS = 'w-full rounded-xl border border-white/30 bg-white/20 px-4 py-2.5 text-sm font-semibold text-violet-950 placeholder:text-violet-950/40 outline-none focus:ring-2 focus:ring-violet-500/60 transition-shadow';
-  const LABEL_CLS = 'block text-xs font-black text-slate-600 mb-1.5 tracking-wide';
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); reset(); } }}>
-      <DialogContent className="max-w-md" dir="rtl">
-        <DialogHeader>
-          <DialogTitle className="text-start text-lg font-black text-violet-950">יצירת כיתה חדשה</DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-1" noValidate>
-          {/* Grade + Number row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={LABEL_CLS}>שכבה</label>
-              <select value={grade} onChange={(e) => setGrade(e.target.value as GradeOption)}
-                required className={INPUT_CLS}>
-                {GRADE_OPTIONS.map((g) => <option key={g} value={g}>כיתה {g}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={LABEL_CLS}>מספר כיתה</label>
-              <input type="number" value={classNumber} onChange={(e) => setClassNumber(e.target.value)}
-                min={1} max={15} required className={INPUT_CLS} />
-            </div>
-          </div>
-
-          {/* Semester + Gender row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={LABEL_CLS}>סמסטר</label>
-              <select value={semester} onChange={(e) => setSemester(e.target.value as 'A' | 'B')}
-                required className={INPUT_CLS}>
-                <option value="A">סמסטר א'</option>
-                <option value="B">סמסטר ב'</option>
-              </select>
-            </div>
-            <div>
-              <label className={LABEL_CLS}>הרכב מגדרי</label>
-              <select value={genderType} onChange={(e) => setGenderType(e.target.value as ClassGenderType)}
-                required className={INPUT_CLS}>
-                <option value="MIXED">מעורב</option>
-                <option value="BOYS">בנים</option>
-                <option value="GIRLS">בנות</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Name preview */}
-          <div className="rounded-xl px-4 py-2.5 text-xs font-bold text-violet-700"
-            style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.14)' }}>
-            שם הכיתה: <span className="font-black">{formatClassWithGender(`כיתה ${grade} ${classNumber}`, genderType)}</span>
-          </div>
-
-          {error !== null && (
-            <div className="rounded-xl px-3 py-2 text-xs font-semibold text-red-700"
-              style={{ background: 'rgba(220,38,38,0.07)', border: '1px solid rgba(220,38,38,0.18)' }}>
-              {error}
-            </div>
-          )}
-
-          <motion.button type="submit" disabled={loading}
-            whileHover={!loading ? { y: -1, boxShadow: '0 8px 24px rgba(5,150,105,0.45)', transition: { type: 'spring', stiffness: 380, damping: 24 } } : {}}
-            whileTap={!loading ? { scale: 0.98 } : {}}
-            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #059669, #0891b2)', boxShadow: '0 4px 16px rgba(5,150,105,0.35)' }}>
-            {loading
-              ? <><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /><span>שומר...</span></>
-              : <span>צור כיתה</span>}
+              : <><UserPlus className="h-4 w-4" aria-hidden="true" /><span>הוסף תלמיד</span></>}
           </motion.button>
         </form>
       </DialogContent>
@@ -1343,9 +1312,10 @@ function AttentionPanel({ onAddReminder }: AttentionPanelProps): React.JSX.Eleme
       transition={{ ease: EASE, duration: 0.50, delay: 0.28 }}
       className="flex flex-col gap-2.5 rounded-2xl p-3 flex-1"
       style={{
-        background: 'rgba(255,255,255,0.75)',
-        border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
-        transition: 'border-color 0.7s ease',
+        background: 'rgba(255,255,255,0.40)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        border: '1px solid rgba(255,255,255,0.22)',
         boxShadow: '0 4px 16px rgba(15,23,42,0.07)',
       }}
     >
@@ -1436,7 +1406,7 @@ function AddReminderModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); reset(); } }}>
-      <DialogContent className="max-w-md" dir="rtl">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-start text-lg font-black text-violet-950">הוספת תזכורת חדשה</DialogTitle>
         </DialogHeader>
@@ -1493,7 +1463,7 @@ function HeroBanner(): React.JSX.Element {
 
   // Prefer the teacher's custom name; fall back to first word of the Google display name.
   const teacherFirstName = reportSettings?.teacherName ?? teacher?.name?.split(' ')[0] ?? '...';
-  const teacherSchool    = teacher?.school ?? null;
+  const teacherSchool    = reportSettings?.schoolName ?? teacher?.school ?? null;
 
   const studentCountMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -1521,21 +1491,22 @@ function HeroBanner(): React.JSX.Element {
         className="absolute inset-0 rounded-3xl overflow-hidden"
         aria-hidden="true"
         style={{
-          background: 'rgba(255,255,255,0.55)',
-          backdropFilter: 'blur(16px) saturate(140%)',
-          WebkitBackdropFilter: 'blur(16px) saturate(140%)',
-          border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
-          transition: 'border-color 0.7s ease',
-          boxShadow: '0 8px 32px rgba(15,23,42,0.08)',
+          background: 'rgba(255,255,255,0.10)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.20)',
+          boxShadow: '0 8px 32px rgba(15,23,42,0.06)',
         }}
       >
-        {/* Wave orb 1 — mint-teal drift (top-start) */}
+        {/* Wave orb 1 — violet/indigo drift (top-start) */}
         <motion.div
           className="absolute rounded-full pointer-events-none"
           style={{
             width: 900, height: 900,
             top: '-50%', insetInlineStart: '-20%',
-            background: 'radial-gradient(circle, rgba(20,184,166,0.20) 0%, rgba(6,182,212,0.12) 40%, transparent 70%)',
+            background: activeSemester === 'A'
+              ? 'radial-gradient(circle, rgba(109,40,217,0.18) 0%, rgba(99,102,241,0.10) 40%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(34,197,94,0.14) 0%, rgba(16,185,129,0.08) 40%, transparent 70%)',
             filter: 'blur(42px)',
           }}
           animate={{ x: [0, 80, 20, 0], y: [0, 40, -10, 0], scale: [1, 1.14, 1.05, 1] }}
@@ -1565,13 +1536,15 @@ function HeroBanner(): React.JSX.Element {
           animate={{ x: [0, 40, -30, 0], y: [0, -20, 30, 0], scale: [1, 1.08, 0.95, 1] }}
           transition={{ duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 8 }}
         />
-        {/* Wave orb 4 — emerald-mint (top-end) */}
+        {/* Wave orb 4 — indigo/fuchsia accent (top-end) */}
         <motion.div
           className="absolute rounded-full pointer-events-none"
           style={{
             width: 600, height: 600,
             top: '-20%', insetInlineEnd: '-10%',
-            background: 'radial-gradient(circle, rgba(52,211,153,0.12) 0%, rgba(20,184,166,0.07) 50%, transparent 70%)',
+            background: activeSemester === 'A'
+              ? 'radial-gradient(circle, rgba(139,92,246,0.12) 0%, rgba(99,102,241,0.07) 50%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(52,211,153,0.10) 0%, rgba(20,184,166,0.06) 50%, transparent 70%)',
             filter: 'blur(44px)',
           }}
           animate={{ x: [0, -40, 10, 0], y: [0, 50, 20, 0], scale: [1, 1.10, 1.02, 1] }}
@@ -1583,47 +1556,69 @@ function HeroBanner(): React.JSX.Element {
         />
       </div>
 
+      {/* ── greeting-wave keyframes (used by desktop h1/h2 below) ── */}
+      <style>{`
+        @keyframes greeting-wave {
+          0%   { background-position: 200% center; }
+          100% { background-position: -200% center; }
+        }
+      `}</style>
+
       {/* ── Three-column grid — compressed, tight bento ── */}
       <div
         dir="ltr"
         className="relative grid grid-cols-1 md:grid-cols-[238px_1fr_208px] gap-2 px-4 pb-3"
-        style={{ zIndex: 2, paddingTop: 12 }}
+        style={{ zIndex: 2, paddingTop: 4 }}
       >
 
-        {/* ── LEFT: greeting + quick actions + master CTA ── */}
-        <div dir="rtl" className="relative flex flex-col justify-between h-full pb-2 overflow-hidden">
+        {/* ── LEFT: greeting + quick actions + master CTA (desktop only) ── */}
+        <div dir="rtl" className="relative hidden md:flex flex-col justify-between h-full pb-2 overflow-hidden">
           {/* Top group: Greeting + Quick Actions */}
           <div>
-            {/* Greeting */}
-            <div className="relative z-10 pt-4">
+            {/* Greeting — desktop only; mobile uses the micro-header above */}
+            <div className="relative z-10 pt-4 hidden md:block">
               <h1
-                className="text-2xl font-black tracking-tight leading-none mb-1.5"
-                style={{ color: '#1e1b4b', textShadow: '0 0 48px rgba(109,40,217,0.22), 0 2px 6px rgba(0,0,0,0.10)' }}
+                className="text-3xl font-black tracking-tight leading-none mb-2"
+                style={{
+                  backgroundImage: 'linear-gradient(90deg, #1e1b4b 0%, #4c1d95 25%, #7c3aed 50%, #4c1d95 75%, #1e1b4b 100%)',
+                  backgroundSize: '200% auto',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  color: 'transparent',
+                  WebkitTextFillColor: 'transparent',
+                  animation: 'greeting-wave 6s linear infinite',
+                }}
               >
-                שלום,{' '}
-                <span style={{ color: '#6d28d9', textShadow: '0 0 36px rgba(124,58,237,0.50), 0 0 12px rgba(109,40,217,0.35)' }}>
-                  {teacherFirstName}!
-                </span>
+                שלום, {teacherFirstName}!
               </h1>
               {teacherSchool !== null && (
-                <div
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5"
-                  style={{ background: 'rgba(109,40,217,0.08)', border: '1px solid rgba(109,40,217,0.18)' }}
-                >
-                  <span className="text-[10px]" aria-hidden="true">🏫</span>
-                  <span className="text-[0.68rem] font-semibold text-violet-700 truncate max-w-[120px]">{teacherSchool}</span>
-                </div>
+                <h2
+                  className="text-3xl font-black tracking-tight leading-none"
+                  style={{
+                    backgroundImage: 'linear-gradient(90deg, #1e1b4b 0%, #4c1d95 25%, #7c3aed 50%, #4c1d95 75%, #1e1b4b 100%)',
+                    backgroundSize: '200% auto',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    color: 'transparent',
+                    WebkitTextFillColor: 'transparent',
+                    animation: 'greeting-wave 6s linear infinite',
+                  }}
+                >{teacherSchool}</h2>
               )}
             </div>
 
-            <QuickActionsPanel
-              onAddStudent={() => setIsAddStudentOpen(true)}
-              onAddClass={() => setIsAddClassOpen(true)}
-            />
+            <div className="hidden md:block">
+              <QuickActionsPanel
+                onAddStudent={() => setIsAddStudentOpen(true)}
+                onAddClass={() => setIsAddClassOpen(true)}
+              />
+            </div>
           </div>
 
-          {/* Bottom: Master Session CTA */}
-          <MasterSessionCTA activeLesson={activeLesson} scheduleLoading={scheduleLoading} />
+          {/* Bottom: Master Session CTA (desktop only) */}
+          <div className="hidden md:block">
+            <MasterSessionCTA activeLesson={activeLesson} scheduleLoading={scheduleLoading} />
+          </div>
         </div>
 
         {/* ── CENTER: shimmer clock + redesigned schedule panel ── */}
@@ -1654,6 +1649,13 @@ function HeroBanner(): React.JSX.Element {
                 100% { background-position: -200% center; }
               }
             `}</style>
+            {/* ── Mobile greeting — top-left corner of clock card ── */}
+            <div className="md:hidden w-full flex justify-end items-start px-2 pt-2 pb-3" dir="rtl">
+              <span className="text-lg font-semibold tracking-tight" style={{ color: 'rgba(76,29,149,0.90)' }}>
+                שלום, {teacherFirstName} 👋
+              </span>
+            </div>
+
             <div
               dir="ltr"
               className="flex items-baseline leading-none select-none tabular-nums"
@@ -1722,9 +1724,10 @@ function HeroBanner(): React.JSX.Element {
             style={{
               flex: 1,
               padding: '16px 16px',
-              background: 'rgba(255,255,255,0.72)',
-              border: '1px solid var(--semester-border, rgba(139,92,246,0.20))',
-              transition: 'border-color 0.7s ease',
+              background: 'rgba(255,255,255,0.40)',
+              backdropFilter: 'blur(24px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.22)',
               boxShadow: '0 4px 16px rgba(15,23,42,0.06)',
             }}
           >
@@ -1798,7 +1801,21 @@ function HeroBanner(): React.JSX.Element {
                 </motion.div>
               )}
             </div>
+
+            {/* Mobile-only: Master Session CTA inside schedule card */}
+            <div className="block md:hidden mt-3">
+              <MasterSessionCTA activeLesson={activeLesson} scheduleLoading={scheduleLoading} />
+            </div>
           </motion.div>
+
+          {/* Mobile-only: Quick actions side-by-side beneath schedule */}
+          <div className="block md:hidden">
+            <QuickActionsPanel
+              onAddStudent={() => setIsAddStudentOpen(true)}
+              onAddClass={() => setIsAddClassOpen(true)}
+              variant="glass"
+            />
+          </div>
         </motion.div>
 
         {/* ── RIGHT: attention panel ── */}
@@ -1865,16 +1882,6 @@ const MOCK_STATS: DashboardStats = {
   ],
 };
 
-const MOCK_TOP_ACHIEVEMENTS: TopAchievementItem[] = [
-  { rank: 1, studentId: 'stu-1', studentName: 'דניאל כהן',   classId: 'cls-1', className: "י'1",  examName: 'ריצת 60 מטר',     score: 98 },
-  { rank: 2, studentId: 'stu-2', studentName: 'מיכל שרון',   classId: 'cls-1', className: "י'1",  examName: 'מתח',              score: 95 },
-  { rank: 3, studentId: 'stu-3', studentName: 'רן אלמוג',    classId: 'cls-2', className: "ט'2",  examName: 'קפיצה למרחק',     score: 93 },
-  { rank: 4, studentId: 'stu-4', studentName: 'נועה לוי',    classId: 'cls-2', className: "ט'2",  examName: 'ריצת 2000 מטר',   score: 91 },
-  { rank: 5, studentId: 'stu-5', studentName: 'תמר אברהם',   classId: 'cls-3', className: "י'2",  examName: 'שכיבות סמיכה',   score: 89 },
-  { rank: 6, studentId: 'stu-6', studentName: 'עמית ברק',    classId: 'cls-3', className: "י'2",  examName: 'ריצת 10 על 4',    score: 88 },
-  { rank: 7, studentId: 'stu-7', studentName: 'שיר גולן',    classId: 'cls-4', className: "ח'1",  examName: 'ביפ טסט',         score: 86 },
-  { rank: 8, studentId: 'stu-8', studentName: 'יואב מזרחי',  classId: 'cls-4', className: "ח'1",  examName: 'כפיפות בטן',      score: 84 },
-];
 
 const MOCK_UPCOMING_EVENT: EventData = {
   id:          'evt-1',
@@ -2047,7 +2054,6 @@ function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-// StudentTickerRibbon replaced by the shared TopResultsTicker component.
 
 // ─── KPI Card — Mode A white surface ─────────────────────────────────────────
 
@@ -2241,7 +2247,7 @@ function ClassAverageTrendChart({ semester }: ClassAverageTrendChartProps): Reac
   return (
     <motion.div
       variants={ITEM}
-      className="flex flex-col rounded-3xl overflow-hidden h-full relative"
+      className="flex flex-col rounded-3xl overflow-hidden h-full min-h-[280px] md:min-h-0 relative"
       style={{
         background:           'rgba(255,255,255,0.38)',
         backdropFilter:       'blur(28px) saturate(190%)',
@@ -2374,8 +2380,9 @@ export default function DashboardPage(): React.JSX.Element {
   // SWR refetch is scheduled as low-priority work — eliminating the freeze.
   const deferredSemester = useDeferredValue(activeSemester);
   const { data: stats,        isLoading: statsLoading,   error: statsError   } = useDashboardStats(deferredSemester);
-  const { achievements: topAchievements } = useTopAchievements(deferredSemester);
   const { data: upcomingEvent, isLoading: eventLoading } = useUpcomingEvent();
+
+  useSignalPageReady('dashboard', stats !== undefined);
 
   const [missingOpen,   setMissingOpen]   = useState(false);
   const [belowNormOpen, setBelowNormOpen] = useState(false);
@@ -2384,7 +2391,6 @@ export default function DashboardPage(): React.JSX.Element {
 
   const hasRealData           = Boolean(stats && stats.totalStudents > 0);
   const effectiveStats        = hasRealData ? stats! : MOCK_STATS;
-  const effectiveTopAchievements = topAchievements ?? [];
   const effectiveEvent        = upcomingEvent ?? MOCK_UPCOMING_EVENT;
 
   const fitnessAvg     = effectiveStats.overallFitnessAvg;
@@ -2502,8 +2508,39 @@ export default function DashboardPage(): React.JSX.Element {
           />
 
           <SemesterTransitionWrapper activeSemester={activeSemester}>
-          {/* ── 2. KPI STATS ROW — 4 white Tier-2 cards ──────────────────── */}
-          <motion.div variants={STAGGER} className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {/* data-tour wrapper spans both mobile chips and desktop KPI grid so
+              the tour spotlight finds a rendered element on any viewport width. */}
+          <div data-tour="dashboard-stats">
+          {/* ── 2a. MOBILE: horizontally scrollable stat chips ────────────── */}
+          <div
+            className="flex justify-center gap-3 overflow-x-auto pb-2 md:hidden"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+          >
+            {[
+              { label: 'ממוצע כושר', value: fitnessAvg,    suffix: '',  color: 'text-emerald-600', accentBorder: 'rgba(52,211,153,0.35)',   onClick: undefined },
+              { label: 'נוכחות',     value: attendancePct, suffix: '%', color: activeSemester === 'A' ? 'text-violet-600' : 'text-emerald-600', accentBorder: activeSemester === 'A' ? 'rgba(139,92,246,0.35)' : 'rgba(52,211,153,0.35)', onClick: undefined },
+              { label: 'לטיפול',     value: belowNormCount, suffix: '', color: 'text-red-500',    accentBorder: 'rgba(239,68,68,0.35)',   onClick: () => { setBelowNormOpen(true); } },
+              { label: 'חסרות',      value: pendingResults, suffix: '', color: 'text-amber-600', accentBorder: 'rgba(245,158,11,0.35)',  onClick: () => { setMissingOpen(true); } },
+            ].map(({ label, value, suffix, color, accentBorder, onClick }) => (
+              <motion.button
+                key={label}
+                type="button"
+                onClick={onClick}
+                disabled={onClick === undefined}
+                whileTap={onClick !== undefined ? { scale: 0.95 } : {}}
+                className={`snap-start shrink-0 flex flex-col items-center justify-center gap-1 rounded-2xl ${onClick !== undefined ? 'cursor-pointer' : 'cursor-default'}`}
+                style={{ width: 88, minHeight: 80, background: 'rgba(255,255,255,0.40)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: `1px solid ${accentBorder}`, boxShadow: '0 2px 12px rgba(15,23,42,0.08)', padding: '10px 8px' }}
+              >
+                <span className={`text-2xl font-black tabular-nums ${color}`}>
+                  <CountUp end={value} suffix={suffix} duration={1.2} useEasing />
+                </span>
+                <span className="text-[10px] font-semibold text-slate-500 text-center leading-tight">{label}</span>
+              </motion.button>
+            ))}
+          </div>
+
+          {/* ── 2b. DESKTOP: KPI STATS ROW — 4 white Tier-2 cards ────────── */}
+          <motion.div variants={STAGGER} className="hidden md:grid grid-cols-2 gap-2 lg:grid-cols-4">
             <KpiCard
               label="ממוצע כושר כללי"
               value={fitnessAvg}
@@ -2552,18 +2589,11 @@ export default function DashboardPage(): React.JSX.Element {
               onClick={() => setMissingOpen(true)}
             />
           </motion.div>
+          </div>{/* /data-tour="dashboard-stats" */}
 
-          {/* ── 3. TOP RESULTS TICKER — live feed of record achievements ── */}
-          <motion.div variants={ITEM}>
-            <TopResultsTicker
-              items={effectiveTopAchievements}
-              fallbackText="לא הוזנו עדיין נתונים מצטיינים למחצית זו"
-              semester={activeSemester}
-            />
-          </motion.div>
-
-          {/* ── 3b. UPCOMING EVENT ────────────────────────────────────────── */}
+          {/* ── 3. UPCOMING EVENT ────────────────────────────────────────── */}
           <motion.div
+            data-tour="dashboard-event"
             variants={ITEM}
             whileHover={{ y: -6, scale: 1.01, boxShadow: '0 28px 52px -12px rgba(109,40,217,0.30)', filter: 'saturate(160%) brightness(1.02)', transition: { type: 'spring', stiffness: 280, damping: 20 } }}
             className="relative overflow-hidden rounded-3xl border border-[var(--semester-border,rgba(139,92,246,0.20))] transition-[border-color] duration-700 shadow-[0_8px_32px_rgba(31,38,135,0.13)] p-5"
@@ -2596,7 +2626,15 @@ export default function DashboardPage(): React.JSX.Element {
               const monthYear = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric' }).format(new Date(effectiveEvent.eventDate));
               return (
                 <>
-                  <div className={`rounded-2xl p-4 ${activeSemester === 'A' ? 'bg-violet-50 border border-violet-200/60' : 'bg-emerald-50 border border-emerald-200/60'}`}>
+                  <div
+                    className="rounded-2xl p-4"
+                    style={{
+                      background: 'rgba(255,255,255,0.40)',
+                      backdropFilter: 'blur(20px) saturate(160%)',
+                      WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                      border: activeSemester === 'A' ? '1px solid rgba(139,92,246,0.25)' : '1px solid rgba(34,197,94,0.25)',
+                    }}
+                  >
                     <div className="flex items-center gap-3 mb-2">
                       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white text-sm font-extrabold ${activeSemester === 'A' ? 'bg-violet-600' : 'bg-emerald-600'}`}>
                         {new Date(effectiveEvent.eventDate).getDate()}
@@ -2625,15 +2663,20 @@ export default function DashboardPage(): React.JSX.Element {
             </Link>
           </motion.div>
 
-          {/* ── 4. HERO CHART ROW — 3-col symmetric ───────────────────────── */}
+          {/* ── 4. HERO CHART ROW — mobile: chart first; desktop: 3-col ────── */}
           <motion.div
             variants={STAGGER}
             className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-stretch"
             style={{ minHeight: 320 }}
           >
 
-            {/* ── LEFT: דורש טיפול (col-span-3) ────────────────────────── */}
-            <motion.div variants={ITEM} className="lg:col-span-3">
+            {/* ── CENTER on desktop / FIRST on mobile: Class Averages Chart ── */}
+            <div className="lg:col-span-6 lg:order-2 flex flex-col">
+              <ClassAverageTrendChart semester={deferredSemester} />
+            </div>
+
+            {/* ── LEFT on desktop / SECOND on mobile: דורש טיפול ─────────── */}
+            <motion.div data-tour="dashboard-alerts" variants={ITEM} className="lg:col-span-3 lg:order-1">
               <SemesterPanel className="flex flex-col gap-3 p-5 h-full"
                 style={{
                   backdropFilter:       'blur(22px) saturate(170%)',
@@ -2652,63 +2695,58 @@ export default function DashboardPage(): React.JSX.Element {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2.5 flex-1">
+              <div className="flex flex-row gap-2 flex-1 md:flex-col md:gap-2.5">
                 <motion.button
                   type="button"
                   onClick={() => setBelowNormOpen(true)}
                   whileHover={{ y: -2, boxShadow: '0 8px 20px rgba(239,68,68,0.22)', transition: { type: 'spring', stiffness: 400, damping: 26 } }}
-                  className="flex-1 rounded-2xl border border-red-200/50 px-3 py-4 text-center overflow-hidden relative"
+                  className="flex-1 rounded-2xl border border-red-200/50 px-2 py-2 text-center overflow-hidden relative md:px-3 md:py-4"
                   style={{ background: 'linear-gradient(135deg, rgba(254,242,242,0.90) 0%, rgba(255,255,255,0.70) 100%)' }}
                 >
                   <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-red-400 to-orange-400" />
                   <CountUp
                     end={belowNormCount}
-                    className="text-4xl font-extrabold text-red-500 tabular-nums leading-none"
+                    className="text-2xl font-extrabold text-red-500 tabular-nums leading-none md:text-4xl"
                     duration={1.6}
                     useEasing
                   />
-                  <p className="mt-1.5 text-xs font-semibold text-red-500/80">תלמידים מתחת לנורמה</p>
+                  <p className="mt-1 text-[10px] font-semibold text-red-500/80 md:mt-1.5 md:text-xs">מתחת לנורמה</p>
                 </motion.button>
                 <motion.button
                   type="button"
                   onClick={() => setMissingOpen(true)}
                   whileHover={{ y: -2, boxShadow: '0 8px 20px rgba(245,158,11,0.22)', transition: { type: 'spring', stiffness: 400, damping: 26 } }}
-                  className="flex-1 rounded-2xl border border-amber-200/50 px-3 py-4 text-center overflow-hidden relative"
+                  className="flex-1 rounded-2xl border border-amber-200/50 px-2 py-2 text-center overflow-hidden relative md:px-3 md:py-4"
                   style={{ background: 'linear-gradient(135deg, rgba(255,251,235,0.90) 0%, rgba(255,255,255,0.70) 100%)' }}
                 >
                   <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-amber-400 to-orange-400" />
                   <CountUp
                     end={pendingResults}
-                    className="text-4xl font-extrabold text-amber-600 tabular-nums leading-none"
+                    className="text-2xl font-extrabold text-amber-600 tabular-nums leading-none md:text-4xl"
                     duration={1.2}
                     useEasing
                   />
-                  <p className="mt-1.5 text-xs font-semibold text-amber-600/80">תוצאות שלא הוזנו</p>
+                  <p className="mt-1 text-[10px] font-semibold text-amber-600/80 md:mt-1.5 md:text-xs">לא הוזנו</p>
                 </motion.button>
                 <div
-                  className="flex-1 rounded-2xl border border-emerald-200/50 px-3 py-4 text-center overflow-hidden relative"
+                  className="flex-1 rounded-2xl border border-emerald-200/50 px-2 py-2 text-center overflow-hidden relative md:px-3 md:py-4"
                   style={{ background: 'linear-gradient(135deg, rgba(240,253,244,0.90) 0%, rgba(255,255,255,0.70) 100%)' }}
                 >
                   <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-emerald-400 to-teal-500" />
                   <CountUp
                     end={totalStudents}
-                    className="text-4xl font-extrabold text-emerald-600 tabular-nums leading-none"
+                    className="text-2xl font-extrabold text-emerald-600 tabular-nums leading-none md:text-4xl"
                     duration={1.8}
                     useEasing
                   />
-                  <p className="mt-1.5 text-xs font-semibold text-emerald-600/80">תלמידים פעילים סה&quot;כ</p>
+                  <p className="mt-1 text-[10px] font-semibold text-emerald-600/80 md:mt-1.5 md:text-xs">פעילים סה&quot;כ</p>
                 </div>
               </div>
               </SemesterPanel>
             </motion.div>
 
-            {/* ── CENTER: Class Averages Trend Chart (col-span-6) ────────── */}
-            <div className="lg:col-span-6 flex flex-col">
-              <ClassAverageTrendChart semester={deferredSemester} />
-            </div>
-
-            {/* ── RIGHT: מפגשי מבחן אחרונים (col-span-3) ──────────────── */}
-            <motion.div variants={ITEM} className="lg:col-span-3">
+            {/* ── RIGHT on desktop / THIRD on mobile: מפגשי מבחן אחרונים ── */}
+            <motion.div variants={ITEM} className="lg:col-span-3 lg:order-3">
               <SemesterPanel className="flex flex-col p-5 h-full"
                 style={{
                   backdropFilter:       'blur(22px) saturate(170%)',
@@ -2755,7 +2793,7 @@ export default function DashboardPage(): React.JSX.Element {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ ease: EASE, duration: 0.45, delay: i * 0.06 }}
                         whileHover={{ x: -2, transition: { duration: 0.2 } }}
-                        className="flex items-center gap-2.5 rounded-2xl border border-slate-100 bg-white/60 px-3 py-2.5"
+                        className="flex items-center gap-2.5 rounded-2xl border border-white/20 bg-white/30 px-3 py-2.5 backdrop-blur-md"
                       >
                         <div className={`shrink-0 flex flex-col items-center justify-center rounded-xl ${ac.badge} w-10 h-10`}>
                           <span className="text-xs font-extrabold leading-none">{day}</span>

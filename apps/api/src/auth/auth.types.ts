@@ -26,16 +26,23 @@ export interface TeacherProfileRecord {
   name: string;
   school: string | null;
   avatarUrl: string | null;
+  /** false until the teacher finishes the welcome tour + setup form. */
+  isOnboardingComplete: boolean;
+  /** Test type IDs preferred for boys/MALE classes. */
+  defaultMaleTestIds: string[];
+  /** Test type IDs preferred for girls/FEMALE classes. */
+  defaultFemaleTestIds: string[];
 }
 
 /**
- * Data returned from findStudentForLogin — includes passwordHash for
- * bcrypt.compare. Never leaves the auth module.
+ * Data returned from findStudentForNationalIdLogin.
+ * Includes passwordHash for optional password verification.
+ * null = student was created without a password (falls back to passwordless).
  */
 export interface StudentLoginRecord {
   studentId: string;
   classId: string;
-  passwordHash: string;
+  passwordHash: string | null;
 }
 
 /** Access + refresh token pair issued after successful authentication. */

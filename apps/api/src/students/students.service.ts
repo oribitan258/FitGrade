@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
 import type { Semester } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import * as xlsx from 'xlsx';
 import { StudentsRepository } from './students.repository';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import type { CreateStudentDto } from './dto/create-student.dto';
@@ -19,6 +20,7 @@ import type {
   StudentReportResponseDto,
 } from './dto/student-report-response.dto';
 import type { FinalGradeResult, RawGradeComponents } from './students.repository';
+import type { ImportResultDto, ParsedStudentRow } from './dto/import-students.dto';
 
 /** Hebrew month labels for building per-student history points. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -27,8 +29,6 @@ const HEBREW_MONTH_LABELS: Record<number, string> = {
   9: "ספט'", 10: "אוק'", 11: "נוב'", 12: "דצמ'",
 };
 
-/** bcrypt work factor — 12 rounds is the recommended minimum for 2024. */
-const BCRYPT_SALT_ROUNDS = 12;
 
 @Injectable()
 export class StudentsService {
@@ -453,43 +453,174 @@ export class StudentsService {
    * Creates a new student and enrolls them in the given class.
    *
    * - Verifies the class belongs to the teacher.
-   * - Hashes the password with bcrypt before storage.
-   * - Enforces studentCode uniqueness within the class.
+   * - If nationalId is provided: pads to 9 digits and validates via Israeli Luhn.
+   * - Auto-generates an internal studentCode (last 4 of ID, or random 4-digit).
    * - Creates the Student row and ClassEnrollment in a single transaction.
    */
   async addStudentToClass(
     classId: string,
     dto: CreateStudentDto,
     teacherId: string,
-  ): Promise<StudentResponseDto> {
+  ): Promise<{ student: StudentResponseDto; reEnrolled: false }> {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
+    const nationalId = dto.nationalId.padStart(9, '0');
+    if (!StudentsService.isValidIsraeliId(nationalId)) {
+      throw new BadRequestException('מספר זהות לא תקין');
+    }
 
-    const student = await this.studentsRepository.createWithEnrollment(
-      classId,
-      {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        dateOfBirth: new Date(dto.dateOfBirth),
-        gender: dto.gender,
-        studentCode: dto.studentCode,
-        passwordHash,
-      },
-    );
+    const genderType = await this.studentsRepository.findClassGenderType(classId);
+    if (genderType === 'GIRLS' && dto.gender === 'MALE') {
+      throw new BadRequestException('לא ניתן להוסיף תלמיד זכר לכיתת בנות');
+    }
+    if (genderType === 'BOYS' && dto.gender === 'FEMALE') {
+      throw new BadRequestException('לא ניתן להוסיף תלמידה נקבה לכיתת בנים');
+    }
+
+    const studentCode = nationalId.slice(-4);
+    const passwordHash = await bcrypt.hash(nationalId, 12);
+
+    const result = await this.studentsRepository.enrollStudent(classId, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      gender: dto.gender,
+      studentCode,
+      nationalId,
+      passwordHash,
+    });
 
     this.logger.log(
-      `Student created: id=${student.id} code=${dto.studentCode} class=${classId}`,
+      `Student enrolled: id=${result.student.id} reEnrolled=${result.reEnrolled} class=${classId}`,
     );
 
     void this.auditLogService.log({
       action: AuditAction.STUDENT_ENROLLED,
       entityType: 'ClassEnrollment',
-      entityId: student.id,
+      entityId: result.student.id,
       actorId: teacherId,
-      newValue: { classId, studentCode: dto.studentCode },
+      newValue: { classId, studentCode, reEnrolled: result.reEnrolled },
     });
 
-    return student;
+    return result;
+  }
+
+  // ─── Excel / CSV roster import ─────────────────────────────────────────────
+
+  /** Header aliases accepted from Mashov / Smart School exports (trimmed, lowercased for matching). */
+  private static readonly NATIONAL_ID_HEADERS = ['מספר זהות', "ת''ז", 'ת"ז', 'ת.ז.', 'תעודת זהות'];
+  private static readonly FIRST_NAME_HEADERS   = ['שם פרטי', 'שם'];
+  private static readonly LAST_NAME_HEADERS    = ['שם משפחה'];
+  private static readonly GENDER_HEADERS       = ['מין', 'מגדר'];
+
+  /**
+   * Parses an uploaded Excel or CSV file and bulk-enrolls students into the given class.
+   * Validates each row (Israeli Luhn checksum, required fields).
+   * Returns a summary of added, existing, and errored rows.
+   */
+  async importFromFile(
+    classId: string,
+    teacherId: string,
+    fileBuffer: Buffer,
+    mimetype: string,
+  ): Promise<ImportResultDto> {
+    await this.studentsRepository.verifyClassOwnership(classId, teacherId);
+
+    // Parse workbook
+    const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      throw new BadRequestException('קובץ ריק — לא נמצאו גיליונות');
+    }
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+
+    if (rows.length < 2) {
+      throw new BadRequestException('הקובץ חייב להכיל שורת כותרות ולפחות שורת נתונים אחת');
+    }
+
+    // Detect column indices from header row
+    const headers = (rows[0] as string[]).map((h) => String(h).trim());
+    const colIdx = (aliases: string[]): number =>
+      headers.findIndex((h) => aliases.some((a) => h === a));
+
+    const idxNationalId = colIdx(StudentsService.NATIONAL_ID_HEADERS);
+    const idxFirstName  = colIdx(StudentsService.FIRST_NAME_HEADERS);
+    const idxLastName   = colIdx(StudentsService.LAST_NAME_HEADERS);
+    const idxGender     = colIdx(StudentsService.GENDER_HEADERS);
+
+    if (idxNationalId === -1 || idxFirstName === -1 || idxLastName === -1) {
+      throw new BadRequestException(
+        'קובץ לא תקין: חסרות עמודות נדרשות (מספר זהות, שם פרטי, שם משפחה)',
+      );
+    }
+
+    // Parse and validate each data row
+    const validRows: ParsedStudentRow[] = [];
+    const errors: ImportResultDto['errors'] = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] as string[];
+      const rowIndex = i + 1; // 1-based for user-facing error messages
+
+      const rawId      = String(row[idxNationalId] ?? '').trim();
+      const firstName  = String(row[idxFirstName]  ?? '').trim();
+      const lastName   = String(row[idxLastName]   ?? '').trim();
+      const rawGender  = idxGender !== -1 ? String(row[idxGender] ?? '').trim() : '';
+
+      // Skip fully blank rows
+      if (!rawId && !firstName && !lastName) continue;
+
+      // Validate national ID
+      if (!/^\d{1,9}$/.test(rawId)) {
+        errors.push({ row: rowIndex, nationalId: rawId, reason: 'מספר זהות לא תקין (חייב להכיל ספרות בלבד, עד 9)' });
+        continue;
+      }
+      const nationalId = rawId.padStart(9, '0');
+      if (!StudentsService.isValidIsraeliId(nationalId)) {
+        errors.push({ row: rowIndex, nationalId, reason: 'מספר זהות לא עובר בדיקת ספרת ביקורת' });
+        continue;
+      }
+
+      if (!firstName) { errors.push({ row: rowIndex, nationalId, reason: 'שם פרטי חסר' }); continue; }
+      if (!lastName)  { errors.push({ row: rowIndex, nationalId, reason: 'שם משפחה חסר' }); continue; }
+
+      const gender: 'MALE' | 'FEMALE' | null =
+        ['זכר', 'ז'].includes(rawGender) ? 'MALE' :
+        ['נקבה', 'נ'].includes(rawGender) ? 'FEMALE' : null;
+
+      validRows.push({ nationalId, firstName, lastName, gender, rowIndex });
+    }
+
+    if (validRows.length === 0 && errors.length === 0) {
+      return { added: 0, existing: 0, reEnrolled: 0, errors: [] };
+    }
+
+    const { added, existing, reEnrolled } = await this.studentsRepository.importStudents(classId, validRows);
+
+    if (added > 0 || reEnrolled > 0) {
+      await this.auditLogService.log({
+        action: AuditAction.STUDENT_ENROLLED,
+        entityType: 'Class',
+        entityId: classId,
+        actorId: teacherId,
+        newValue: { importedCount: added, reEnrolledCount: reEnrolled },
+      });
+    }
+
+    this.logger.log(`Roster import: class=${classId} added=${added} reEnrolled=${reEnrolled} existing=${existing} errors=${errors.length}`);
+    return { added, existing, reEnrolled, errors };
+  }
+
+  /**
+   * Israeli national ID Luhn-variant checksum.
+   * Input must be exactly 9 digits.
+   */
+  private static isValidIsraeliId(id: string): boolean {
+    if (!/^\d{9}$/.test(id)) return false;
+    const sum = id.split('').reduce((acc, digit, i) => {
+      const val = parseInt(digit, 10) * (i % 2 === 0 ? 1 : 2);
+      return acc + (val > 9 ? val - 9 : val);
+    }, 0);
+    return sum % 10 === 0;
   }
 }

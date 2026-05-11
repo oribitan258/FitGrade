@@ -150,9 +150,16 @@ function AttendanceTab({ classId }: AttendanceTabProps): React.JSX.Element {
               accessibilityLabel={`${item.firstName} ${item.lastName} — ${isPresent ? 'נוכח' : 'נעדר'}, לחץ לשינוי`}
             >
               {/* In RTL row: name appears on the RIGHT, badge on the LEFT */}
-              <Text style={[styles.attendanceName, !isPresent && styles.absentText]}>
-                {item.firstName} {item.lastName}
-              </Text>
+              <View style={styles.studentNameBlock}>
+                <Text style={[styles.attendanceName, !isPresent && styles.absentText]}>
+                  {item.firstName} {item.lastName}
+                </Text>
+                {item.nationalId !== null && item.nationalId !== undefined && (
+                  <Text style={styles.studentIdText}>
+                    ת.ז ****{item.nationalId.slice(-4)}
+                  </Text>
+                )}
+              </View>
               <View style={[styles.statusPill, isPresent ? styles.presentPill : styles.absentPill]}>
                 <Text style={styles.statusPillText}>{isPresent ? 'נוכח' : 'נעדר'}</Text>
               </View>
@@ -470,12 +477,20 @@ const styles = StyleSheet.create({
   absentRow: {
     backgroundColor: '#fef2f2',
   },
+  studentNameBlock: {
+    flex: 1,
+  },
   attendanceName: {
     fontSize: FONT_SIZE_BODY,
     color: COLORS.foreground,
     fontWeight: '500',
     textAlign: 'right',
-    flex: 1,
+  },
+  studentIdText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   absentText: {
     color: '#991b1b',

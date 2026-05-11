@@ -17,9 +17,8 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
-import { useStudents } from '@/hooks/use-classes';
-import { useClassDetails } from '@/hooks/use-classes';
-import { useClass } from '@/hooks/use-classes';
+import { useStudents, useClassDetails, useClass } from '@/hooks/use-classes';
+import { useSemester } from '@/contexts/semester-context';
 import { getHebrewGradeLabel } from '@fitgrade/types';
 import type { ClassDetails, StudentData } from '@fitgrade/types';
 import { cn } from '@/lib/utils';
@@ -411,10 +410,11 @@ function TeamCard({ team, index, metric }: TeamCardProps): React.JSX.Element {
 
 export default function TeamBuilderPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
+  const { activeSemester } = useSemester();
 
   const { data: cls }     = useClass(classId);
   const { data: students, isLoading: studentsLoading } = useStudents(classId);
-  const { data: details, isLoading: detailsLoading }   = useClassDetails(classId);
+  const { data: details, isLoading: detailsLoading }   = useClassDetails(classId, activeSemester);
 
   const isLoading = studentsLoading || detailsLoading;
 

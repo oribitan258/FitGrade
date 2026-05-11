@@ -259,17 +259,6 @@ export class ReportsRepository {
   }
 
   /**
-   * Counts how many TestSessions exist for a class in a specific semester.
-   * Used as a pre-check: if 0 sessions exist we return an empty report rather
-   * than leaking year-wide Talmidaut data into a semester with no test activity.
-   */
-  async countTestSessionsForSemester(classId: string, semester: Semester): Promise<number> {
-    return this.prisma.testSession.count({
-      where: { classId, semester },
-    });
-  }
-
-  /**
    * Returns full attendance records for the attendance-tab report.
    */
   async findAttendanceReport(

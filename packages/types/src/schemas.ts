@@ -14,7 +14,6 @@ export interface ClassData {
   id: string;
   name: string;
   academicYear: string;
-  semester: Semester;
   /** Gender composition of the class: BOYS | GIRLS | MIXED. */
   genderType: ClassGenderType;
   joinCode: string;
@@ -27,6 +26,8 @@ export interface ClassData {
   testWeight: number | null;
   /** Per-class Talmida'ut weight override. null = use teacher's global default. */
   talmidautWeight: number | null;
+  /** Which academic semester this class is associated with. */
+  semester: 'A' | 'B';
 }
 
 /** Mirrors FitnessTestTypeResponseDto returned by GET /tests/types */
@@ -52,8 +53,9 @@ export interface StudentData {
   firstName: string;
   lastName: string;
   studentCode: string;
+  nationalId: string | null;
   gender: Gender;
-  dateOfBirth: string;
+  dateOfBirth: string | null;
   createdAt: string;
 }
 
@@ -69,7 +71,6 @@ export const createClassSchema = z.object({
     /^\d{4}-\d{4}$/,
     'פורמט שנת לימודים לא תקין — לדוגמה: 2024-2025',
   ),
-  semester: z.enum(['A', 'B'], { required_error: 'יש לבחור סמסטר' }),
   genderType: z.enum(['BOYS', 'GIRLS', 'MIXED']).default('MIXED'),
   /** School grade level 1–12. Optional for backward compatibility with legacy callers. */
   gradeLevel: z.number().int().min(1).max(12).optional(),
@@ -77,24 +78,15 @@ export const createClassSchema = z.object({
 
 export type CreateClassInput = z.infer<typeof createClassSchema>;
 
-/**
- * Validates the body sent to POST /classes/:classId/students.
- * dateOfBirth must be a valid ISO 8601 date string.
- * password minimum 8 characters (hashed server-side by bcrypt).
- */
+/** Validates the body sent to POST /classes/:classId/students (manual creation). */
 export const createStudentSchema = z.object({
   firstName: z.string().min(1, 'שם פרטי חובה'),
   lastName: z.string().min(1, 'שם משפחה חובה'),
-  dateOfBirth: z
-    .string()
-    .min(1, 'תאריך לידה חובה')
-    .refine((val) => !isNaN(Date.parse(val)), { message: 'תאריך לידה לא תקין' }),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { required_error: 'יש לבחור מין' }),
-  studentCode: z
-    .string()
-    .min(2, 'קוד תלמיד חייב להכיל לפחות 2 תווים')
-    .max(10, 'קוד תלמיד חייב להכיל לכל היותר 10 תווים'),
-  password: z.string().min(8, 'סיסמה חייבת להכיל לפחות 8 תווים'),
+  nationalId: z
+    .string({ required_error: 'תעודת זהות חובה' })
+    .min(1, 'תעודת זהות חובה')
+    .regex(/^\d{1,9}$/, 'תעודת זהות חייבת להכיל ספרות בלבד (עד 9)'),
 });
 
 export type CreateStudentInput = z.infer<typeof createStudentSchema>;
@@ -242,6 +234,7 @@ export interface SessionStudent {
   firstName: string;
   lastName: string;
   studentCode: string;
+  nationalId: string | null;
 }
 
 /** Full response of GET /sessions/:sessionId — powers the live-session page. */

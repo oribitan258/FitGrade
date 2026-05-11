@@ -54,7 +54,7 @@ export function BeepTestProvider({
 
   return (
     <BeepTestContext.Provider value={value}>
-      {children}
+      <>{children}</>
     </BeepTestContext.Provider>
   );
 }

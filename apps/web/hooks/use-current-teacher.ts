@@ -11,6 +11,9 @@ export interface TeacherProfile {
   name: string;
   school: string | null;
   avatarUrl: string | null;
+  isOnboardingComplete: boolean;
+  defaultMaleTestIds: string[];
+  defaultFemaleTestIds: string[];
 }
 
 function fetcher(path: string): Promise<TeacherProfile> {

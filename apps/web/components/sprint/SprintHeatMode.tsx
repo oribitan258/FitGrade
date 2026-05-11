@@ -140,21 +140,21 @@ const FLOAT_ICONS: FloatDef[] = [
 // ─── Demo roster ───────────────────────────────────────────────────────────────
 
 const DEMO_STUDENTS: SessionStudent[] = [
-  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209' },
-  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145' },
-  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312' },
-  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278' },
-  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163' },
-  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391' },
-  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224' },
-  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187' },
-  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356' },
-  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299' },
-  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134' },
-  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445' },
-  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267' },
-  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318' },
-  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203' },
+  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209', nationalId: null },
+  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145', nationalId: null },
+  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312', nationalId: null },
+  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278', nationalId: null },
+  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163', nationalId: null },
+  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391', nationalId: null },
+  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224', nationalId: null },
+  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187', nationalId: null },
+  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356', nationalId: null },
+  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299', nationalId: null },
+  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134', nationalId: null },
+  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445', nationalId: null },
+  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267', nationalId: null },
+  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318', nationalId: null },
+  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203', nationalId: null },
 ];
 
 // ─── Rank badge colours ────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ export function SprintHeatMode({ testName: defaultTestName, activeStudents }: Sp
         Array.from(merged.entries()).map(([studentId, ms]) =>
           apiRequest(`/sessions/${sessionId}/results`, {
             method: 'POST',
-            body: JSON.stringify({ studentId, rawValue: (ms / 1000).toFixed(2) }),
+            body: JSON.stringify({ studentId, rawValue: parseFloat((ms / 1000).toFixed(2)) }),
           }),
         ),
       );

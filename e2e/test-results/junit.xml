@@ -1,0 +1,302 @@
+<testsuites id="" name="" tests="31" failures="0" skipped="0" errors="7" time="505.371748">
+<testsuite name="tour\security\bleed.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="4" failures="0" skipped="0" time="78.55" errors="1">
+<testcase name="tour security — data bleed › interceptor is cleared after tour FINISH — real /api/classes fires after settings lands" classname="tour\security\bleed.spec.ts" time="46.275">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-security-bleed-tour-s-47952--fires-after-settings-lands-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-security-bleed-tour-s-47952--fires-after-settings-lands-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\security\bleed.spec.ts:31:7 › tour security — data bleed › interceptor is cleared after tour FINISH — real /api/classes fires after settings lands 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\security\bleed.spec.ts:58:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-security-bleed-tour-s-47952--fires-after-settings-lands-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-security-bleed-tour-s-47952--fires-after-settings-lands-chromium\error-context.md
+]]>
+</error>
+</testcase>
+<testcase name="tour security — data bleed › interceptor is cleared after SKIP — real /api/classes fires after skip" classname="tour\security\bleed.spec.ts" time="10.944">
+</testcase>
+<testcase name="tour security — data bleed › seedTourSchedule does not overwrite a pre-existing real schedule" classname="tour\security\bleed.spec.ts" time="11.04">
+</testcase>
+<testcase name="tour security — data bleed › reload during tour resets to idle (no body class, no leftover mock state)" classname="tour\security\bleed.spec.ts" time="10.291">
+</testcase>
+</testsuite>
+<testsuite name="tour\security\lockdown-bypass.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="5" failures="0" skipped="0" time="50.209" errors="0">
+<testcase name="tour security — lockdown bypass › user click on a sidebar link is absorbed (no navigation)" classname="tour\security\lockdown-bypass.spec.ts" time="10.35">
+</testcase>
+<testcase name="tour security — lockdown bypass › manually removing body.tour-active is reverted by the MutationObserver" classname="tour\security\lockdown-bypass.spec.ts" time="10.107">
+</testcase>
+<testcase name="tour security — lockdown bypass › keyboard Tab+Enter on a sidebar link is blocked by the inert wrapper" classname="tour\security\lockdown-bypass.spec.ts" time="9.917">
+</testcase>
+<testcase name="tour security — lockdown bypass › programmatic .click() on an underlying button is blocked by the capture-phase listener" classname="tour\security\lockdown-bypass.spec.ts" time="10.029">
+</testcase>
+<testcase name="tour security — lockdown bypass › direct address-bar navigation mid-tour cleans up without leaving a half-state" classname="tour\security\lockdown-bypass.spec.ts" time="9.806">
+</testcase>
+</testsuite>
+<testsuite name="tour\security\state-manipulation.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="5" failures="0" skipped="0" time="26.56" errors="0">
+<testcase name="tour security — state manipulation › no tour-related globals reachable from window during the tour" classname="tour\security\state-manipulation.spec.ts" time="9.254">
+</testcase>
+<testcase name="tour security — state manipulation › TOUR_MOCK singleton is not reachable via window.require or webpack require" classname="tour\security\state-manipulation.spec.ts" time="8.461">
+</testcase>
+<testcase name="tour security — state manipulation › no React Devtools fastRefresh dispatch handle is exposed" classname="tour\security\state-manipulation.spec.ts" time="8.83">
+<properties>
+<property name="manual-review-required" value="React Devtools hook present=true, renderers=0. Manual review confirms dispatch is closed over by useReducer and not reachable.">
+</property>
+</properties>
+</testcase>
+<testcase name="tour security — state manipulation › static: reducer is defined as a pure function (no module-level mutable state outside the reducer body)" classname="tour\security\state-manipulation.spec.ts" time="0.008">
+</testcase>
+<testcase name="tour security — state manipulation › static: TOUR_MOCK singleton can only be mutated through installFetcherInterceptor / clearFetcherInterceptor" classname="tour\security\state-manipulation.spec.ts" time="0.007">
+</testcase>
+</testsuite>
+<testsuite name="tour\security\xss.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="5" failures="0" skipped="0" time="8.955" errors="0">
+<testcase name="tour security — XSS / DOM injection › runtime: tooltip renders text content (window.__pwned not set)" classname="tour\security\xss.spec.ts" time="8.915">
+</testcase>
+<testcase name="tour security — XSS / DOM injection › static: every TOUR_STEP target is a string literal (no variable interpolation)" classname="tour\security\xss.spec.ts" time="0.006">
+</testcase>
+<testcase name="tour security — XSS / DOM injection › static: no dangerouslySetInnerHTML appears anywhere in the tour module set" classname="tour\security\xss.spec.ts" time="0.027">
+</testcase>
+<testcase name="tour security — XSS / DOM injection › static: no document.querySelector with a non-literal argument in tour code" classname="tour\security\xss.spec.ts" time="0.004">
+</testcase>
+<testcase name="tour security — XSS / DOM injection › static: tour-mock-data class names contain no HTML metacharacters" classname="tour\security\xss.spec.ts" time="0.003">
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-cold-start.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="1" failures="0" skipped="0" time="42.943" errors="1">
+<testcase name="tour — cold-start happy path › walks every step and lands on /settings with lockdown cleared" classname="tour\tour-cold-start.spec.ts" time="42.943">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-cold-start-tour--90baf-tings-with-lockdown-cleared-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-cold-start-tour--90baf-tings-with-lockdown-cleared-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-cold-start.spec.ts:29:7 › tour — cold-start happy path › walks every step and lands on /settings with lockdown cleared 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-cold-start.spec.ts:46:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-cold-start-tour--90baf-tings-with-lockdown-cleared-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-cold-start-tour--90baf-tings-with-lockdown-cleared-chromium\error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-lockdown.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="3" failures="0" skipped="0" time="27.736" errors="0">
+<testcase name="tour — pointer-events lockdown › clicking a sidebar item during tour does not navigate" classname="tour\tour-lockdown.spec.ts" time="10.161">
+</testcase>
+<testcase name="tour — pointer-events lockdown › main content elements behind the overlay are not clickable" classname="tour\tour-lockdown.spec.ts" time="8.919">
+</testcase>
+<testcase name="tour — pointer-events lockdown › joyride portal itself remains interactive (pointer-events: auto exception)" classname="tour\tour-lockdown.spec.ts" time="8.656">
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-network-isolation.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="1" failures="0" skipped="0" time="41.401" errors="1">
+<testcase name="tour — network isolation › no tour-mocked endpoint leaks to real API during the tour" classname="tour\tour-network-isolation.spec.ts" time="41.401">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-network-isolatio-4acd2-to-real-API-during-the-tour-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-network-isolatio-4acd2-to-real-API-during-the-tour-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-network-isolation.spec.ts:42:7 › tour — network isolation › no tour-mocked endpoint leaks to real API during the tour 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-network-isolation.spec.ts:62:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-network-isolatio-4acd2-to-real-API-during-the-tour-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-network-isolatio-4acd2-to-real-API-during-the-tour-chromium\error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-routing-sync.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="2" failures="0" skipped="0" time="83.509" errors="2">
+<testcase name="tour — routing sync › every step lands on the expected route and tooltip renders" classname="tour\tour-routing-sync.spec.ts" time="42.316">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-routing-sync-tou-74272-d-route-and-tooltip-renders-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-routing-sync-tou-74272-d-route-and-tooltip-renders-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-routing-sync.spec.ts:42:7 › tour — routing sync › every step lands on the expected route and tooltip renders 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-routing-sync.spec.ts:50:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-routing-sync-tou-74272-d-route-and-tooltip-renders-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-routing-sync-tou-74272-d-route-and-tooltip-renders-chromium\error-context.md
+]]>
+</error>
+</testcase>
+<testcase name="tour — routing sync › no error UI appears during the class-detail transition (step 6 → step 7)" classname="tour\tour-routing-sync.spec.ts" time="41.193">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-routing-sync-tou-4bc45-transition-step-6-→-step-7--chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-routing-sync-tou-4bc45-transition-step-6-→-step-7--chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-routing-sync.spec.ts:68:7 › tour — routing sync › no error UI appears during the class-detail transition (step 6 → step 7) 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-routing-sync.spec.ts:75:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-routing-sync-tou-4bc45-transition-step-6-→-step-7--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-routing-sync-tou-4bc45-transition-step-6-→-step-7--chromium\error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-state-machine-integrity.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="4" failures="0" skipped="0" time="80.663" errors="1">
+<testcase name="tour — state machine integrity › rapid Next clicks advance one step per click" classname="tour\tour-state-machine-integrity.spec.ts" time="41.493">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-state-machine-in-bfba3--advance-one-step-per-click-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-state-machine-in-bfba3--advance-one-step-per-click-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-state-machine-integrity.spec.ts:27:7 › tour — state machine integrity › rapid Next clicks advance one step per click 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+      38 |     // to every cross-route crossing the rapid clicks induce, so we use the
+      39 |     // same 30s budget as `clickNext` rather than the original 8s.
+    > 40 |     await expect.poll(async () => {
+         |     ^
+      41 |       try {
+      42 |         return (await readStepCounter(page)).index;
+      43 |       } catch {
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-state-machine-integrity.spec.ts:40:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-state-machine-in-bfba3--advance-one-step-per-click-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-state-machine-in-bfba3--advance-one-step-per-click-chromium\error-context.md
+]]>
+</error>
+</testcase>
+<testcase name="tour — state machine integrity › mid-tour page reload clears body class and idles the machine" classname="tour\tour-state-machine-integrity.spec.ts" time="11.179">
+</testcase>
+<testcase name="tour — state machine integrity › skip via X button removes overlay, lockdown, and stops tour" classname="tour\tour-state-machine-integrity.spec.ts" time="11.295">
+</testcase>
+<testcase name="tour — state machine integrity › re-entry after completion starts cleanly from step 0" classname="tour\tour-state-machine-integrity.spec.ts" time="16.696">
+</testcase>
+</testsuite>
+<testsuite name="tour\tour-visual-regression.spec.ts" timestamp="2026-05-11T16:11:52.240Z" hostname="chromium" tests="1" failures="0" skipped="0" time="55.552" errors="1">
+<testcase name="tour — visual regression › captures every step plus settings finale" classname="tour\tour-visual-regression.spec.ts" time="55.552">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\..\test-results\tour-tour-visual-regressio-e4231-y-step-plus-settings-finale-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\..\test-results\tour-tour-visual-regressio-e4231-y-step-plus-settings-finale-chromium\error-context.md]]
+]]>
+</system-out>
+<error message="Timeout 30000ms exceeded while waiting on the predicate" type="Error">
+<![CDATA[  [chromium] › tour\tour-visual-regression.spec.ts:37:7 › tour — visual regression › captures every step plus settings finale 
+
+    Error: Timeout 30000ms exceeded while waiting on the predicate
+
+       at tour\_helpers.ts:157
+
+      155 |   // CI builds use `next start` (no per-route compile) so this never bites
+      156 |   // there — only local dev runs need the longer wait.
+    > 157 |   await expect
+          |   ^
+      158 |     .poll(
+      159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+      160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+        at clickNext (C:\Users\oribi\Projects\FitGrade\e2e\tour\_helpers.ts:157:3)
+        at C:\Users\oribi\Projects\FitGrade\e2e\tour\tour-visual-regression.spec.ts:59:9
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\tour-tour-visual-regressio-e4231-y-step-plus-settings-finale-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\tour-tour-visual-regressio-e4231-y-step-plus-settings-finale-chromium\error-context.md
+]]>
+</error>
+</testcase>
+</testsuite>
+</testsuites>

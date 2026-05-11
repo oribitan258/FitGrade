@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OfflineBanner } from '../components/offline-banner';
 import { useNetworkStatus } from '../hooks/use-network-status';
-import { getOfflineQueue, dequeueOfflineTap } from '../lib/storage';
+import { getOfflineQueue, dequeueOfflineTap, initStorage, warmTokenCache } from '../lib/storage';
 import { api } from '../lib/api';
 
 // ─── RTL enforcement — MUST be the first code that runs ──────────────────────
@@ -78,6 +78,10 @@ export default function RootLayout(): React.JSX.Element {
     // Re-assert on mount in case a hot reload partially reset the flag.
     I18nManager.allowRTL(true);
     I18nManager.forceRTL(true);
+
+    // Initialise encrypted MMKV store and warm the token cache so API calls
+    // have the JWT available synchronously on the first render.
+    void initStorage().then(() => warmTokenCache());
   }, []);
 
   useOfflineQueueFlush();

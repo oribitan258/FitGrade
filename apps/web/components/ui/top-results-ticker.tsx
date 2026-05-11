@@ -81,7 +81,7 @@ export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopRes
   if (isEmpty && !fallbackText) return <></>;
 
   // Fallback scrolls at a calm fixed pace; real items scale with content length.
-  const scrollDuration = isEmpty ? 22 : Math.max(18, items.length * 6);
+  const scrollDuration = isEmpty ? 12 : Math.max(10, items.length * 3);
 
   return (
     <div

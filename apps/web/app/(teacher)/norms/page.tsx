@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Award, BookOpen, ChevronDown, Filter, Info, Search, TrendingUp } from 'lucide-react';
 import { useTestTypes } from '@/hooks/use-test-types';
 import { useTestTypeNorms, type NormBand } from '@/hooks/use-norms';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 import { cn } from '@/lib/utils';
 import { getHebrewGradeLabel } from '@fitgrade/types';
 
@@ -40,20 +41,14 @@ function bracketFor(score: number): Bracket {
   );
 }
 
-/** Age group definitions — per-grade secondary resolution matching seed norm bands. */
-const AGE_GROUPS = [
-  { key: '6-8',   label: "א'–ב'", minAge: 6,  maxAge: 8  },
-  { key: '8-10',  label: "ג'–ד'", minAge: 8,  maxAge: 10 },
-  { key: '10-12', label: "ה'–ו'", minAge: 10, maxAge: 12 },
-  { key: '12-13', label: "ז'",    minAge: 12, maxAge: 13 },
-  { key: '13-14', label: "ח'",    minAge: 13, maxAge: 14 },
-  { key: '14-15', label: "ט'",    minAge: 14, maxAge: 15 },
-  { key: '15-16', label: "י'",    minAge: 15, maxAge: 16 },
-  { key: '16-17', label: 'י"א',   minAge: 16, maxAge: 17 },
-  { key: '17-18', label: 'י"ב',   minAge: 17, maxAge: 18 },
-] as const;
+const HEBREW_GRADE: Record<number, string> = {
+  1: "א'", 2: "ב'", 3: "ג'", 4: "ד'", 5: "ה'", 6: "ו'",
+  7: "ז'", 8: "ח'", 9: "ט'", 10: "י'", 11: 'י"א', 12: 'י"ב',
+};
 
-type AgeGroupKey = (typeof AGE_GROUPS)[number]['key'];
+function gradeLevelLabel(grade: number): string {
+  return HEBREW_GRADE[grade] ?? `כיתה ${grade}`;
+}
 
 const GENDER_OPTS = [
   { value: 'MALE'   as const, label: 'בנים' },
@@ -118,22 +113,13 @@ interface NormTableProps {
   higherIsBetter: boolean;
   unit: string | null;
   gender: GenderOpt;
-  ageGroupKey: AgeGroupKey;
+  gradeLevel: number;
 }
 
-function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey }: NormTableProps): React.JSX.Element {
-  const ageGroup = AGE_GROUPS.find((g) => g.key === ageGroupKey)!;
-
-  // Filter to selected gender + age group
+function NormTable({ bands, inputType, higherIsBetter, unit, gender, gradeLevel }: NormTableProps): React.JSX.Element {
   const filtered = useMemo(
-    () =>
-      bands.filter(
-        (b) =>
-          b.gender === gender &&
-          b.minAge === ageGroup.minAge &&
-          b.maxAge === ageGroup.maxAge,
-      ),
-    [bands, gender, ageGroup],
+    () => bands.filter((b) => b.gender === gender && b.gradeLevel === gradeLevel),
+    [bands, gender, gradeLevel],
   );
 
   if (filtered.length === 0) {
@@ -145,7 +131,7 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
         <div>
           <p className="font-semibold text-slate-700">אין נתוני נורמות</p>
           <p className="mt-1 text-sm text-slate-400">
-            אין נתונים עבור קבוצת גיל זו במבחן שנבחר
+            אין נתוני נורמה למבחן זה בשכבת גיל זו
           </p>
         </div>
       </div>
@@ -153,7 +139,8 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/70 shadow-[0_8px_32px_rgba(15,23,42,0.10)]">
+    <div className="overflow-x-auto rounded-2xl border border-white/70 shadow-[0_8px_32px_rgba(15,23,42,0.10)]">
+      <div className="min-w-[360px]">
       {/* Table header */}
       <div
         className="sticky top-0 z-10 border-b border-slate-200/60 bg-white/90 backdrop-blur-sm px-5 py-3
@@ -171,7 +158,7 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
       <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-50">
         <AnimatePresence mode="wait">
           <motion.div
-            key={`${gender}-${ageGroupKey}`}
+            key={`${gender}-${gradeLevel}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -226,19 +213,20 @@ function NormTable({ bands, inputType, higherIsBetter, unit, gender, ageGroupKey
           </motion.div>
         </AnimatePresence>
       </div>
+      </div>
     </div>
   );
 }
 
 // ─── Filter Row ───────────────────────────────────────────────────────────────
 
-interface FilterPillsProps<T extends string> {
+interface FilterPillsProps<T extends string | number> {
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
 }
 
-function FilterPills<T extends string>({
+function FilterPills<T extends string | number>({
   options,
   value,
   onChange,
@@ -273,22 +261,19 @@ function FilterPills<T extends string>({
   );
 }
 
-/** All age group options — always shown regardless of selected test. */
-const ALL_AGE_GROUP_OPTS = AGE_GROUPS.map((g) => ({ value: g.key, label: g.label }));
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AchievementTablesPage(): React.JSX.Element {
   const { data: testTypes, isLoading: typesLoading } = useTestTypes();
 
+  useSignalPageReady('norms', testTypes !== undefined);
+
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [gender, setGender]                 = useState<GenderOpt>('MALE');
-  // Default to ז' (12–13) — first secondary grade
-  const [ageGroupKey, setAgeGroupKey]       = useState<AgeGroupKey>('12-13');
+  const [gradeLevel, setGradeLevel]         = useState<number>(7);
   const [search, setSearch]                 = useState('');
 
-  // Auto-select "ריצת 2000 מטר" (run2000) when the test-type catalog first loads.
-  // Falls back to the first type in the list if run2000 is not found.
   useEffect(() => {
     if (!testTypes || selectedTypeId !== null) return;
     const run2000 = testTypes.find((t) => t.nameHe === 'ריצת 2000 מטר');
@@ -296,6 +281,21 @@ export default function AchievementTablesPage(): React.JSX.Element {
   }, [testTypes, selectedTypeId]);
 
   const { data: norms, isLoading: normsLoading } = useTestTypeNorms(selectedTypeId);
+
+  // Derive unique grade levels present in the norms data for the filter pills.
+  const availableGrades = useMemo(() => {
+    if (!norms) return [7];
+    const grades = Array.from(new Set(norms.bands.map((b) => b.gradeLevel))).sort((a, b) => a - b);
+    return grades.length > 0 ? grades : [7];
+  }, [norms]);
+
+  // Snap to first available grade when test type changes and selected grade has no data.
+  useEffect(() => {
+    if (!norms) return;
+    if (!availableGrades.includes(gradeLevel)) {
+      setGradeLevel(availableGrades[0] ?? 7);
+    }
+  }, [norms, availableGrades, gradeLevel]);
 
   // Filtered test type list for the dropdown search
   const filteredTypes = useMemo(
@@ -313,7 +313,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
       variants={PAGE_ENTER}
       initial="hidden"
       animate="show"
-      className="space-y-6"
+      className="space-y-6 pt-16 px-4 md:pt-0 md:px-0"
     >
       {/* ── Page header ─────────────────────────────────────────── */}
       <motion.div variants={ITEM} className="flex items-start justify-between gap-4">
@@ -355,10 +355,10 @@ export default function AchievementTablesPage(): React.JSX.Element {
         variants={ITEM}
         className="rounded-2xl bg-indigo-50/80 backdrop-blur-xl border border-white/80 p-5 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
       >
-        <div className="flex flex-wrap items-start gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-6">
 
           {/* Test type selector */}
-          <div className="flex-1 min-w-[220px] space-y-2">
+          <div className="w-full min-w-0 space-y-2">
             <div className="flex items-center gap-1.5">
               <Filter className="h-3.5 w-3.5 text-indigo-500" aria-hidden="true" />
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -408,15 +408,15 @@ export default function AchievementTablesPage(): React.JSX.Element {
             />
           </div>
 
-          {/* Age group filter — always shows all 9 grades */}
+          {/* Grade level filter — derived from available norms data */}
           <div className="space-y-2 w-full">
             <span className="text-xs font-bold uppercase tracking-wide text-slate-500 block">
-              קבוצת גיל (כיתה)
+              שכבת כיתה
             </span>
             <FilterPills
-              options={ALL_AGE_GROUP_OPTS}
-              value={ageGroupKey}
-              onChange={setAgeGroupKey}
+              options={availableGrades.map((g) => ({ value: g, label: gradeLevelLabel(g) }))}
+              value={gradeLevel}
+              onChange={setGradeLevel}
             />
           </div>
         </div>
@@ -439,7 +439,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
               </h2>
               <p className="text-xs text-slate-400">
                 {GENDER_OPTS.find((g) => g.value === gender)?.label ?? ''} ·{' '}
-                {AGE_GROUPS.find((g) => g.key === ageGroupKey)?.label ?? ''} ·{' '}
+                {`כיתה ${gradeLevelLabel(gradeLevel)}`} ·{' '}
                 {selectedType?.unit ?? 'ביצועים'}
               </p>
             </div>
@@ -496,7 +496,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
                 higherIsBetter={norms.higherIsBetter}
                 unit={norms.unit}
                 gender={gender}
-                ageGroupKey={ageGroupKey}
+                gradeLevel={gradeLevel}
               />
             </motion.div>
           ) : (

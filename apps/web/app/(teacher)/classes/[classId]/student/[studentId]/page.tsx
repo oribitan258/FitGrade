@@ -597,7 +597,7 @@ function TalmidautDialog({ open, onClose, onSuccess, classId, studentId }: Talmi
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent
-        className="sm:max-w-md"
+        className="w-[calc(100vw-2rem)] sm:max-w-md"
         style={{
           background:           'rgba(255,255,255,0.96)',
           backdropFilter:       'blur(24px)',
@@ -614,7 +614,7 @@ function TalmidautDialog({ open, onClose, onSuccess, classId, studentId }: Talmi
 
         <form onSubmit={(e) => { void handleSubmit(e); }} className="flex flex-col gap-4 mt-2" dir="rtl">
           {/* Three score fields */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
               { label: 'השתתפות', value: participation, setter: setParticipation },
               { label: 'לבוש', value: uniform, setter: setUniform },
@@ -1031,8 +1031,6 @@ export default function StudentProfilePage(): React.JSX.Element {
   const initials = `${profile.firstName[0] ?? ''}${profile.lastName[0] ?? ''}`;
   const charCode  = profile.firstName.charCodeAt(0) + profile.lastName.charCodeAt(0);
   const tint      = AVATAR_TINTS[charCode % AVATAR_TINTS.length]!;
-  const dob       = new Date(profile.dateOfBirth).toLocaleDateString('he-IL');
-
   const overallLevel = fitnessLevel(profile.overallAvg);
   const ovLv         = LEVEL[overallLevel];
 
@@ -1095,7 +1093,7 @@ export default function StudentProfilePage(): React.JSX.Element {
               <h1 className="text-lg font-extrabold text-slate-900 leading-tight truncate">
                 {profile.firstName} {profile.lastName}
               </h1>
-              <p className="text-xs text-slate-500 mt-0.5">תלמיד • {dob}</p>
+              <p className="text-xs text-slate-500 mt-0.5">תלמיד</p>
               <span className={`mt-2 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${ovLv.badge}`}>
                 <span className="relative flex h-1.5 w-1.5">
                   <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${ovLv.bg} opacity-75`} />

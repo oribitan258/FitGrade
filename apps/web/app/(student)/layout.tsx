@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { GraduationCap, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getToken, logout } from '@/lib/api-client';
+import { SplashScreen } from '@/components/ui/splash-screen';
 
 /**
  * Student shell layout — glassmorphic top-nav, animated gradient background.
@@ -31,27 +32,16 @@ export default function StudentLayout({
     }
   }, [router]);
 
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <motion.div
-          animate={{ opacity: [0.4, 1, 0.4] }}
-          transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
-          className="text-sm font-medium text-slate-400"
-        >
-          טוען...
-        </motion.div>
-      </div>
-    );
-  }
-
   const handleLogout = async (): Promise<void> => {
     await logout();
     router.replace('/student-login');
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden">
+    <>
+      <SplashScreen isLoading={!ready} />
+
+      <div className="relative flex min-h-screen flex-col overflow-hidden">
       {/* ── Animated gradient background ───────────────────────────────── */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-br from-[#E0E7FF] via-[#F5F0FF] to-[#D1FAE5]" />
@@ -107,9 +97,10 @@ export default function StudentLayout({
       </header>
 
       {/* ── Page content ─────────────────────────────────────────────────── */}
-      <main className="relative z-10 mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
+      <main className="relative z-10 w-full flex-1">
         {children}
       </main>
     </div>
+    </>
   );
 }

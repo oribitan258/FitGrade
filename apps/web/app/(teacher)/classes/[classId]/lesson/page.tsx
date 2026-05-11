@@ -18,7 +18,7 @@
  *   4. "סיים שיעור" → PATCH /sessions/:id/complete → back to class page
  */
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -40,7 +40,9 @@ import type { TestType } from '@/hooks/use-test-types';
 import { apiRequest } from '@/lib/api-client';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import { useSemester } from '@/contexts/semester-context';
+import { useDashboardInvalidate } from '@/hooks/use-dashboard-invalidate';
 import { cn } from '@/lib/utils';
+import { BackButton } from '@/components/ui/back-button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -315,6 +317,7 @@ export default function LessonPage(): React.JSX.Element {
   const { activeSemester } = useSemester();
   const { data: students, isLoading: studentsLoading } = useStudents(classId);
   const { data: testTypes, isLoading: testTypesLoading } = useTestTypes();
+  const invalidateDashboard = useDashboardInvalidate();
 
   // ── Phase state ────────────────────────────────────────────────────────────
   const [step, setStep]             = useState<LessonStep>('select');
@@ -334,18 +337,30 @@ export default function LessonPage(): React.JSX.Element {
   const pendingSaveRef  = useRef<Set<string>>(new Set());
   const inputRefs       = useRef<(HTMLInputElement | null)[]>([]);
   const isEndingRef     = useRef(false);
+  const hasSavedAnyRef  = useRef(false);
   const [, forceRender] = useReducer((n: number) => n + 1, 0);
 
   // ── Toast ──────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<string | null>(null);
   const showToast = useCallback((msg: string) => setToast(msg), []);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const activeStudents = (students ?? []).filter((s) => !exemptIds.has(s.id) && !absentIds.has(s.id));
-  const absentStudents = (students ?? []).filter((s) => absentIds.has(s.id));
-  const exemptStudents = (students ?? []).filter((s) => exemptIds.has(s.id));
-
-  const selectedTestType = (testTypes ?? []).find((tt) => tt.id === selectedTestTypeId);
+  // ── Derived (memoized — re-filtered only when deps change, not on every forceRender) ──
+  const activeStudents = useMemo(
+    () => (students ?? []).filter((s) => !exemptIds.has(s.id) && !absentIds.has(s.id)),
+    [students, exemptIds, absentIds],
+  );
+  const absentStudents = useMemo(
+    () => (students ?? []).filter((s) => absentIds.has(s.id)),
+    [students, absentIds],
+  );
+  const exemptStudents = useMemo(
+    () => (students ?? []).filter((s) => exemptIds.has(s.id)),
+    [students, exemptIds],
+  );
+  const selectedTestType = useMemo(
+    () => (testTypes ?? []).find((tt) => tt.id === selectedTestTypeId),
+    [testTypes, selectedTestTypeId],
+  );
   const isPassFail       = session?.testInputType === 'PASS_FAIL';
   const today            = todayIso();
 
@@ -363,6 +378,18 @@ export default function LessonPage(): React.JSX.Element {
     slotsRef.current = next;
     forceRender();
   }, [session, students]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dashboard cache invalidation on unmount ────────────────────────────────
+  // Covers exits that bypass handleEndSession (breadcrumb nav, back button,
+  // browser tab close via visibilitychange) so the leaderboard and carousels
+  // are always fresh after the teacher leaves the lesson page with saved data.
+  useEffect(() => {
+    return () => {
+      if (hasSavedAnyRef.current) {
+        invalidateDashboard();
+      }
+    };
+  }, [invalidateDashboard]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -408,7 +435,7 @@ export default function LessonPage(): React.JSX.Element {
     try {
       await apiRequest(`/classes/${classId}/attendance`, {
         method: 'POST',
-        body:   JSON.stringify({ date: today, records: [{ studentId, status: newStatus }] }),
+        body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
       });
     } catch (err) {
       // Revert on failure
@@ -446,7 +473,7 @@ export default function LessonPage(): React.JSX.Element {
     try {
       await apiRequest(`/classes/${classId}/attendance`, {
         method: 'POST',
-        body:   JSON.stringify({ date: today, records: [{ studentId, status: newStatus }] }),
+        body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
       });
     } catch (err) {
       // Revert on failure
@@ -515,6 +542,7 @@ export default function LessonPage(): React.JSX.Element {
         `/sessions/${session.id}/results`,
         { method: 'POST', body: JSON.stringify({ studentId, rawValue }) },
       );
+      hasSavedAnyRef.current = true;
       focusNext(activeIndex);
       patchSlot(studentId, {
         status: 'saved', hasResult: true,
@@ -548,6 +576,11 @@ export default function LessonPage(): React.JSX.Element {
     forceRender();
     try {
       await apiRequest(`/sessions/${session.id}/complete`, { method: 'PATCH' });
+      // Eagerly invalidate all /dashboard/* SWR keys so the leaderboard and
+      // top-results carousels show the new data as soon as the teacher lands
+      // on the dashboard or outstanding-students page.
+      invalidateDashboard();
+      hasSavedAnyRef.current = false; // cleanup effect can skip double-invalidate
       router.push(`/classes/${classId}`);
     } catch {
       isEndingRef.current = false;
@@ -584,11 +617,12 @@ export default function LessonPage(): React.JSX.Element {
 
   return (
     <>
+      <BackButton />
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.55 }}
-        className="space-y-5"
+        className="space-y-5 pt-16 px-4 md:pt-0 md:px-0"
         dir="rtl"
       >
         {/* ── Breadcrumb ─────────────────────────────────────────────── */}
@@ -787,7 +821,11 @@ export default function LessonPage(): React.JSX.Element {
                             <p className="truncate text-sm font-semibold text-slate-800">
                               {student.firstName} {student.lastName}
                             </p>
-                            <code className="font-mono text-[11px] text-slate-400">{student.studentCode}</code>
+                            {student.nationalId && (
+                              <code className="font-mono text-[11px] text-slate-400">
+                                ת.ז ****{student.nationalId.slice(-4)}
+                              </code>
+                            )}
                           </div>
 
                           {/* Result input (active phase only) */}

@@ -18,11 +18,14 @@ export class StudentResponseDto {
   @ApiProperty({ example: '301' })
   studentCode!: string;
 
+  @ApiProperty({ example: '123456789', nullable: true })
+  nationalId!: string | null;
+
   @ApiProperty({ enum: Gender })
   gender!: Gender;
 
-  @ApiProperty()
-  dateOfBirth!: Date;
+  @ApiProperty({ nullable: true })
+  dateOfBirth!: Date | null;
 
   @ApiProperty()
   createdAt!: Date;

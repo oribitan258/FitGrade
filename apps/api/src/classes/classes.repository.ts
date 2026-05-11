@@ -31,7 +31,6 @@ export interface RawClassDetails {
 export interface CreateClassInput {
   name: string;
   academicYear: string;
-  semester: Semester;
   genderType: ClassGenderType;
   teacherId: string;
   joinCode: string;
@@ -44,7 +43,6 @@ const CLASS_SELECT = {
   id: true,
   name: true,
   academicYear: true,
-  semester: true,
   genderType: true,
   joinCode: true,
   joinCodeExpiresAt: true,
@@ -63,7 +61,6 @@ function toClassResponse(
     id: raw.id,
     name: raw.name,
     academicYear: raw.academicYear,
-    semester: raw.semester,
     genderType: raw.genderType,
     joinCode: raw.joinCode,
     joinCodeExpiresAt: raw.joinCodeExpiresAt,
@@ -91,6 +88,18 @@ export class ClassesRepository {
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toClassResponse);
+  }
+
+  async existsByNameAndGender(
+    name: string,
+    genderType: string,
+    teacherId: string,
+  ): Promise<boolean> {
+    const row = await this.prisma.class.findFirst({
+      where: { name, genderType: genderType as 'BOYS' | 'GIRLS' | 'MIXED', teacherId, deletedAt: null },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /**
@@ -235,7 +244,6 @@ export class ClassesRepository {
         data: {
           name: input.name,
           academicYear: input.academicYear,
-          semester: input.semester,
           genderType: input.genderType,
           teacherId: input.teacherId,
           joinCode: input.joinCode,

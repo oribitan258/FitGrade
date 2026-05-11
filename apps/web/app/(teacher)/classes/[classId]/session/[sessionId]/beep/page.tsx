@@ -29,6 +29,7 @@ import type { BeepTestSetupStudent } from '@/components/beep-test/beep-test-setu
 import { BeepPreTestSelection } from '@/components/beep-test/beep-pre-test-selection';
 import { BeepTestConsole } from '@/components/beep-test/beep-test-console';
 import { BeepTestSummary } from '@/components/beep-test/beep-test-summary';
+import { BackButton } from '@/components/ui/back-button';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -233,6 +234,7 @@ export default function BeepTestPage(): React.JSX.Element {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+      <BackButton />
       {/* ── Crash Recovery Banner ───────────────────────────────────────── */}
       <AnimatePresence>
         {showCrashBanner && crashBannerSnapshot !== null && (

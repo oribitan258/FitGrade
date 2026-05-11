@@ -10,13 +10,16 @@ import {
   Clipboard,
   ClipboardCheck,
   Download,
+  Edit3,
   FileText,
   Loader2,
+  MessageSquare,
   Printer,
   RefreshCw,
   Save,
   Settings2,
   ShieldAlert,
+  Sparkles,
   Star,
   TrendingDown,
   TrendingUp,
@@ -46,6 +49,7 @@ import { WeightSlider } from '@/components/ui/weight-slider';
 import { useSemester } from '@/contexts/semester-context';
 import { useClasses } from '@/hooks/use-classes';
 import { useClassReport, useCommentsBank } from '@/hooks/use-reports';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 import { useGradingPolicy, updateClassGradingPolicy } from '@/hooks/use-grading-policy';
 import { useReportSettings } from '@/hooks/use-report-settings';
 import { apiRequest } from '@/lib/api-client';
@@ -288,88 +292,113 @@ function downloadFullYearCSV(merged: MergedStudentRow[], className: string): voi
   URL.revokeObjectURL(url);
 }
 
-// ─── Comment Combobox ─────────────────────────────────────────────────────────
+// ─── Comment Cell ─────────────────────────────────────────────────────────────
 
-interface CommentComboboxProps {
+interface CommentCellProps {
   value: string;
   onChange: (v: string) => void;
-  bank: string[];
   printMode: boolean;
+  row: ReportRow;
 }
 
-function CommentCombobox({ value, onChange, bank, printMode }: CommentComboboxProps): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+function CommentCell({ value, onChange, printMode, row }: CommentCellProps): React.JSX.Element {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [smartLoading, setSmartLoading] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return bank;
-    const q = query.trim().toLowerCase();
-    return bank.filter((c) => c.toLowerCase().includes(q));
-  }, [query, bank]);
+  useEffect(() => { setDraft(value); }, [value]);
 
-  useEffect(() => { setQuery(value); }, [value]);
+  async function handleSmartGeneration(): Promise<void> {
+    setSmartLoading(true);
+    await new Promise<void>((resolve) => { setTimeout(resolve, 1200); });
+    const generated = `לאור הציון ${row.recommendedFinalGrade} במבחנים וציון ההתנהגות ${row.conductScore}, ניכרת השקעה... [AI Generated]`;
+    setDraft(generated);
+    onChange(generated);
+    setSmartLoading(false);
+  }
 
-  useEffect(() => {
-    function handler(e: MouseEvent): void {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery(value);
-      }
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [value]);
+  function handleSave(): void {
+    onChange(draft);
+    setDialogOpen(false);
+  }
 
   if (printMode) {
     return <span className="text-sm text-slate-700">{value || '—'}</span>;
   }
 
   return (
-    <div ref={wrapperRef} className="relative w-full">
-      <Input
-        value={query}
-        onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); setQuery(value); } }}
-        placeholder="בחר או הקלד הערה…"
-        className="h-9 text-xs rounded-lg border-slate-200 bg-white/80 focus-visible:ring-indigo-400"
-        aria-label="הערה מילולית"
-        dir="rtl"
-      />
-      <AnimatePresence>
-        {open && filtered.length > 0 && (
-          <motion.ul
-            initial={{ opacity: 0, y: -4, scaleY: 0.95 }}
-            animate={{ opacity: 1, y: 0, scaleY: 1 }}
-            exit={{ opacity: 0, y: -4, scaleY: 0.95 }}
-            transition={{ ease: EASE, duration: 0.18 }}
-            className="absolute top-full z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-xl border border-white/80 bg-white/95 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl text-sm"
-            role="listbox"
-          >
-            {filtered.map((comment) => (
-              <li
-                key={comment}
-                role="option"
-                aria-selected={comment === value}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(comment);
-                  setQuery(comment);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'cursor-pointer px-3 py-2 text-xs leading-relaxed hover:bg-indigo-50 hover:text-indigo-800',
-                  comment === value && 'bg-indigo-50 font-semibold text-indigo-700',
-                )}
-              >
-                {comment}
-              </li>
-            ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
-    </div>
+    <>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => { setDraft(value); setDialogOpen(true); }}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+          aria-label={`עריכת הערה עבור ${row.firstName} ${row.lastName}`}
+        >
+          {value ? (
+            <MessageSquare className="h-3 w-3 shrink-0" aria-hidden="true" />
+          ) : (
+            <Edit3 className="h-3 w-3 shrink-0" aria-hidden="true" />
+          )}
+          {value ? 'צפה/ערוך' : 'הוסף הערה'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { void handleSmartGeneration(); }}
+          disabled={smartLoading}
+          className="inline-flex items-center gap-1 rounded-lg border border-violet-200/70 bg-gradient-to-r from-indigo-50 to-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-600 transition-colors hover:border-violet-300 hover:from-indigo-100 hover:to-violet-100 disabled:opacity-60"
+          aria-label="ניסוח חכם"
+        >
+          {smartLoading ? (
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+          ) : (
+            <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
+          )}
+          ניסוח חכם
+        </button>
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-start text-base font-bold text-slate-800">
+              עריכת הערה — {row.firstName} {row.lastName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <Textarea
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); }}
+              placeholder="הקלד הערה מילולית…"
+              className="min-h-[120px] resize-none rounded-xl border-slate-200 text-sm leading-relaxed focus-visible:ring-indigo-400"
+              dir="rtl"
+              aria-label="הערה מילולית"
+            />
+            <button
+              type="button"
+              onClick={() => { void handleSmartGeneration(); }}
+              disabled={smartLoading}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200/70 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-2 text-sm font-medium text-violet-600 transition-colors hover:border-violet-300 hover:from-indigo-100 hover:to-violet-100 disabled:opacity-60"
+            >
+              {smartLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
+              ניסוח חכם
+            </button>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button variant="ghost" size="sm" onClick={() => { setDialogOpen(false); }}>
+              ביטול
+            </Button>
+            <Button size="sm" onClick={handleSave} className="bg-indigo-600 text-white hover:bg-indigo-700">
+              שמור
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -390,14 +419,13 @@ function ReportSkeleton(): React.JSX.Element {
 interface FinalGradesTabProps {
   rows: ReportRow[];
   localEdits: EditMap;
-  bank: string[];
   onEditGrade: (studentId: string, grade: string) => void;
   onEditComment: (studentId: string, comment: string) => void;
   printMode: boolean;
 }
 
 function FinalGradesTab({
-  rows, localEdits, bank, onEditGrade, onEditComment, printMode,
+  rows, localEdits, onEditGrade, onEditComment, printMode,
 }: FinalGradesTabProps): React.JSX.Element {
   if (rows.length === 0) {
     return (
@@ -409,8 +437,8 @@ function FinalGradesTab({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)] print:shadow-none print:border-slate-200">
-      <table className="w-full border-collapse">
+    <div className="overflow-x-auto rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)] print:shadow-none print:border-slate-200">
+      <table className="w-full min-w-[480px] border-collapse">
         <colgroup>
           <col style={{ width: '22%' }} />
           <col style={{ width: '10%' }} />
@@ -438,10 +466,6 @@ function FinalGradesTab({
             const gradeDisplay = edit?.finalGrade ?? String(row.recommendedFinalGrade);
             const commentDisplay = edit?.comment ?? row.suggestedComment;
             const gradeNum = parseInt(gradeDisplay, 10);
-            const isSuggested =
-              !row.teacherFinalGrade &&
-              parseInt(gradeDisplay, 10) === row.recommendedFinalGrade &&
-              commentDisplay === row.suggestedComment;
 
             return (
               <tr key={row.studentId} className="border-b border-slate-50 hover:bg-indigo-50/30 transition-colors">
@@ -494,22 +518,12 @@ function FinalGradesTab({
                   )}
                 </td>
                 <td className="px-4 py-3 align-middle">
-                  <div className="flex items-center gap-1.5">
-                    <CommentCombobox
-                      value={commentDisplay}
-                      onChange={(v) => onEditComment(row.studentId, v)}
-                      bank={bank}
-                      printMode={printMode}
-                    />
-                    {isSuggested && !printMode && (
-                      <span
-                        className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-px text-[9px] font-bold text-indigo-500 whitespace-nowrap"
-                        title="הוצע על ידי המערכת"
-                      >
-                        AI
-                      </span>
-                    )}
-                  </div>
+                  <CommentCell
+                    value={commentDisplay}
+                    onChange={(v) => onEditComment(row.studentId, v)}
+                    printMode={printMode}
+                    row={row}
+                  />
                 </td>
               </tr>
             );
@@ -525,18 +539,17 @@ function FinalGradesTab({
 interface AttendanceTabProps {
   rows: ReportRow[];
   localEdits: EditMap;
-  bank: string[];
   onEditComment: (studentId: string, comment: string) => void;
   printMode: boolean;
 }
 
-function AttendanceTab({ rows, localEdits, bank, onEditComment, printMode }: AttendanceTabProps): React.JSX.Element {
+function AttendanceTab({ rows, localEdits, onEditComment, printMode }: AttendanceTabProps): React.JSX.Element {
   if (rows.length === 0) {
     return <p className="text-sm text-slate-500">אין נתוני נוכחות</p>;
   }
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
-      <table className="w-full border-collapse">
+    <div className="overflow-x-auto rounded-2xl border border-white/78 bg-white/70 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+      <table className="w-full min-w-[420px] border-collapse">
         <colgroup>
           <col style={{ width: '22%' }} />
           <col style={{ width: '8%' }} />
@@ -594,11 +607,11 @@ function AttendanceTab({ rows, localEdits, bank, onEditComment, printMode }: Att
                   </span>
                 </td>
                 <td className="px-4 py-3 align-middle">
-                  <CommentCombobox
+                  <CommentCell
                     value={commentDisplay}
                     onChange={(v) => onEditComment(row.studentId, v)}
-                    bank={bank}
                     printMode={printMode}
+                    row={row}
                   />
                 </td>
               </tr>
@@ -615,12 +628,11 @@ function AttendanceTab({ rows, localEdits, bank, onEditComment, printMode }: Att
 interface ExemptionsTabProps {
   rows: ReportRow[];
   localEdits: EditMap;
-  bank: string[];
   onEditComment: (studentId: string, comment: string) => void;
   printMode: boolean;
 }
 
-function ExemptionsTab({ rows, localEdits, bank, onEditComment, printMode }: ExemptionsTabProps): React.JSX.Element {
+function ExemptionsTab({ rows, localEdits, onEditComment, printMode }: ExemptionsTabProps): React.JSX.Element {
   const atRisk = rows.filter((r) => r.unexcusedAbsences >= 3);
   if (atRisk.length === 0) {
     return (
@@ -662,11 +674,11 @@ function ExemptionsTab({ rows, localEdits, bank, onEditComment, printMode }: Exe
                     <span className="text-lg font-extrabold text-red-600 tabular-nums">{row.unexcusedAbsences}</span>
                   </td>
                   <td className="px-4 py-3 align-middle">
-                    <CommentCombobox
+                    <CommentCell
                       value={commentDisplay}
                       onChange={(v) => onEditComment(row.studentId, v)}
-                      bank={bank}
                       printMode={printMode}
+                      row={row}
                     />
                   </td>
                 </tr>
@@ -684,12 +696,11 @@ function ExemptionsTab({ rows, localEdits, bank, onEditComment, printMode }: Exe
 interface TestResultsTabProps {
   rows: ReportRow[];
   localEdits: EditMap;
-  bank: string[];
   onEditComment: (studentId: string, comment: string) => void;
   printMode: boolean;
 }
 
-function TestResultsTab({ rows, localEdits, bank, onEditComment, printMode }: TestResultsTabProps): React.JSX.Element {
+function TestResultsTab({ rows, localEdits, onEditComment, printMode }: TestResultsTabProps): React.JSX.Element {
   const allTestTypes = useMemo(() => {
     const seen = new Map<string, string>();
     for (const row of rows) {
@@ -793,11 +804,11 @@ function TestResultsTab({ rows, localEdits, bank, onEditComment, printMode }: Te
                       </span>
                     </td>
                     <td className="px-4 py-3 align-middle">
-                      <CommentCombobox
+                      <CommentCell
                         value={commentDisplay}
                         onChange={(v) => onEditComment(row.studentId, v)}
-                        bank={bank}
                         printMode={printMode}
+                        row={row}
                       />
                     </td>
                   </tr>
@@ -1394,8 +1405,8 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
           <p className="text-sm text-slate-400">יש לוודא שנרשמו ציונים במחצית א׳ ו/או ב׳</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm overflow-hidden shadow-[0_4px_20px_rgba(15,23,42,0.06)] print:shadow-none">
-          <table className="w-full text-sm" dir="rtl">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-[0_4px_20px_rgba(15,23,42,0.06)] print:shadow-none">
+          <table className="w-full min-w-[400px] text-sm" dir="rtl">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/80 print:bg-slate-100">
                 <th className="py-3 ps-5 pe-3 text-start font-semibold text-slate-600">#</th>
@@ -1531,6 +1542,8 @@ export default function ReportsPage(): React.JSX.Element {
 
   const { data: classes, isLoading: classesLoading } = useClasses();
   const { data: rows, isLoading: reportLoading, mutate: mutateReport } = useClassReport(selectedClassId, semesterParam);
+
+  useSignalPageReady('reports', classes !== undefined);
   const { data: bank = [] } = useCommentsBank();
   const { data: globalPolicy } = useGradingPolicy();
   const { data: reportSettings } = useReportSettings();
@@ -1921,7 +1934,7 @@ export default function ReportsPage(): React.JSX.Element {
         }
       `}</style>
 
-      <div className="space-y-6 print-area print:block print:h-auto print:min-h-0 print:overflow-visible print:p-0 print:m-0 print:max-w-none">
+      <div className="space-y-6 print-area pt-16 px-4 md:pt-0 md:px-0 print:block print:h-auto print:min-h-0 print:overflow-visible print:p-0 print:m-0 print:max-w-none">
         {/* ── Print-only class header — hidden in Full Year mode (FullYearView has its own) ── */}
         {!showFullYear && (
           <div className="border-b border-slate-300 pb-4 mb-6 text-center" dir="rtl">
@@ -1952,6 +1965,7 @@ export default function ReportsPage(): React.JSX.Element {
             <Button
               type="button"
               variant="outline"
+              data-tour="export-csv"
               disabled={showFullYear ? mergedForExport.length === 0 : sortedRows.length === 0}
               onClick={() =>
                 showFullYear
@@ -2344,7 +2358,6 @@ export default function ReportsPage(): React.JSX.Element {
                 <FinalGradesTab
                   rows={sortedRows}
                   localEdits={localEdits}
-                  bank={bank}
                   onEditGrade={handleEditGrade}
                   onEditComment={handleEditComment}
                   printMode={printMode}
@@ -2354,7 +2367,6 @@ export default function ReportsPage(): React.JSX.Element {
                 <AttendanceTab
                   rows={sortedRows}
                   localEdits={localEdits}
-                  bank={bank}
                   onEditComment={handleEditComment}
                   printMode={printMode}
                 />
@@ -2363,7 +2375,6 @@ export default function ReportsPage(): React.JSX.Element {
                 <ExemptionsTab
                   rows={sortedRows}
                   localEdits={localEdits}
-                  bank={bank}
                   onEditComment={handleEditComment}
                   printMode={printMode}
                 />
@@ -2372,7 +2383,6 @@ export default function ReportsPage(): React.JSX.Element {
                 <TestResultsTab
                   rows={sortedRows}
                   localEdits={localEdits}
-                  bank={bank}
                   onEditComment={handleEditComment}
                   printMode={printMode}
                 />

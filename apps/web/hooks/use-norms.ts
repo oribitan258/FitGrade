@@ -8,8 +8,7 @@ import { apiRequest } from '@/lib/api-client';
 
 export interface NormBand {
   gender: 'MALE' | 'FEMALE' | 'OTHER';
-  minAge: number;
-  maxAge: number;
+  gradeLevel: number;
   score: number;
   /** Lower bound of the raw-value band (inclusive). */
   minValue: number;

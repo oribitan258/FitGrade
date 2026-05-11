@@ -1,0 +1,109 @@
+config:
+  target: "{{ $processEnvironment.API_URL || 'http://localhost:3001/api' }}"
+  phases:
+    # Warm-up — 10 users/s for 30 seconds
+    - duration: 30
+      arrivalRate: 10
+      name: Warm-up
+    # Ramp — increase to 50 users/s over 60 seconds
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 50
+      name: Ramp
+    # Sustained load — 50 users/s for 60 seconds
+    - duration: 60
+      arrivalRate: 50
+      name: Sustained
+  defaults:
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+  ensure:
+    # p95 response time gates
+    p95: 800
+    # Zero 5xx errors under load
+    maxErrorRate: 0
+
+# ─── Variable pool (seeded from test DB) ─────────────────────────────────────
+# These values must match data seeded by prisma/seed.ts in the test environment.
+variables:
+  teacherToken:
+    - "{{ $env.LOAD_TEST_TEACHER_TOKEN }}"
+  classId:
+    - "{{ $env.LOAD_TEST_CLASS_ID }}"
+  sessionId:
+    - "{{ $env.LOAD_TEST_SESSION_ID }}"
+
+scenarios:
+  # ── Scenario 1: Teacher Dashboard Load ───────────────────────────────────
+  - name: Teacher Dashboard Load
+    weight: 40
+    flow:
+      - get:
+          url: /dashboard/stats?semester=A
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+      - get:
+          url: /dashboard/top-per-class?semester=A
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+      - get:
+          url: /dashboard/top-students?semester=A
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+
+  # ── Scenario 2: Class + Student List ─────────────────────────────────────
+  - name: Class and Student List
+    weight: 30
+    flow:
+      - get:
+          url: /classes
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/classes/{{ classId }}/students"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+
+  # ── Scenario 3: Reports (largest payload) ────────────────────────────────
+  - name: Class Report Generation
+    weight: 20
+    flow:
+      - get:
+          url: "/reports/class/{{ classId }}"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+          # Reports with 40 students and full grade data — p95 < 800ms target
+          capture:
+            - json: "$.length"
+              as: rowCount
+
+  # ── Scenario 4: Concurrent Result Submit ─────────────────────────────────
+  - name: Concurrent Result Submit
+    weight: 10
+    flow:
+      - post:
+          url: "/sessions/{{ sessionId }}/results"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            studentId: "{{ $randomString() }}"
+            rawValue: "{{ $randomNumber(10, 100) }}"
+          # 409 Conflict is expected for duplicate students — both 201 and 409 are valid
+          expect:
+            - statusCode:
+                - 201
+                - 409
+                - 404

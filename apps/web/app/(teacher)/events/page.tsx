@@ -322,6 +322,7 @@ export default function EventsPage(): React.JSX.Element {
 
   return (
     <>
+      <div className="pt-16 px-4 md:pt-0 md:px-0">
       {/* Page header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -405,6 +406,7 @@ export default function EventsPage(): React.JSX.Element {
         </div>
       )}
       </SemesterTransitionWrapper>
+      </div>
 
       <AddEventDialog
         open={addOpen}

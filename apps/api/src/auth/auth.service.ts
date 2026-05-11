@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
 import { AuthRepository } from './auth.repository';
+import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service';
 import type {
   GoogleTeacherProfile,
   TeacherProfileRecord,
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly blacklist: RefreshTokenBlacklistService,
   ) {}
 
   // ─── Teacher (Google OAuth) ────────────────────────────────────────────────
@@ -41,37 +43,61 @@ export class AuthService {
     return teacher;
   }
 
-  // ─── Student (code + password) ─────────────────────────────────────────────
+  // ─── Student (National ID — passwordless) ─────────────────────────────────
 
   /**
-   * Validates student credentials.
-   * Throws UnauthorizedException on wrong password or unknown student/class.
-   * Uses a generic error message to prevent user enumeration.
+   * Validates student identity via Israeli national ID (ת"ז) + optional password.
+   * Pads the ID to 9 digits, runs Israeli Luhn checksum, then looks up the DB.
+   *
+   * Differentiated error responses (UX-first, accepting enumeration tradeoff):
+   *  - Invalid Luhn / format       → 401 'תעודת זהות לא תקינה'
+   *  - ID not in DB                → 404 'STUDENT_NOT_FOUND' (machine-readable code,
+   *                                   frontend renders the long Hebrew message)
+   *  - Wrong password              → 401 'סיסמה שגויה'
+   *
+   * Enumeration risk is mitigated by the 10 req/min IP throttle on the controller.
    */
   async validateStudentLogin(
-    classCode: string,
-    studentCode: string,
-    password: string,
+    rawNationalId: string,
+    rawPassword?: string,
   ): Promise<StudentLoginRecord> {
-    let record: StudentLoginRecord;
-    try {
-      record = await this.authRepository.findStudentForLogin(classCode, studentCode);
-    } catch {
-      this.logger.warn(
-        `Failed student login — student/class not found: classCode=${classCode} studentCode=${studentCode}`,
-      );
-      throw new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים');
+    const nationalId = rawNationalId.padStart(9, '0');
+
+    if (!AuthService.isValidIsraeliId(nationalId)) {
+      this.logger.warn('Failed student login — invalid Israeli ID format');
+      throw new UnauthorizedException('תעודת זהות לא תקינה');
     }
 
-    const isValid = await bcrypt.compare(password, record.passwordHash);
-    if (!isValid) {
-      this.logger.warn(
-        `Failed student login — wrong password: classCode=${classCode} studentCode=${studentCode}`,
-      );
-      throw new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים');
+    const record = await this.authRepository.findStudentForNationalIdLogin(nationalId);
+    if (record === null) {
+      this.logger.warn('Failed student login — student not found');
+      throw new NotFoundException('STUDENT_NOT_FOUND');
+    }
+
+    // Verify password when one is stored; fall back to nationalId for legacy students.
+    if (record.passwordHash !== null) {
+      const candidate = rawPassword?.trim() || rawNationalId;
+      const valid = await bcrypt.compare(candidate, record.passwordHash);
+      if (!valid) {
+        this.logger.warn('Failed student login — wrong password');
+        throw new UnauthorizedException('סיסמה שגויה');
+      }
     }
 
     return record;
+  }
+
+  /**
+   * Validates an Israeli national ID using the Luhn-variant checksum.
+   * Input must be exactly 9 digits (pad with leading zeros if shorter).
+   */
+  private static isValidIsraeliId(id: string): boolean {
+    if (!/^\d{9}$/.test(id)) return false;
+    const sum = id.split('').reduce((acc, digit, i) => {
+      const val = parseInt(digit, 10) * (i % 2 === 0 ? 1 : 2);
+      return acc + (val > 9 ? val - 9 : val);
+    }, 0);
+    return sum % 10 === 0;
   }
 
   // ─── Teacher profile ───────────────────────────────────────────────────────
@@ -88,18 +114,68 @@ export class AuthService {
     return teacher;
   }
 
+  // ─── Onboarding ────────────────────────────────────────────────────────────
+
+  /**
+   * Marks the teacher's onboarding as complete.
+   * Idempotent — safe to call multiple times.
+   * Called by POST /auth/onboarding/complete after the setup form is saved.
+   */
+  async completeOnboarding(userId: string): Promise<void> {
+    await this.authRepository.setOnboardingComplete(userId);
+    this.logger.log(`Onboarding marked complete: teacher=${userId}`);
+  }
+
+  /**
+   * Persists the teacher's default test type IDs for boys/girls classes.
+   * Validates that every ID exists in FitnessTestType before writing —
+   * a 400 BadRequestException is thrown when any ID is unknown.
+   * Empty arrays are accepted and clear the preference.
+   */
+  async setDefaultTestPreferences(
+    userId: string,
+    defaultMaleTestIds: string[],
+    defaultFemaleTestIds: string[],
+  ): Promise<void> {
+    const allIds = Array.from(new Set([...defaultMaleTestIds, ...defaultFemaleTestIds]));
+    if (allIds.length > 0) {
+      const existing = await this.authRepository.findExistingTestTypeIds(allIds);
+      if (existing.length !== allIds.length) {
+        const unknown = allIds.filter((id) => !existing.includes(id));
+        throw new BadRequestException(
+          `מזהה מבחן לא קיים: ${unknown.join(', ')}`,
+        );
+      }
+    }
+    await this.authRepository.setDefaultTestPreferences(
+      userId,
+      defaultMaleTestIds,
+      defaultFemaleTestIds,
+    );
+    this.logger.log(
+      `Default test preferences saved: teacher=${userId} male=${defaultMaleTestIds.length} female=${defaultFemaleTestIds.length}`,
+    );
+  }
+
   // ─── Dev bypass (local development only) ──────────────────────────────────
 
   /**
    * Issues a teacher JWT for the seeded dummy teacher without Google OAuth.
    * Only callable when NODE_ENV !== 'production' (enforced in the controller).
    */
-  async devLogin(): Promise<TokenPair> {
+  async devLogin(simulateFirstLogin: boolean): Promise<TokenPair> {
     const teacher = await this.authRepository.findTeacherByEmail('teacher@test.com');
     if (!teacher) {
       throw new NotFoundException(
         'Dev teacher not found. Run: pnpm prisma:seed',
       );
+    }
+    if (simulateFirstLogin) {
+      await this.authRepository.resetOnboardingState(teacher.id);
+      this.logger.warn(`Dev login: reset onboarding → first-time flow for ${teacher.email}`);
+    } else {
+      await this.authRepository.setOnboardingComplete(teacher.id);
+      this.logger.warn(`Dev login: marked onboarding complete for ${teacher.email}`);
     }
     const payload: JwtPayload = { sub: teacher.id, role: 'TEACHER' };
     this.logger.warn('Dev login used — should never happen in production');
@@ -143,19 +219,25 @@ export class AuthService {
    * The refresh token is set as an httpOnly cookie by the controller.
    */
   async issueTokenPair(payload: JwtPayload): Promise<TokenPair> {
-    const accessSecret = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
+    const accessSecret  = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
     const refreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
-    const accessExpiry = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
+    const accessExpiry  = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
     const refreshExpiry = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
+
+    // Each refresh token gets a unique ID (jti) so it can be individually revoked
+    // on logout without invalidating other active sessions on other devices.
+    const jti = randomUUID();
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: accessSecret,
         expiresIn: accessExpiry,
+        algorithm: 'HS256',
       }),
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync({ ...payload, jti }, {
         secret: refreshSecret,
         expiresIn: refreshExpiry,
+        algorithm: 'HS256',
       }),
     ]);
 
@@ -164,28 +246,56 @@ export class AuthService {
 
   /**
    * Verifies a refresh token and issues a new access token.
-   * Throws UnauthorizedException if the refresh token is invalid or expired.
+   * Checks the blacklist first — a revoked token (jti present) is rejected
+   * even if its cryptographic signature is still valid.
    */
   async refreshAccessToken(refreshToken: string): Promise<string> {
     const refreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
-    const accessSecret = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
-    const accessExpiry = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
+    const accessSecret  = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
+    const accessExpiry  = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
 
-    let payload: JwtPayload;
+    let payload: JwtPayload & { jti?: string; exp?: number };
     try {
-      payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
+      payload = await this.jwtService.verifyAsync(refreshToken, {
         secret: refreshSecret,
+        algorithms: ['HS256'],
       });
     } catch {
       throw new UnauthorizedException('טוקן רענון לא תקף או פג תוקפו');
     }
 
-    // Strip standard JWT fields before re-signing — signAsync adds fresh iat/exp
-    const { iat: _iat, exp: _exp, ...freshPayload } = payload;
+    // Reject tokens whose jti has been blacklisted (logged-out sessions).
+    if (payload.jti !== undefined && this.blacklist.isRevoked(payload.jti)) {
+      throw new UnauthorizedException('טוקן רענון בוטל — נא להתחבר מחדש');
+    }
+
+    // Strip JWT meta-fields before re-signing — signAsync adds fresh iat/exp/jti
+    const { iat: _iat, exp: _exp, jti: _jti, ...freshPayload } = payload;
 
     return this.jwtService.signAsync(freshPayload, {
       secret: accessSecret,
       expiresIn: accessExpiry,
+      algorithm: 'HS256',
     });
+  }
+
+  /**
+   * Revokes the refresh token identified by the given raw token string.
+   * Called by the logout endpoint so stolen refresh tokens cannot be replayed.
+   * Safe to call with an invalid/expired token — verification errors are swallowed.
+   */
+  async revokeRefreshToken(refreshToken: string): Promise<void> {
+    const refreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+    try {
+      const payload = await this.jwtService.verifyAsync<{ jti?: string; exp?: number }>(
+        refreshToken,
+        { secret: refreshSecret, algorithms: ['HS256'] },
+      );
+      if (payload.jti && payload.exp) {
+        this.blacklist.revoke(payload.jti, payload.exp * 1000);
+      }
+    } catch {
+      // Invalid or expired token — nothing to revoke.
+    }
   }
 }

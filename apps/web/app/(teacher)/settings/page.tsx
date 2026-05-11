@@ -9,6 +9,7 @@
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import SignatureCanvas from 'react-signature-canvas';
 import { motion } from 'framer-motion';
 import {
@@ -29,6 +30,10 @@ import {
   updateReportSettings,
   REPORT_SETTINGS_KEY,
 } from '@/hooks/use-report-settings';
+import { useCurrentTeacher } from '@/hooks/use-current-teacher';
+import { apiRequest } from '@/lib/api-client';
+import { fireConfetti } from '@/lib/confetti';
+import { useTour } from '@/components/tour/TourProvider';
 
 // ─── Animation variants ───────────────────────────────────────────────────────
 
@@ -84,9 +89,21 @@ function FieldWrapper({ label, children }: { label: string; children: React.Reac
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage(): React.JSX.Element {
+  const router = useRouter();
+  const { mutate } = useSWRConfig();
+  const { teacher } = useCurrentTeacher();
+  const { notifySettingsMounted } = useTour();
+
+  // Drive tour cleanup: finishing → cleanup → idle
+  useEffect(() => { notifySettingsMounted(); }, [notifySettingsMounted]);
+  const isOnboardingComplete = teacher?.isOnboardingComplete ?? true;
+
+  // Ref used by "שמור וסיים מדריך" to signal the submit handler to also complete onboarding
+  const finishAfterSaveRef = useRef(false);
+  const [isFinishing, setIsFinishing] = useState(false);
+
   // ── Grading policy (existing) ─────────────────────────────────────────────
   const { data: policy, isLoading: policyLoading, error: policyError } = useGradingPolicy();
-  const { mutate } = useSWRConfig();
 
   const [fitnessWeight, setFitnessWeight] = useState(55);
   const [conductWeight, setConductWeight] = useState(45);
@@ -131,14 +148,22 @@ export default function SettingsPage(): React.JSX.Element {
   const [reportSaveStatus, setReportSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [reportIsSaving, setReportIsSaving] = useState(false);
 
-  const { control, handleSubmit, reset, formState: { isDirty: isReportDirty } } =
+  const { control, handleSubmit, reset, formState: { isDirty: isReportDirty, isValid: isReportValid } } =
     useForm<ReportFormValues>({
+      mode: 'onChange',
       defaultValues: {
         passingGrade: 60,
         teacherName: '',
         schoolName: '',
       },
     });
+
+  // ── Signature canvas — declared before effects that reference them ─────────
+  const sigCanvasRef = useRef<SignatureCanvas | null>(null);
+  const [sigIsEmpty, setSigIsEmpty] = useState(true);
+  // Defer canvas mount to browser only (canvas API not available during SSR)
+  const [canvasMounted, setCanvasMounted] = useState(false);
+  useEffect(() => { setCanvasMounted(true); }, []);
 
   // Sync form once data arrives
   useEffect(() => {
@@ -148,21 +173,17 @@ export default function SettingsPage(): React.JSX.Element {
         teacherName:  reportSettings.teacherName ?? '',
         schoolName:   reportSettings.schoolName ?? '',
       });
-      // Restore drawn signature into canvas if one exists
-      if (reportSettings.teacherSignature && sigCanvasRef.current) {
-        sigCanvasRef.current.fromDataURL(reportSettings.teacherSignature);
-        setSigIsEmpty(false);
-      }
+    }
+  }, [reportSettings, reset]);
+
+  // Restore drawn signature only after canvas is mounted — canvas API unavailable during SSR
+  useEffect(() => {
+    if (canvasMounted && reportSettings?.teacherSignature && sigCanvasRef.current) {
+      sigCanvasRef.current.fromDataURL(reportSettings.teacherSignature);
+      setSigIsEmpty(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportSettings]);
-
-  // ── Signature canvas ──────────────────────────────────────────────────────
-  const sigCanvasRef = useRef<SignatureCanvas | null>(null);
-  const [sigIsEmpty, setSigIsEmpty] = useState(true);
-  // Defer canvas mount to browser only (canvas API not available during SSR)
-  const [canvasMounted, setCanvasMounted] = useState(false);
-  useEffect(() => { setCanvasMounted(true); }, []);
+  }, [canvasMounted, reportSettings?.teacherSignature]);
 
   const handleSigEnd = useCallback(() => {
     setSigIsEmpty(sigCanvasRef.current?.isEmpty() ?? true);
@@ -177,6 +198,8 @@ export default function SettingsPage(): React.JSX.Element {
   async function onReportSubmit(values: ReportFormValues): Promise<void> {
     setReportIsSaving(true);
     setReportSaveStatus('idle');
+    const shouldFinish = finishAfterSaveRef.current;
+    finishAfterSaveRef.current = false;
     try {
       const sigDataUrl: string | null = sigIsEmpty
         ? null
@@ -194,8 +217,13 @@ export default function SettingsPage(): React.JSX.Element {
         teacherName:  updated.teacherName ?? '',
         schoolName:   updated.schoolName ?? '',
       });
-      setReportSaveStatus('success');
-      setTimeout(() => setReportSaveStatus('idle'), 3000);
+
+      if (shouldFinish) {
+        await completeOnboarding();
+      } else {
+        setReportSaveStatus('success');
+        setTimeout(() => setReportSaveStatus('idle'), 3000);
+      }
     } catch {
       setReportSaveStatus('error');
     } finally {
@@ -203,10 +231,26 @@ export default function SettingsPage(): React.JSX.Element {
     }
   }
 
+  async function completeOnboarding(): Promise<void> {
+    setIsFinishing(true);
+    try {
+      await apiRequest('/auth/onboarding/complete', { method: 'POST' });
+      await mutate('/auth/me');
+      fireConfetti();
+      router.push('/dashboard');
+    } catch {
+      setIsFinishing(false);
+    }
+  }
+
+  async function handleFinishLater(): Promise<void> {
+    await completeOnboarding();
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <motion.div
-      className="mx-auto max-w-2xl space-y-8 p-4 md:p-6"
+      className="mx-auto max-w-2xl space-y-8 pt-16 px-4 pb-4 md:p-6"
       dir="rtl"
       variants={PAGE_ENTER}
       initial="hidden"
@@ -300,7 +344,7 @@ export default function SettingsPage(): React.JSX.Element {
             <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
           </div>
         ) : (
-          <form onSubmit={(e) => { void handleSubmit(onReportSubmit)(e); }} noValidate>
+          <form data-tour="settings-form" onSubmit={(e) => { void handleSubmit(onReportSubmit)(e); }} noValidate>
             <div className="space-y-5">
               {/* Passing grade */}
               <Controller
@@ -405,7 +449,7 @@ export default function SettingsPage(): React.JSX.Element {
             </div>
 
             {/* Save row */}
-            <div className="mt-7 flex items-center justify-between gap-4">
+            <div className="mt-7 flex items-center justify-between gap-4 flex-wrap">
               {reportSaveStatus === 'success' && (
                 <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
                   <CheckCircle2 className="h-4 w-4" /> נשמר בהצלחה
@@ -418,14 +462,38 @@ export default function SettingsPage(): React.JSX.Element {
               )}
               {reportSaveStatus === 'idle' && <span />}
 
-              <button
-                type="submit"
-                disabled={reportIsSaving || (!isReportDirty && sigIsEmpty && !reportSettings?.teacherSignature)}
-                className="flex items-center gap-2 rounded-2xl bg-violet-600 px-6 py-2.5 text-sm font-bold text-white shadow transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {reportIsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {reportIsSaving ? 'שומר...' : 'שמור שינויים'}
-              </button>
+              {isOnboardingComplete ? (
+                /* ── Normal save button ── */
+                <button
+                  type="submit"
+                  disabled={reportIsSaving || (!isReportDirty && sigIsEmpty && !reportSettings?.teacherSignature)}
+                  className="flex items-center gap-2 rounded-2xl bg-violet-600 px-6 py-2.5 text-sm font-bold text-white shadow transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {reportIsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {reportIsSaving ? 'שומר...' : 'שמור שינויים'}
+                </button>
+              ) : (
+                /* ── Onboarding completion buttons ── */
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="submit"
+                    disabled={reportIsSaving || isFinishing || !isReportDirty || !isReportValid}
+                    onClick={() => { finishAfterSaveRef.current = true; }}
+                    className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {(reportIsSaving || isFinishing) && <Loader2 className="h-4 w-4 animate-spin" />}
+                    שמור וסיים מדריך
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isFinishing}
+                    onClick={() => { void handleFinishLater(); }}
+                    className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    דלג וסיים מדריך
+                  </button>
+                </div>
+              )}
             </div>
           </form>
         )}

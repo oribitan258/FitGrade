@@ -17,7 +17,12 @@
     "fix:bugs": "claude --agent bug-fixer"
   },
   "devDependencies": {
-    "turbo": "^2.0.0"
+    "@axe-core/playwright": "^4.11.3",
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.6.0",
+    "@xstate/test": "^0.5.0",
+    "turbo": "^2.0.0",
+    "xstate": "^4.38.3"
   },
   "engines": {
     "node": ">=20.0.0",

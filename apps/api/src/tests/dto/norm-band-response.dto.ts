@@ -4,11 +4,8 @@ export class NormBandDto {
   @ApiProperty({ description: 'Gender: MALE | FEMALE | OTHER' })
   gender!: string;
 
-  @ApiProperty({ description: 'Minimum student age (inclusive)' })
-  minAge!: number;
-
-  @ApiProperty({ description: 'Maximum student age (inclusive)' })
-  maxAge!: number;
+  @ApiProperty({ description: 'School grade level (1–12)' })
+  gradeLevel!: number;
 
   @ApiProperty({ description: 'Grade awarded (2–100)' })
   score!: number;
@@ -43,8 +40,8 @@ export class TestTypeNormsResponseDto {
   @ApiProperty({
     type: [NormBandDto],
     description:
-      'All NormTable bands for this test type, ordered by minAge → gender → score desc. ' +
-      'Filter client-side by gender + (minAge, maxAge) for a single view.',
+      'All NormTable bands for this test type, ordered by gradeLevel → gender → score desc. ' +
+      'Filter client-side by gender + gradeLevel for a single view.',
   })
   bands!: NormBandDto[];
 }

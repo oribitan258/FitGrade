@@ -1,0 +1,412 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fitgrade_test
+  JWT_ACCESS_SECRET: ci-access-secret-32-chars-minimum
+  JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-minimum
+  GOOGLE_CLIENT_ID: ci-google-client-id
+  GOOGLE_CLIENT_SECRET: ci-google-client-secret
+  NODE_ENV: test
+
+jobs:
+  # ── 1. Type check ─────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api prisma generate
+
+      - name: Type check — API
+        run: pnpm --filter=api exec tsc --noEmit
+
+      - name: Type check — Web
+        run: pnpm --filter=web exec tsc --noEmit
+
+      - name: Type check — Mobile
+        run: pnpm --filter=mobile exec tsc --noEmit
+
+  # ── 2. RTL compliance audit ───────────────────────────────────────────────
+  rtl-audit:
+    name: RTL Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for banned physical directional Tailwind classes
+        run: |
+          BANNED=$(grep -rn \
+            --include="*.tsx" --include="*.ts" \
+            -E '\b(ml-|mr-|pl-|pr-|text-left|text-right|border-l\b|border-r\b|rounded-l\b|rounded-r\b|float-left|float-right)\b' \
+            apps/web/app apps/web/components apps/web/hooks \
+            || true)
+          if [ -n "$BANNED" ]; then
+            echo "::error::RTL violation — banned physical directional classes found:"
+            echo "$BANNED"
+            exit 1
+          fi
+          echo "RTL audit passed — no banned classes found."
+
+      - name: Verify HTML RTL attribute
+        run: |
+          if ! grep -q 'dir="rtl"' apps/web/app/layout.tsx; then
+            echo "::error::Missing dir=\"rtl\" in apps/web/app/layout.tsx"
+            exit 1
+          fi
+          echo "dir=rtl verified."
+
+      - name: Verify mobile RTL force
+        run: |
+          if ! grep -q 'forceRTL' apps/mobile/app/_layout.tsx; then
+            echo "::error::Missing I18nManager.forceRTL(true) in apps/mobile/app/_layout.tsx"
+            exit 1
+          fi
+          echo "Mobile RTL force verified."
+
+  # ── 3. Unit tests (API) ───────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api prisma generate
+
+      - name: Run unit tests with coverage
+        run: pnpm --filter=api test:cov --ci --coverageReporters=lcov --coverageReporters=text-summary
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Assert coverage thresholds
+        run: |
+          pnpm --filter=api test:cov --ci \
+            --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80,"statements":80}}'
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: apps/api/coverage/lcov.info
+          retention-days: 7
+
+  # ── 3b. Tour onboarding Jest tests (Tier 1 unit + Tier 2 integration) ─────
+  #
+  # Tier 3 E2E and Tier 4 security specs live under e2e/tour/ and are picked up
+  # by the Playwright job below. This job covers only the in-process Jest suites
+  # under apps/web. The coverageThreshold block in apps/web/package.json gates
+  # the six tour modules at ≥ 90% statements / branches / functions / lines.
+  tour-tests:
+    name: Tour Onboarding (Jest)
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tour unit + integration tests with coverage
+        run: |
+          pnpm --filter=@fitgrade/web exec jest \
+            --testPathPattern=tour \
+            --coverage \
+            --coverageReporters=lcov \
+            --coverageReporters=text-summary \
+            --ci \
+            --forceExit
+
+      - name: Upload tour coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tour-coverage
+          path: apps/web/coverage
+          retention-days: 7
+
+  # ── 4. Property-based tests ───────────────────────────────────────────────
+  property-tests:
+    name: Property Tests (fast-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api prisma generate
+
+      - name: Run property tests (100 runs each)
+        run: |
+          pnpm --filter=api jest \
+            --testPathPattern="\.property\.spec\.ts$" \
+            --ci --forceExit
+        env:
+          FC_NUM_RUNS: '100'
+
+  # ── 5. API e2e tests ──────────────────────────────────────────────────────
+  api-e2e:
+    name: API E2E (Supertest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api prisma generate
+
+      - name: Apply migrations to test DB
+        run: pnpm --filter=api exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Run e2e tests
+        run: pnpm --filter=api test:e2e --ci --forceExit
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+  # ── 6. Playwright browser e2e ─────────────────────────────────────────────
+  playwright:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api prisma generate
+
+      - name: Apply migrations and seed test DB
+        run: |
+          pnpm --filter=api exec prisma migrate deploy
+          pnpm --filter=api exec prisma db seed
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Build web app
+        run: pnpm --filter=web build
+        env:
+          API_URL: http://localhost:3001/api
+          NEXT_PUBLIC_API_URL: http://localhost:3001/api
+
+      - name: Start API server
+        run: pnpm --filter=api start &
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PORT: 3001
+
+      - name: Start web server
+        run: pnpm --filter=web start &
+        env:
+          PORT: 3000
+
+      - name: Wait for servers
+        run: |
+          npx wait-on http://localhost:3001/api/health http://localhost:3000 --timeout 60000
+
+      - name: Run Playwright tests
+        run: pnpm exec playwright test --project=chromium
+        env:
+          BASE_URL: http://localhost:3000
+          API_URL: http://localhost:3001/api
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # ── 7. Accessibility audit ────────────────────────────────────────────────
+  accessibility:
+    name: Accessibility (axe)
+    runs-on: ubuntu-latest
+    needs: [playwright]
+    if: false  # Runs via Playwright suite (a11y.spec.ts) — this job is a placeholder gate
+    steps:
+      - run: echo "Accessibility verified via a11y.spec.ts in Playwright job"
+
+  # ── 8. Load tests ─────────────────────────────────────────────────────────
+  load-tests:
+    name: Load Tests (Artillery)
+    runs-on: ubuntu-latest
+    # Only run on main branch pushes — load tests are expensive
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client + seed
+        run: |
+          pnpm --filter=api prisma generate
+          pnpm --filter=api exec prisma migrate deploy
+          pnpm --filter=api exec prisma db seed
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Start API server
+        run: pnpm --filter=api start &
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PORT: 3001
+
+      - name: Wait for API
+        run: npx wait-on http://localhost:3001/api/health --timeout 30000
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      - name: Run load tests
+        run: artillery run load-tests/fitgrade.yml --output load-test-report.json
+        env:
+          API_URL: http://localhost:3001/api
+
+      - name: Check load test results
+        run: artillery report load-test-report.json
+
+      - name: Upload Artillery report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: artillery-report
+          path: load-test-report.json
+          retention-days: 7

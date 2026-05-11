@@ -7,7 +7,6 @@ import {
   BookOpen,
   CalendarDays,
   Crown,
-  Dumbbell,
   FileDown,
   LayoutDashboard,
   LogOut,
@@ -15,11 +14,13 @@ import {
   ShieldAlert,
   Swords,
   Target,
+  Dumbbell,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { logout } from '@/lib/api-client';
 import { useSemester, type SemesterView } from '@/contexts/semester-context';
+import { useReportSettings } from '@/hooks/use-report-settings';
 
 // ─── Token types ──────────────────────────────────────────────────────────────
 
@@ -162,11 +163,25 @@ const PE_NAV = [
 
 type NavEntry = { href: string; label: string; icon: typeof LayoutDashboard };
 
+// ─── Domino animation variants ────────────────────────────────────────────────
+
+const NAV_LIST = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.055, delayChildren: 0.08 } },
+};
+
+const NAV_ITEM_ANIM = {
+  hidden: { opacity: 0, y: -10 },
+  show:   { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 380, damping: 28 } },
+};
+
 export function Sidebar(): React.JSX.Element {
   const pathname                     = usePathname();
   const router                       = useRouter();
   const { viewMode, setSemesterView } = useSemester();
   const tok                          = VIEW_TOKENS[viewMode];
+  const { data: reportSettings }     = useReportSettings();
+  const schoolName                   = reportSettings?.schoolName ?? null;
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -187,9 +202,10 @@ export function Sidebar(): React.JSX.Element {
       [active, viewMode],
     );
     return (
-      <div className="px-2">
+      <motion.div className="px-2" variants={NAV_ITEM_ANIM}>
         <Link
           href={href}
+          prefetch
           aria-current={active ? 'page' : undefined}
           className={cn(
             'group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200',
@@ -218,7 +234,7 @@ export function Sidebar(): React.JSX.Element {
             aria-hidden="true"
           />
         </Link>
-      </div>
+      </motion.div>
     );
   }
 
@@ -307,17 +323,17 @@ export function Sidebar(): React.JSX.Element {
           <SubtitleRipple />
         </div>
 
-        <motion.div
-          animate={{
-            background: tok.navGradient,
-            boxShadow: tok.pillShadow,
-          }}
-          transition={{ duration: 0.55 }}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-          style={{ border: `1px solid ${tok.pillBorder}`, backdropFilter: 'blur(8px)' }}
-        >
-          <Dumbbell className={cn('h-[18px] w-[18px]', tok.navIconClass)} aria-hidden="true" />
-        </motion.div>
+        {schoolName !== null ? (
+          <span
+            className="text-[12px] font-semibold tracking-wide truncate ms-3 max-w-[100px] text-end"
+            style={{ color: 'rgba(255,255,255,0.85)' }}
+            title={schoolName}
+          >
+            {schoolName}
+          </span>
+        ) : (
+          <Dumbbell className={cn('h-[18px] w-[18px] shrink-0', tok.navIconClass)} aria-hidden="true" />
+        )}
       </div>
 
       {/* ── Semester / View Switcher ────────────────────────────────────────── */}
@@ -392,13 +408,12 @@ export function Sidebar(): React.JSX.Element {
 
       {/* ── Navigation ─────────────────────────────────────────────────────── */}
       <nav className="relative z-10 flex flex-1 flex-col overflow-y-auto py-3" aria-label="ניווט ראשי">
-        {/* Main scrollable links */}
-        <div className="flex-1">
-          <div className="space-y-0.5">
+        <motion.div className="flex-1" variants={NAV_LIST} initial="hidden" animate="show">
+          <motion.div className="space-y-0.5" variants={NAV_LIST}>
             {MAIN_NAV.map((item) => (
               <NavItem key={item.href} {...item} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
 
@@ -408,11 +423,11 @@ export function Sidebar(): React.JSX.Element {
             </p>
           </div>
 
-          <div className="space-y-0.5">
+          <motion.div className="space-y-0.5" variants={NAV_LIST}>
             {TOOLS_NAV.map((item) => (
               <NavItem key={item.href} {...item} />
             ))}
-          </div>
+          </motion.div>
 
           <div className="mx-4 my-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }} />
 
@@ -422,17 +437,22 @@ export function Sidebar(): React.JSX.Element {
             </p>
           </div>
 
-          <div className="space-y-0.5">
+          <motion.div className="space-y-0.5" variants={NAV_LIST}>
             {PE_NAV.map((item) => (
               <NavItem key={item.href} {...item} />
             ))}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Settings — pinned to bottom of nav */}
-        <div className="mt-auto pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <motion.div
+          className="mt-auto pt-2"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 0.65 } }}
+        >
           <NavItem href="/settings" label="הגדרות" icon={Settings2} />
-        </div>
+        </motion.div>
       </nav>
 
       {/* ── Logout ─────────────────────────────────────────────────────────── */}

@@ -162,7 +162,7 @@ export function SemesterProvider({
 
   return (
     <SemesterContext.Provider value={value}>
-      {children}
+      <>{children}</>
     </SemesterContext.Provider>
   );
 }

@@ -91,6 +91,18 @@ model User {
   /// Teacher's drawn signature (Base64 PNG Data URL) for PDF reports.
   teacherSignature String?
 
+  // ── Onboarding state ──────────────────────────────────────────────────
+  /// false until the teacher completes the welcome tour + setup form.
+  /// All teacher routes redirect to /onboarding while this is false.
+  isOnboardingComplete Boolean @default(false)
+
+  // ── Default test preferences (selected during onboarding) ─────────────
+  /// IDs of FitnessTestType records the teacher prefers for MALE/BOYS classes.
+  /// Empty array = use system defaults. Validated against FitnessTestType at write-time.
+  defaultMaleTestIds   String[] @default([])
+  /// IDs of FitnessTestType records the teacher prefers for FEMALE/GIRLS classes.
+  defaultFemaleTestIds String[] @default([])
+
   classes         Class[]
   auditLogs       AuditLog[]
   events          Event[]
@@ -107,7 +119,6 @@ model Class {
   id                String    @id @default(cuid())
   name              String    // e.g., "כיתה י' 1"
   academicYear      String    // e.g., "2024-2025"
-  semester          Semester
   joinCode          String    @unique // 6-char alphanumeric
   joinCodeExpiresAt DateTime? // null = never expires
   deletedAt         DateTime? // null = active; non-null = soft-deleted
@@ -149,10 +160,11 @@ model Student {
   id           String    @id @default(cuid())
   firstName    String
   lastName     String
-  dateOfBirth  DateTime  // Used for age-based norm table lookup
+  dateOfBirth  DateTime? // Optional — imported students may lack DOB; required for age-based norm lookup
   gender       Gender
-  studentCode  String    // Teacher-assigned code (unique per class, enforced in service layer)
-  passwordHash String    // bcrypt hash
+  nationalId   String?   @unique // ת"ז — 9-digit Israeli national ID (Luhn-validated at app layer)
+  studentCode  String    // Internal code, unique per class (enforced in service layer)
+  passwordHash String?   // bcrypt hash — null for passwordless (national ID) login
   deletedAt    DateTime? // null = active; non-null = soft-deleted
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -182,6 +194,9 @@ model ClassEnrollment {
 
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Back-reference: cascade-deletes StudentFinalGrade when this enrollment is removed.
+  finalGrade StudentFinalGrade?
 
   @@unique([classId, studentId])
   @@unique([classId, studentCode])
@@ -226,25 +241,22 @@ model FitnessTestType {
 
 // ─────────────────────────────────────────────
 // NORM TABLES (System-seeded, read-only)
-// Each row maps a raw-value band → score for a specific gender + age range.
-// Age groups mirror Ministry of Education categories:
-//   ה–ו: minAge=10 maxAge=12 | ז–ח: minAge=12 maxAge=14
-//   ט:   minAge=14 maxAge=15 | י–יב: minAge=15 maxAge=18
+// Each row maps a raw-value band → score for a specific gender + school grade level.
+// Grade levels correspond to Israeli school grades 1–12.
 // ─────────────────────────────────────────────
 
 model NormTable {
-  id       String  @id @default(cuid())
-  gender   Gender
-  minAge   Int     // Minimum student age in years (inclusive)
-  maxAge   Int     // Maximum student age in years (inclusive)
-  minValue Decimal // Raw value lower bound (inclusive)
-  maxValue Decimal // Raw value upper bound (exclusive)
-  score    Int     // Grade awarded: 1–100
+  id         String  @id @default(cuid())
+  gender     Gender
+  gradeLevel Int     // School grade level 1–12 (matches Class.gradeLevel)
+  minValue   Decimal // Raw value lower bound (inclusive)
+  maxValue   Decimal // Raw value upper bound (exclusive)
+  score      Int     // Grade awarded: 1–100
 
   testTypeId String
   testType   FitnessTestType @relation(fields: [testTypeId], references: [id], onDelete: Cascade)
 
-  @@index([testTypeId, gender, minAge, maxAge])
+  @@index([testTypeId, gender, gradeLevel])
   @@map("norm_tables")
 }
 
@@ -397,6 +409,10 @@ model StudentFinalGrade {
 
   studentId String
   student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Compound FK to ClassEnrollment: cascade-deletes this grade when a student is removed from the class.
+  // Resolves the gap where StudentFinalGrade persisted after ClassEnrollment deletion.
+  enrollment ClassEnrollment @relation(fields: [classId, studentId], references: [classId, studentId], onDelete: Cascade)
 
   @@unique([classId, studentId])
   @@index([classId])

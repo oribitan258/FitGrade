@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthRepository } from './auth.repository';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service';
 
 /**
  * AuthModule — complete Google OAuth 2.0 + JWT authentication.
@@ -38,6 +39,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, GoogleStrategy, JwtStrategy],
+  providers: [AuthService, AuthRepository, GoogleStrategy, JwtStrategy, RefreshTokenBlacklistService],
 })
 export class AuthModule {}

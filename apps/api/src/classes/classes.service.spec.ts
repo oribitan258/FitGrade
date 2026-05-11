@@ -1,6 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Semester } from '@prisma/client';
 import { ClassesService } from './classes.service';
 import { ClassesRepository } from './classes.repository';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -15,7 +14,6 @@ const mockClass: ClassResponseDto = {
   id: 'class-1',
   name: "כיתה י' 1",
   academicYear: '2024-2025',
-  semester: Semester.A,
   joinCode: 'AB3X7Q',
   joinCodeExpiresAt: new Date('2025-01-08'),
   studentCount: 0,
@@ -29,7 +27,6 @@ const mockClass: ClassResponseDto = {
 const createDto: CreateClassDto = {
   name: "כיתה י' 1",
   academicYear: '2024-2025',
-  semester: Semester.A,
 };
 
 // ─── Mock repository ──────────────────────────────────────────────────────────

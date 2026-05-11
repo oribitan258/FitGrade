@@ -198,7 +198,7 @@ export class TestsService {
     dto: SubmitResultDto,
     teacherId: string,
   ): Promise<ResultResponseDto> {
-    const { testTypeId, conductedAt, inputType, testNameHe } =
+    const { testTypeId, conductedAt, inputType, testNameHe, classId } =
       await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
 
     if (inputType === FitnessInputType.TIME && Number(dto.rawValue) < TestsService.MIN_TIME_SECONDS) {
@@ -223,7 +223,7 @@ export class TestsService {
       dto.studentId,
       testTypeId,
       dto.rawValue,
-      conductedAt,
+      classId,
     );
 
     const result = await this.testsRepository.createResult(

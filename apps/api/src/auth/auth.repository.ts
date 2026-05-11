@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { GoogleTeacherProfile, TeacherProfileRecord, TeacherRecord, StudentLoginRecord } from './auth.types';
 
@@ -47,44 +47,94 @@ export class AuthRepository {
 
   /**
    * Finds a teacher by primary key — used by GET /auth/me.
+   * Surfaces onboarding state and default test preferences so the web layout
+   * can decide whether to redirect to the onboarding flow.
    */
   async findTeacherById(id: string): Promise<TeacherProfileRecord | null> {
     return this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, name: true, school: true, avatarUrl: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        school: true,
+        avatarUrl: true,
+        isOnboardingComplete: true,
+        defaultMaleTestIds: true,
+        defaultFemaleTestIds: true,
+      },
     });
   }
 
   /**
-   * Finds the student+class record needed for credential validation.
-   * Returns the passwordHash so AuthService can run bcrypt.compare.
-   *
-   * Throws UnauthorizedException with a generic message if the class code or
-   * student code is not found — intentionally vague to prevent user enumeration.
+   * Marks onboarding as complete for the given teacher.
+   * Idempotent — safe to call multiple times.
    */
-  async findStudentForLogin(
-    classCode: string,
-    studentCode: string,
-  ): Promise<StudentLoginRecord> {
+  async setOnboardingComplete(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { isOnboardingComplete: true },
+    });
+  }
+
+  /**
+   * Persists the teacher's default test type IDs for boys/girls classes.
+   * Both arrays are written atomically. Caller must validate IDs exist.
+   */
+  async setDefaultTestPreferences(
+    userId: string,
+    defaultMaleTestIds: string[],
+    defaultFemaleTestIds: string[],
+  ): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { defaultMaleTestIds, defaultFemaleTestIds },
+    });
+  }
+
+  /**
+   * Resets onboarding state to incomplete — dev-only, used to re-test the tour.
+   */
+  async resetOnboardingState(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { isOnboardingComplete: false },
+    });
+  }
+
+  /**
+   * Returns the subset of input IDs that exist in FitnessTestType.
+   * Used by the service layer to validate onboarding preference payloads.
+   */
+  async findExistingTestTypeIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.fitnessTestType.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Finds the student+class record for national-ID login.
+   * Resolves by nationalId alone; returns the most recently enrolled active class.
+   * Returns null if no matching enrollment is found — caller throws generic 401.
+   */
+  async findStudentForNationalIdLogin(
+    nationalId: string,
+  ): Promise<StudentLoginRecord | null> {
     const enrollment = await this.prisma.classEnrollment.findFirst({
       where: {
-        class: { joinCode: classCode },
-        student: { studentCode },
+        student: { nationalId, deletedAt: null },
       },
+      orderBy: { enrolledAt: 'desc' },
       select: {
         classId: true,
-        student: {
-          select: {
-            id: true,
-            passwordHash: true,
-          },
-        },
+        student: { select: { id: true, passwordHash: true } },
       },
     });
 
-    if (enrollment === null) {
-      throw new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים');
-    }
+    if (enrollment === null) return null;
 
     return {
       studentId: enrollment.student.id,

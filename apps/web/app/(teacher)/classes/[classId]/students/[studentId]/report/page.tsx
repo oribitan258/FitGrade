@@ -20,7 +20,6 @@ import {
   ArrowRight,
   Award,
   BookOpen,
-  Calendar,
   CalendarRange,
   CheckCircle2,
   Dumbbell,
@@ -37,6 +36,7 @@ import { useStudentReport } from '@/hooks/use-student-report';
 import { useReportSettings } from '@/hooks/use-report-settings';
 import { useSemester } from '@/contexts/semester-context';
 import { cn, formatRawValue } from '@/lib/utils';
+import { ResultListTile } from '@/components/students/result-list-tile';
 
 // ─── Animation ────────────────────────────────────────────────────────────────
 
@@ -60,15 +60,16 @@ const GENDER_LABELS: Record<string, string> = {
   OTHER: 'אחר',
 };
 
-/** Maps grade 0–100 to a Tailwind-compatible color token for badge rendering. */
-function gradeStyle(score: number): {
-  bg: string; text: string; border: string; dot: string; label: string;
+/** Maps grade 0–100 to Tailwind color tokens for badge rendering.
+ * `passingGrade` is the teacher-configured threshold (default 55). */
+function gradeStyle(score: number, passingGrade = 55): {
+  bg: string; text: string; border: string; dot: string;
 } {
-  if (score >= 90) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', label: 'מצטיין' };
-  if (score >= 75) return { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500',    label: 'טוב מאוד' };
-  if (score >= 60) return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500',   label: 'טוב' };
-  if (score >= 55) return { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',  dot: 'bg-orange-500',  label: 'עובר' };
-  return              { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500',     label: 'נכשל' };
+  if (score >= 90) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' };
+  if (score >= 75) return { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    };
+  if (score >= 60) return { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500'   };
+  if (score >= passingGrade) return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500' };
+  return                           { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'     };
 }
 
 /** Color for the BarChart fill based on grade. */
@@ -169,6 +170,7 @@ export default function StudentReportPage() {
   const effectiveSemester = showFullYear ? undefined : semesterFilter;
 
   const [isPrinting, setIsPrinting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'results' | 'attendance' | 'grades'>('results');
 
   const { data: report, isLoading, error } = useStudentReport(classId, studentId, effectiveSemester);
   const { data: reportSettings } = useReportSettings();
@@ -262,7 +264,7 @@ export default function StudentReportPage() {
     );
   }
 
-  const { firstName, lastName, gender, dateOfBirth, studentCode, className, gradeLevel, generatedAt, testResults, attendance, finalGrade } = report;
+  const { firstName, lastName, gender, studentCode, className, gradeLevel, generatedAt, testResults, attendance, finalGrade } = report;
 
   const overallStyle = gradeStyle(finalGrade.recommendedGrade);
 
@@ -501,10 +503,6 @@ export default function StudentReportPage() {
                 <UserCheck className="h-3.5 w-3.5 shrink-0" />
                 {GENDER_LABELS[gender] ?? gender}
               </span>
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 shrink-0" />
-                {formatDate(dateOfBirth)}
-              </span>
               <code className="font-mono text-xs text-slate-400">{studentCode}</code>
             </div>
           </div>
@@ -577,8 +575,131 @@ export default function StudentReportPage() {
         />
       </motion.div>
 
+      {/* ── MOBILE: 3-Tab Layout ──────────────────────────────────────────── */}
+      <div className="block md:hidden print:hidden">
+        {/* Tab bar */}
+        <div className="sticky top-0 z-10 mb-4 flex rounded-2xl bg-slate-100 p-1">
+          {(['results', 'attendance', 'grades'] as const).map((tab) => {
+            const labels: Record<typeof tab, string> = {
+              results:    '📊 תוצאות',
+              attendance: '📅 נוכחות',
+              grades:     '🏆 ציונים',
+            };
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => { setActiveTab(tab); }}
+                className={cn(
+                  'flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all',
+                  activeTab === tab ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500',
+                )}
+              >
+                {labels[tab]}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab: תוצאות */}
+        {activeTab === 'results' && (
+          <div>
+            {testResults.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12 text-center">
+                <Dumbbell className="h-8 w-8 text-slate-300" />
+                <p className="text-sm font-medium text-slate-500">אין תוצאות מבחנים לתצוגה</p>
+              </div>
+            ) : (
+              testResults.map((result) => (
+                <ResultListTile
+                  key={result.testTypeId}
+                  result={result}
+                  passingGrade={reportSettings?.passingGrade ?? 55}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Tab: נוכחות */}
+        {activeTab === 'attendance' && (
+          <div className="prismatic-glass rounded-3xl p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-emerald-500" />
+              <h2 className="font-bold text-slate-800">נוכחות</h2>
+              <span className={cn(
+                'me-auto rounded-full px-2 py-0.5 text-[11px] font-bold',
+                attendance.pct >= 80 ? 'bg-emerald-100 text-emerald-700' :
+                attendance.pct >= 60 ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700',
+              )}>
+                {attendance.pct}%
+              </span>
+            </div>
+            <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-[width] duration-700',
+                  attendance.pct >= 80 ? 'bg-emerald-500' :
+                  attendance.pct >= 60 ? 'bg-amber-500' : 'bg-red-500',
+                )}
+                style={{ width: `${attendance.pct}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-xl bg-emerald-50 py-3">
+                <p className="text-2xl font-extrabold text-emerald-700">{attendance.present}</p>
+                <p className="mt-0.5 font-medium text-emerald-600">נוכח/ת</p>
+              </div>
+              <div className="rounded-xl bg-red-50 py-3">
+                <p className="text-2xl font-extrabold text-red-600">{attendance.absent}</p>
+                <p className="mt-0.5 font-medium text-red-500">נעדר/ת</p>
+              </div>
+              <div className="rounded-xl bg-orange-50 py-3">
+                <p className="text-2xl font-extrabold text-orange-600">{attendance.excused}</p>
+                <p className="mt-0.5 font-medium text-orange-500">פטור/ת</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: ציונים */}
+        {activeTab === 'grades' && (
+          <div className="space-y-4">
+            <div className={cn(
+              'flex flex-col items-center gap-2 rounded-3xl border p-6 text-center',
+              overallStyle.bg, overallStyle.border,
+            )}>
+              <p className="text-sm font-semibold text-slate-500">ציון מומלץ</p>
+              <p className={cn('text-6xl font-black tabular-nums leading-none', overallStyle.text)}>
+                {finalGrade.recommendedGrade}
+              </p>
+              <p className={cn('text-base font-bold', overallStyle.text)}>
+                {getHebrewGradeLabel(finalGrade.recommendedGrade)}
+              </p>
+            </div>
+            <div className="prismatic-glass space-y-3 rounded-3xl p-5">
+              <div className="flex items-center justify-between rounded-xl bg-indigo-50 px-4 py-3">
+                <span className="text-sm text-indigo-700">כושר גופני</span>
+                <span className="text-sm font-bold text-indigo-800">
+                  {finalGrade.fitnessAvg}
+                  <span className="ms-1 text-xs font-normal text-indigo-500">× {finalGrade.testWeight}%</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-violet-50 px-4 py-3">
+                <span className="text-sm text-violet-700">תלמידות</span>
+                <span className="text-sm font-bold text-violet-800">
+                  {finalGrade.talmidautAvg}
+                  <span className="ms-1 text-xs font-normal text-violet-500">× {finalGrade.talmidautWeight}%</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── Two-column layout: table + chart ──────────────────────────────── */}
-      <motion.div variants={ITEM} className="grid gap-6 lg:grid-cols-[1fr_360px] print:block print:space-y-4">
+      <motion.div variants={ITEM} className="hidden md:grid gap-6 lg:grid-cols-[1fr_360px] print:block print:space-y-4">
 
         {/* Achievements Table */}
         <div className="prismatic-glass overflow-hidden rounded-3xl print:break-inside-auto print:overflow-visible">
@@ -612,7 +733,7 @@ export default function StudentReportPage() {
                 </thead>
                 <tbody>
                   {testResults.map((result, i) => {
-                    const gs = gradeStyle(result.grade);
+                    const gs = gradeStyle(result.grade, reportSettings?.passingGrade ?? 55);
                     const raw =
                       result.rawValue !== null
                         ? formatRawValue(result.rawValue, result.inputType)
@@ -649,7 +770,7 @@ export default function StudentReportPage() {
                             gs.bg, gs.text, gs.border,
                           )}>
                             <span className={cn('h-1.5 w-1.5 rounded-full', gs.dot)} />
-                            {result.grade}
+                            {getHebrewGradeLabel(result.grade)}
                           </span>
                         </td>
                         {/* Class avg */}
@@ -685,7 +806,7 @@ export default function StudentReportPage() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} width={62} />

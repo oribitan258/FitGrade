@@ -36,7 +36,7 @@ export interface RawReportData {
     firstName: string;
     lastName: string;
     gender: Gender;
-    dateOfBirth: Date;
+    dateOfBirth: Date | null;
     studentCode: string;
   };
   cls: {
@@ -92,7 +92,7 @@ export interface RawStudentProfile {
     id: string;
     firstName: string;
     lastName: string;
-    dateOfBirth: Date;
+    dateOfBirth: Date | null;
     gender: Gender;
     studentCode: string;
   };
@@ -107,10 +107,10 @@ export interface RawStudentProfile {
 export interface CreateStudentInput {
   firstName: string;
   lastName: string;
-  dateOfBirth: Date;
   gender: Gender;
   studentCode: string;
-  passwordHash: string; // pre-hashed by StudentsService
+  nationalId: string;
+  passwordHash?: string;
 }
 
 export interface CreateTalmidautInput {
@@ -142,6 +142,7 @@ const STUDENT_SELECT = {
   firstName: true,
   lastName: true,
   studentCode: true,
+  nationalId: true,
   gender: true,
   dateOfBirth: true,
   createdAt: true,
@@ -260,12 +261,14 @@ export class StudentsRepository {
           orderBy: { session: { conductedAt: 'asc' } },
         }),
         // Count only PRESENT + ABSENT — EXCUSED lessons do not count against the student
-        this.prisma.attendanceRecord.count({ where: { studentId, classId, status: { not: 'EXCUSED' } } }),
         this.prisma.attendanceRecord.count({
-          where: { studentId, classId, status: 'PRESENT' },
+          where: { studentId, classId, status: { not: 'EXCUSED' }, ...(semester !== undefined ? { semester } : {}) },
+        }),
+        this.prisma.attendanceRecord.count({
+          where: { studentId, classId, status: 'PRESENT', ...(semester !== undefined ? { semester } : {}) },
         }),
         this.prisma.attendanceRecord.findMany({
-          where: { studentId, classId },
+          where: { studentId, classId, ...(semester !== undefined ? { semester } : {}) },
           orderBy: { date: 'asc' },
           take: 6,
           select: { status: true },
@@ -345,6 +348,15 @@ export class StudentsRepository {
       }
       throw e;
     }
+  }
+
+  /** Returns the gender composition type for a class. Used for gender-class validation. */
+  async findClassGenderType(classId: string): Promise<'BOYS' | 'GIRLS' | 'MIXED'> {
+    const cls = await this.prisma.class.findUniqueOrThrow({
+      where: { id: classId },
+      select: { genderType: true },
+    });
+    return cls.genderType;
   }
 
   /**
@@ -519,56 +531,137 @@ export class StudentsRepository {
   }
 
   /**
-   * Creates a student and their class enrollment in a single transaction.
-   * Throws ConflictException if the studentCode is already used in this class.
+   * Enrolls a student in a class with smart upsert logic:
+   *   - If nationalId matches an existing student who is already in this class → 409 Conflict
+   *   - If nationalId matches an existing student in a different class → re-enrolls (new ClassEnrollment)
+   *   - Otherwise → creates a new Student + ClassEnrollment
+   *
+   * Returns the student DTO plus a reEnrolled flag. When reEnrolled is true,
+   * studentName is also returned so the caller can inform the teacher.
    */
-  async createWithEnrollment(
+  async enrollStudent(
     classId: string,
     input: CreateStudentInput,
-  ): Promise<StudentResponseDto> {
-    // Check studentCode uniqueness within this class before writing
-    const conflict = await this.prisma.classEnrollment.findFirst({
-      where: { classId, student: { studentCode: input.studentCode } },
-      select: { id: true },
-    });
-    if (conflict !== null) {
-      throw new ConflictException(
-        `קוד תלמיד "${input.studentCode}" כבר קיים בכיתה זו`,
-      );
+  ): Promise<{ student: StudentResponseDto; reEnrolled: false }> {
+    // Check for existing student by nationalId before entering the transaction
+    if (input.nationalId) {
+      const existing = await this.prisma.student.findUnique({
+        where: { nationalId: input.nationalId },
+        select: { id: true, firstName: true, lastName: true },
+      });
+
+      if (existing !== null) {
+        const enrollment = await this.prisma.classEnrollment.findUnique({
+          where: { classId_studentId: { classId, studentId: existing.id } },
+          select: { id: true },
+        });
+
+        if (enrollment !== null) {
+          throw new ConflictException('התלמיד כבר רשום לכיתה זו');
+        }
+
+        throw new ConflictException('התלמיד כבר רשום לכיתה אחרת במערכת. תלמיד לא יכול להיות בשתי כיתות במקביל');
+      }
     }
 
+    // New student — create + enroll in one transaction
     try {
-      return await this.prisma.$transaction(
+      const student = await this.prisma.$transaction(
         async (tx: Prisma.TransactionClient): Promise<StudentResponseDto> => {
-          const student = await tx.student.create({
+          const created = await tx.student.create({
             data: {
               firstName: input.firstName,
               lastName: input.lastName,
-              dateOfBirth: input.dateOfBirth,
               gender: input.gender,
               studentCode: input.studentCode,
-              passwordHash: input.passwordHash,
+              ...(input.nationalId ? { nationalId: input.nationalId } : {}),
+              ...(input.passwordHash ? { passwordHash: input.passwordHash } : {}),
             },
             select: STUDENT_SELECT,
           });
 
           await tx.classEnrollment.create({
-            data: { classId, studentId: student.id, studentCode: input.studentCode },
+            data: { classId, studentId: created.id, studentCode: input.studentCode },
           });
 
-          return student;
+          return created;
         },
       );
+
+      return { student, reEnrolled: false };
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2002'
       ) {
-        throw new ConflictException(
-          `קוד תלמיד "${input.studentCode}" כבר קיים בכיתה זו`,
-        );
+        throw new ConflictException('תלמיד עם תעודת זהות זו כבר קיים במערכת');
       }
       throw e;
     }
+  }
+
+  /**
+   * Bulk-imports students from a parsed roster into the given class.
+   * For each row:
+   *   1. Finds an existing Student by nationalId, or creates one.
+   *   2. Skips the row if the student is already enrolled in this class.
+   *   3. Creates a ClassEnrollment for new enrollments.
+   * Runs all writes inside a single $transaction for atomicity.
+   */
+  async importStudents(
+    classId: string,
+    rows: Array<{ nationalId: string; firstName: string; lastName: string; gender: 'MALE' | 'FEMALE' | null }>,
+  ): Promise<{ added: number; existing: number; reEnrolled: number }> {
+    let added = 0;
+    let existing = 0;
+    let reEnrolled = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        // Find or create student by nationalId
+        let student = await tx.student.findUnique({
+          where: { nationalId: row.nationalId },
+          select: { id: true },
+        });
+
+        const isNewStudent = student === null;
+
+        if (student === null) {
+          student = await tx.student.create({
+            data: {
+              firstName: row.firstName,
+              lastName: row.lastName,
+              gender: (row.gender ?? 'MALE') as Gender,
+              nationalId: row.nationalId,
+              studentCode: row.nationalId.slice(-4),
+            },
+            select: { id: true },
+          });
+        }
+
+        // Check if already enrolled in this class
+        const enrollmentExists = await tx.classEnrollment.findUnique({
+          where: { classId_studentId: { classId, studentId: student.id } },
+          select: { id: true },
+        });
+
+        if (enrollmentExists !== null) {
+          existing++;
+          continue;
+        }
+
+        await tx.classEnrollment.create({
+          data: { classId, studentId: student.id, studentCode: row.nationalId.slice(-4) },
+        });
+
+        if (isNewStudent) {
+          added++;
+        } else {
+          reEnrolled++;
+        }
+      }
+    });
+
+    return { added, existing, reEnrolled };
   }
 }

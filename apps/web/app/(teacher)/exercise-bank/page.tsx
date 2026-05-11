@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity, CheckCircle2, ChevronDown, ChevronUp,
@@ -254,8 +255,17 @@ const DIFF_LEVEL: Record<Difficulty, number> = { easy: 0, medium: 1, hard: 2 };
 
 // ─── Generate lesson ────────────────────────────────────────────────────────
 
-function generateLesson(goal: GoalType, difficulty: Difficulty): LessonStep[] {
-  const maxLevel = DIFF_LEVEL[difficulty];
+function generateLesson(
+  goal: GoalType,
+  difficulty: Difficulty,
+  _gender: LessonGender,
+  ageGroup: AgeGroup,
+): LessonStep[] {
+  // Middle school students should not receive exercises above medium difficulty,
+  // regardless of what the teacher selected — cap to protect appropriate load.
+  const effectiveDifficulty: Difficulty =
+    ageGroup === 'middle' && difficulty === 'hard' ? 'medium' : difficulty;
+  const maxLevel = DIFF_LEVEL[effectiveDifficulty];
 
   const pick = (phase: Phase, count: number): Exercise[] => {
     const pool = EXERCISE_BANK.filter(
@@ -445,7 +455,7 @@ function ExerciseCard({
       variants={CARD_VARIANT}
       layout
       className={`overflow-hidden rounded-2xl border-s-4 ${phase.accentBorder} border border-e-0 border-t-0 border-b-0 bg-white/90 backdrop-blur-md ${phase.glow} transition-all ${step.done ? 'opacity-55' : ''}`}
-      style={{ borderWidth: '1px', borderStartWidth: '4px' }}
+      style={{ borderWidth: '1px', borderInlineStartWidth: '4px' }}
     >
       <div className="flex items-center gap-3 px-4 py-3.5">
         {/* Phase-colored icon */}
@@ -600,11 +610,15 @@ const AGE_OPTIONS = (['middle', 'high'] as AgeGroup[]).map((v) => ({
 }));
 
 export default function ExerciseBankPage(): React.JSX.Element {
+  // No API hooks on this page — tell the tour we're ready immediately.
+  useSignalPageReady('exercise-bank', true);
+
   const [goal, setGoal]           = useState<GoalType>('כושר כללי');
   const [gender, setGender]       = useState<LessonGender>('MIXED');
   const [ageGroup, setAgeGroup]   = useState<AgeGroup>('high');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
-  const [lesson, setLesson]       = useState<LessonStep[]>(() => generateLesson('כושר כללי', 'medium'));
+  const [lesson, setLesson]       = useState<LessonStep[]>([]);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const [animKey, setAnimKey]     = useState(0);
 
   const doneCount     = lesson.filter((s) => s.done).length;
@@ -613,7 +627,8 @@ export default function ExerciseBankPage(): React.JSX.Element {
   const cooldownSteps = lesson.filter((s) => s.phase === 'cooldown');
 
   const handleGenerate = (): void => {
-    setLesson(generateLesson(goal, difficulty));
+    setLesson(generateLesson(goal, difficulty, gender, ageGroup));
+    setHasGenerated(true);
     setAnimKey((k) => k + 1);
   };
 
@@ -632,7 +647,7 @@ export default function ExerciseBankPage(): React.JSX.Element {
   const diffCfg = DIFFICULTY_CONFIG[difficulty];
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5 pb-16">
+    <div className="mx-auto max-w-2xl space-y-5 pt-16 px-4 pb-16 md:pt-0 md:px-0">
 
       {/* ── Page hero ─────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 px-6 py-6 shadow-[0_10px_40px_rgba(99,102,241,0.45)]">
@@ -698,62 +713,71 @@ export default function ExerciseBankPage(): React.JSX.Element {
         <RefreshCw className="ms-1 h-4 w-4 opacity-60" />
       </motion.button>
 
-      {/* ── Progress + reset ───────────────────────────────────────────────── */}
-      {lesson.length > 0 && (
-        <div className="flex items-center gap-4 rounded-2xl border border-white/70 bg-white/70 px-5 py-3.5 shadow-sm backdrop-blur-xl">
-          <div className="flex-1">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-sm font-bold text-slate-700">התקדמות השיעור</span>
-              <span className="text-xs text-slate-400">
-                {doneCount === lesson.length ? '🎉 הושלם!' : `${lesson.length - doneCount} נותרו`}
-              </span>
-            </div>
-            <LessonProgressBar done={doneCount} total={lesson.length} />
-          </div>
-          {doneCount > 0 && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              איפוס
-            </button>
-          )}
+      {/* ── Lesson output — hidden until first generate ────────────────────── */}
+      {!hasGenerated ? (
+        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-slate-200 bg-white/50 py-14 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-3xl">⚡</div>
+          <p className="font-semibold text-slate-600">הגדר פרמטרים ולחץ &quot;צור שיעור חדש&quot;</p>
+          <p className="text-xs text-slate-400">השיעור יופיע כאן לאחר הלחיצה</p>
         </div>
+      ) : (
+        <>
+          {/* ── Progress + reset ── */}
+          <div className="flex items-center gap-4 rounded-2xl border border-white/70 bg-white/70 px-5 py-3.5 shadow-sm backdrop-blur-xl">
+            <div className="flex-1">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-700">התקדמות השיעור</span>
+                <span className="text-xs text-slate-400">
+                  {doneCount === lesson.length ? '🎉 הושלם!' : `${lesson.length - doneCount} נותרו`}
+                </span>
+              </div>
+              <LessonProgressBar done={doneCount} total={lesson.length} />
+            </div>
+            {doneCount > 0 && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                איפוס
+              </button>
+            )}
+          </div>
+
+          {/* ── Lesson timeline ── */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={animKey}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-6"
+            >
+              <PhaseSection phase="warmup"   steps={warmupSteps}   onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
+              <PhaseSection phase="main"     steps={mainSteps}     onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
+              <PhaseSection phase="cooldown" steps={cooldownSteps} onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
+            </motion.div>
+          </AnimatePresence>
+
+          {/* ── Lesson metadata badge ── */}
+          <div className="flex flex-wrap justify-center gap-2 pt-2 text-xs text-slate-400">
+            <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
+              {GENDER_CONFIG[gender].label}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
+              {AGE_CONFIG[ageGroup].label} {AGE_CONFIG[ageGroup].sub}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
+              רמת {diffCfg.label}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
+              {goal}
+            </span>
+          </div>
+        </>
       )}
-
-      {/* ── Lesson timeline ────────────────────────────────────────────────── */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={animKey}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="space-y-6"
-        >
-          <PhaseSection phase="warmup"   steps={warmupSteps}   onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
-          <PhaseSection phase="main"     steps={mainSteps}     onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
-          <PhaseSection phase="cooldown" steps={cooldownSteps} onToggleDone={handleToggleDone} onToggleExpand={handleToggleExpand} />
-        </motion.div>
-      </AnimatePresence>
-
-      {/* ── Lesson metadata badge ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap justify-center gap-2 pt-2 text-xs text-slate-400">
-        <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
-          {GENDER_CONFIG[gender].label}
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
-          {AGE_CONFIG[ageGroup].label} {AGE_CONFIG[ageGroup].sub}
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
-          רמת {diffCfg.label}
-        </span>
-        <span className="rounded-full border border-slate-200 bg-white/60 px-3 py-1 font-medium">
-          {goal}
-        </span>
-      </div>
     </div>
   );
 }

@@ -211,9 +211,7 @@ export function BeepTestSummary({
                 method: 'PATCH',
                 body: JSON.stringify({
                   gradeOverride,
-                  ...(r.overrideReason.trim() !== '' && {
-                    overrideReason: r.overrideReason.trim(),
-                  }),
+                  overrideReason: r.overrideReason.trim(),
                 }),
               },
             );
@@ -358,7 +356,7 @@ export function BeepTestSummary({
                   ) : row.calculatedGrade !== null ? (
                     <>
                       <span className="text-base font-black tabular-nums text-white">
-                        {getHebrewGradeLabel(row.calculatedGrade)}
+                        {row.calculatedGrade}
                       </span>
                       <span className="text-[10px] font-semibold text-white/40">
                         {getHebrewGradeLabel(row.calculatedGrade)}
@@ -387,7 +385,7 @@ export function BeepTestSummary({
                       type="text"
                       value={row.overrideReason}
                       onChange={(e) => setOverrideReason(row.studentId, e.target.value)}
-                      placeholder="סיבה (רשות)"
+                      placeholder="סיבה (חובה)"
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-white placeholder-white/20 outline-none focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/20"
                       aria-label={`סיבת עקיפה עבור ${row.firstName}`}
                     />

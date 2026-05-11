@@ -30,9 +30,9 @@ const GRADE_EXCELLENT = 90;
 const GRADE_GOOD      = 75;
 const GRADE_PASS      = 55;
 
-/** Alphanumeric chars with visually ambiguous characters removed (0/O, 1/I). */
-const JOIN_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const JOIN_CODE_LENGTH = 6;
+/** 6-digit numeric join code range — supports numeric keyboard on mobile, no ambiguous chars. */
+const JOIN_CODE_MIN = 100_000;
+const JOIN_CODE_MAX = 999_999;
 /** Days before a new join code expires. */
 const JOIN_CODE_TTL_DAYS = 7;
 /** Maximum attempts before giving up on join code generation (collision guard). */
@@ -245,6 +245,16 @@ export class ClassesService {
     dto: CreateClassDto,
     teacherId: string,
   ): Promise<ClassResponseDto> {
+    const genderType = (dto.genderType ?? 'MIXED') as 'BOYS' | 'GIRLS' | 'MIXED';
+    const isDuplicate = await this.classesRepository.existsByNameAndGender(
+      dto.name,
+      genderType,
+      teacherId,
+    );
+    if (isDuplicate) {
+      throw new ConflictException('קיימת כבר כיתה בשם זה. נסה שם אחר');
+    }
+
     const joinCodeExpiresAt = this.buildJoinCodeExpiry();
 
     for (let attempt = 1; attempt <= JOIN_CODE_MAX_ATTEMPTS; attempt++) {
@@ -254,7 +264,7 @@ export class ClassesService {
           ...dto,
           // genderType defaults to MIXED when not provided by the teacher.
           // Uses string literal so this file compiles before `prisma generate` is run.
-          genderType: (dto.genderType ?? 'MIXED') as 'BOYS' | 'GIRLS' | 'MIXED',
+          genderType,
           teacherId,
           joinCode,
           joinCodeExpiresAt,
@@ -281,11 +291,7 @@ export class ClassesService {
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   private generateJoinCode(): string {
-    let code = '';
-    for (let i = 0; i < JOIN_CODE_LENGTH; i++) {
-      code += JOIN_CODE_CHARS[Math.floor(Math.random() * JOIN_CODE_CHARS.length)];
-    }
-    return code;
+    return String(Math.floor(Math.random() * (JOIN_CODE_MAX - JOIN_CODE_MIN + 1)) + JOIN_CODE_MIN);
   }
 
   private buildJoinCodeExpiry(): Date {

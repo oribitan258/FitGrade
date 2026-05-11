@@ -1,15 +1,17 @@
 /**
  * useTodaySchedule — reads the weekly schedule from localStorage
- * (the same source the Schedule page writes to) and computes live lesson
- * statuses entirely client-side, in Israel Standard Time.
+ * and computes live lesson statuses entirely client-side, in Israel Standard Time.
  *
- * On first load, if localStorage is empty and classes are available, the hook
- * auto-seeds a realistic weekly schedule with strategic today entries so the
- * dashboard timeline shows past / now / next / later states immediately.
+ * Storage format:
+ *   v2 (preferred): fitgrade-schedule-v2-${semester}  →  ScheduleEvent[]
+ *   v1 (fallback):  fitgrade-schedule-v1-${semester}  →  Record<"day-period", classId>
+ *
+ * On first load, if no v2 data exists the hook auto-seeds a realistic schedule
+ * (semester A only) and writes it to v2.  Storage-event listener provides instant
+ * cross-tab sync when the Schedule page mutates events.
  *
  * Refreshes every 60 s so NOW/NEXT/LATER/PAST labels stay accurate without a
- * page reload.  Storage-event listener provides instant sync when the user edits
- * the schedule in another tab.
+ * page reload.
  */
 'use client';
 
@@ -17,36 +19,46 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ClassData, Semester } from '@fitgrade/types';
 import { useClasses } from '@/hooks/use-classes';
 
-// ─── Storage key — semester-scoped so A and B schedules don't overwrite each other ──
+// ─── Public types ─────────────────────────────────────────────────────────────
 
-const storageKey = (semester: Semester): string => `fitgrade-schedule-v1-${semester}`;
+export type ScheduleEventType = 'lesson' | 'break' | 'meeting';
 
-// ─── Period table — mirrors the PERIODS array in schedule/page.tsx ───────────
+/** A single calendar event stored in the v2 schedule format. */
+export interface ScheduleEvent {
+  id: string;
+  type: ScheduleEventType;
+  /** Only present when type === 'lesson'. */
+  classId?: string;
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
+  day: number;       // 0 = Sunday … 5 = Friday
+}
 
-/**
- * Start times for the 16 Israeli school periods.
- * Index 0 = "Period 1" in the UI (07:30–08:15), etc.
- */
+export type ScheduleLessonStatus = 'now' | 'next' | 'later' | 'past';
+
+export interface TodayScheduleItem {
+  period:    number; // -1 when not aligned to a standard school period
+  startTime: string; // "HH:MM"
+  endTime:   string; // "HH:MM"
+  classId:   string;
+  className: string;
+  status:    ScheduleLessonStatus;
+}
+
+// ─── Storage keys ─────────────────────────────────────────────────────────────
+
+const storageKeyV2 = (semester: Semester): string => `fitgrade-schedule-v2-${semester}`;
+const storageKeyV1 = (semester: Semester): string => `fitgrade-schedule-v1-${semester}`;
+
+// ─── Period table ─────────────────────────────────────────────────────────────
+
 export const PERIOD_STARTS: ReadonlyArray<string> = [
   '07:30', '08:15', '09:00', '10:05', '10:50', '11:55',
   '12:40', '13:25', '14:15', '15:00', '15:45', '16:30',
   '17:20', '18:10', '19:00', '19:45',
 ] as const;
 
-/** Standard Israeli school-period duration in minutes. */
 const PERIOD_MINUTES = 45;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type ScheduleLessonStatus = 'now' | 'next' | 'later' | 'past';
-
-export interface TodayScheduleItem {
-  period:    number;
-  startTime: string;  // "HH:MM"
-  classId:   string;
-  className: string;
-  status:    ScheduleLessonStatus;
-}
 
 // ─── Time helpers ─────────────────────────────────────────────────────────────
 
@@ -54,6 +66,13 @@ export interface TodayScheduleItem {
 function parseMinutes(time: string): number {
   const [hStr = '0', mStr = '0'] = time.split(':');
   return parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
+}
+
+/** Minutes since midnight → "HH:MM". */
+function formatMinutes(mins: number): string {
+  const h = Math.floor(mins / 60).toString().padStart(2, '0');
+  const m = (mins % 60).toString().padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 /** Current time as minutes since midnight, in Israel Standard Time. */
@@ -69,66 +88,68 @@ function nowInIsraelMinutes(): number {
   return h * 60 + m;
 }
 
-// ─── Auto-seeder ──────────────────────────────────────────────────────────────
+// ─── V1 → V2 migration ───────────────────────────────────────────────────────
 
-/**
- * Writes a realistic weekly schedule to localStorage.
- *
- * Today (the current day of week) receives 4 entries placed relative to the
- * current Israel time:
- *   • past   — 2 periods before the pivot (already finished)
- *   • now    — the pivot period (active or the very next one)
- *   • next   — 2 periods after the pivot (upcoming)
- *   • later  — 4 periods after the pivot (later today)
- *
- * All other school days (Sun–Thu) receive 3 spread entries.
- */
-function seedDefaultSchedule(classes: readonly ClassData[], semester: Semester): Record<string, string> {
-  const n = classes.length;
-  const getClassId = (i: number): string => classes[i % n]?.id ?? '';
+function migrateV1ToEvents(v1: Record<string, string>): ScheduleEvent[] {
+  return Object.entries(v1).map(([key, classId]) => {
+    const [dayStr = '0', periodStr = '0'] = key.split('-');
+    const day       = parseInt(dayStr, 10);
+    const periodIdx = parseInt(periodStr, 10);
+    const startTime = PERIOD_STARTS[periodIdx] ?? '07:30';
+    const endTime   = formatMinutes(parseMinutes(startTime) + PERIOD_MINUTES);
+    return { id: `migrated-${key}`, type: 'lesson' as const, classId, startTime, endTime, day };
+  });
+}
 
-  const seed: Record<string, string> = {};
-  const todayDay = new Date().getDay(); // 0=Sun … 4=Thu
-  const nowMin   = nowInIsraelMinutes();
+// ─── Auto-seeder (v2 format) ──────────────────────────────────────────────────
+
+function seedDefaultScheduleV2(classes: readonly ClassData[], semester: Semester): ScheduleEvent[] {
+  const n         = classes.length;
+  const getClass  = (i: number): string => classes[i % n]?.id ?? '';
+  const events: ScheduleEvent[] = [];
+  const todayDay  = new Date().getDay();
+  const nowMin    = nowInIsraelMinutes();
 
   // Find the first period that is currently active or has not yet started
-  let pivot = PERIOD_STARTS.length - 3; // fallback: late afternoon
+  let pivot = PERIOD_STARTS.length - 3;
   for (let p = 0; p < PERIOD_STARTS.length; p++) {
-    const start = parseMinutes(PERIOD_STARTS[p] ?? '00:00');
-    if (nowMin < start + PERIOD_MINUTES) { pivot = p; break; }
-  }
-
-  // Today: 4 strategic entries
-  if (todayDay <= 4) {
-    const past  = Math.max(0, pivot - 2);
-    const now   = pivot;
-    const next  = Math.min(pivot + 2, PERIOD_STARTS.length - 2);
-    const later = Math.min(pivot + 4, PERIOD_STARTS.length - 1);
-
-    seed[`${todayDay}-${past}`]  = getClassId(0);
-    if (now !== past)
-      seed[`${todayDay}-${now}`]   = getClassId(1);
-    if (next !== now)
-      seed[`${todayDay}-${next}`]  = getClassId(2);
-    if (later !== next)
-      seed[`${todayDay}-${later}`] = getClassId(0);
-  }
-
-  // Other school days: 3 classes spread across the day (periods 1, 4, 8)
-  const spreadPeriods: ReadonlyArray<number> = [1, 4, 8];
-  for (let d = 0; d <= 4; d++) {
-    if (d === todayDay) continue;
-    for (let i = 0; i < spreadPeriods.length; i++) {
-      const p = spreadPeriods[i];
-      if (p !== undefined) seed[`${d}-${p}`] = getClassId(i);
+    if (nowMin < parseMinutes(PERIOD_STARTS[p] ?? '00:00') + PERIOD_MINUTES) {
+      pivot = p;
+      break;
     }
   }
 
-  try {
-    localStorage.setItem(storageKey(semester), JSON.stringify(seed));
-  } catch { /* storage quota exceeded — ignore */ }
+  const addEvent = (day: number, periodIdx: number, classIdx: number): void => {
+    const startTime = PERIOD_STARTS[Math.min(periodIdx, PERIOD_STARTS.length - 1)] ?? '07:30';
+    events.push({
+      id:        `seed-${day}-${periodIdx}`,
+      type:      'lesson',
+      classId:   getClass(classIdx),
+      startTime,
+      endTime:   formatMinutes(parseMinutes(startTime) + PERIOD_MINUTES),
+      day,
+    });
+  };
 
-  return seed;
+  // Today: 4 strategic entries spread around the current time (Sun–Fri)
+  if (todayDay <= 5) {
+    const pts = [...new Set([
+      Math.max(0, pivot - 2),
+      pivot,
+      Math.min(pivot + 2, PERIOD_STARTS.length - 2),
+      Math.min(pivot + 4, PERIOD_STARTS.length - 1),
+    ])];
+    pts.forEach((p, i) => addEvent(todayDay, p, i));
+  }
+
+  // Other school days: 3 spread entries
+  for (let d = 0; d <= 4; d++) {
+    if (d === todayDay) continue;
+    [1, 4, 8].forEach((p, i) => addEvent(d, p, i));
+  }
+
+  try { localStorage.setItem(storageKeyV2(semester), JSON.stringify(events)); } catch { /* quota */ }
+  return events;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -139,62 +160,74 @@ export function useTodaySchedule(semester: Semester): {
   error:     unknown;
 } {
   const { data: classes, isLoading: classesLoading } = useClasses();
-  const [schedule, setSchedule]                       = useState<Record<string, string> | null>(null);
-  const seededRef                                     = useRef(false);
+  const [events, setEvents] = useState<ScheduleEvent[] | null>(null);
+  const seededRef           = useRef(false);
 
-  // ── Read localStorage ───────────────────────────────────────────────────────
+  // ── Read localStorage — try v2 first, fall back to v1 ─────────────────────
   const readStorage = useCallback((): void => {
     try {
-      const raw = localStorage.getItem(storageKey(semester));
-      setSchedule(raw ? (JSON.parse(raw) as Record<string, string>) : {});
+      const rawV2 = localStorage.getItem(storageKeyV2(semester));
+      if (rawV2) {
+        setEvents(JSON.parse(rawV2) as ScheduleEvent[]);
+        return;
+      }
+      // Fall back to v1 (old Record<string,string> format) — migrate on the fly
+      const rawV1 = localStorage.getItem(storageKeyV1(semester));
+      if (rawV1) {
+        const migrated = migrateV1ToEvents(JSON.parse(rawV1) as Record<string, string>);
+        // Write migrated data back to v2 so we don't re-migrate next time
+        try { localStorage.setItem(storageKeyV2(semester), JSON.stringify(migrated)); } catch { /* quota */ }
+        setEvents(migrated);
+      } else {
+        setEvents([]);
+      }
     } catch {
-      setSchedule({});
+      setEvents([]);
     }
   }, [semester]);
 
   // Mount: initial read + 60-second refresh for live status transitions
   useEffect(() => {
     readStorage();
-    const intervalId = setInterval(readStorage, 60_000);
-    return () => clearInterval(intervalId);
+    const id = setInterval(readStorage, 60_000);
+    return () => clearInterval(id);
   }, [readStorage]);
 
-  // Cross-tab sync: picks up schedule changes made in the Schedule page (other tab)
+  // Cross-tab sync: listen to both v1 and v2 key changes
   useEffect(() => {
-    function onStorageChange(e: StorageEvent): void {
-      if (e.key === storageKey(semester)) readStorage();
+    function onStorage(e: StorageEvent): void {
+      if (e.key === storageKeyV2(semester) || e.key === storageKeyV1(semester)) {
+        readStorage();
+      }
     }
-    window.addEventListener('storage', onStorageChange);
-    return () => window.removeEventListener('storage', onStorageChange);
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [readStorage, semester]);
 
-  // ── Auto-seed when schedule is empty and classes are ready ─────────────────
-  // Only seed for Semester A (default view). Semester B starts empty until the
-  // teacher explicitly assigns classes to slots.
+  // ── Auto-seed (semester A only, v2 format, once per session) ──────────────
   useEffect(() => {
     if (
-      seededRef.current                  || // already ran this session
-      semester !== 'A'                   || // only auto-seed semester A
-      classesLoading                     || // classes not ready yet
-      !classes                           ||
-      classes.length === 0               || // no classes to fill
-      schedule === null                  || // localStorage not read yet
-      Object.keys(schedule).length > 0     // schedule already has entries
+      seededRef.current  ||
+      semester !== 'A'   ||
+      classesLoading     ||
+      !classes           ||
+      classes.length === 0 ||
+      events === null    ||
+      events.length > 0
     ) return;
-
     seededRef.current = true;
-    setSchedule(seedDefaultSchedule(classes, semester));
-  }, [schedule, classes, classesLoading, semester]);
+    setEvents(seedDefaultScheduleV2(classes, semester));
+  }, [events, classes, classesLoading, semester]);
 
   // ── Derive today's lessons with computed statuses ──────────────────────────
 
-  if (schedule === null || classesLoading) {
+  if (events === null || classesLoading) {
     return { lessons: undefined, isLoading: true, error: undefined };
   }
 
   const todayDay = new Date().getDay();
-  if (todayDay > 4) {
-    // Shabbat / Friday — no school
+  // Saturday (6) has no lessons — return empty
+  if (todayDay > 5) {
     return { lessons: [], isLoading: false, error: undefined };
   }
 
@@ -202,13 +235,13 @@ export function useTodaySchedule(semester: Semester): {
   let   assignedNext = false;
   const lessons: TodayScheduleItem[] = [];
 
-  for (let p = 0; p < PERIOD_STARTS.length; p++) {
-    const classId = schedule[`${todayDay}-${p}`];
-    if (!classId) continue;
+  const todayLessons = events
+    .filter((e) => e.day === todayDay && e.type === 'lesson' && Boolean(e.classId))
+    .sort((a, b) => parseMinutes(a.startTime) - parseMinutes(b.startTime));
 
-    const startTime = PERIOD_STARTS[p] ?? '00:00';
-    const start     = parseMinutes(startTime);
-    const end       = start + PERIOD_MINUTES;
+  for (const event of todayLessons) {
+    const start = parseMinutes(event.startTime);
+    const end   = parseMinutes(event.endTime);
 
     let status: ScheduleLessonStatus;
     if (nowMin >= start && nowMin < end) {
@@ -222,8 +255,16 @@ export function useTodaySchedule(semester: Semester): {
       status = 'past';
     }
 
-    const className = classes?.find((c) => c.id === classId)?.name ?? '—';
-    lessons.push({ period: p, startTime, classId, className, status });
+    const period    = PERIOD_STARTS.indexOf(event.startTime);
+    const className = classes?.find((c) => c.id === event.classId)?.name ?? '—';
+    lessons.push({
+      period,
+      startTime: event.startTime,
+      endTime:   event.endTime,
+      classId:   event.classId ?? '',
+      className,
+      status,
+    });
   }
 
   return { lessons, isLoading: false, error: undefined };

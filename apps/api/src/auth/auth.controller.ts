@@ -26,6 +26,8 @@ import { StudentLoginDto } from './dto/student-login.dto';
 import { MobileExchangeDto } from './dto/mobile-exchange.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { TeacherProfileDto } from './dto/teacher-profile.dto';
+import { OnboardingPreferencesDto } from './dto/onboarding-preferences.dto';
+import { DevLoginDto } from './dto/dev-login.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -69,6 +71,48 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   async getMe(@CurrentUser() user: JwtPayload): Promise<TeacherProfileDto> {
     return this.authService.getProfile(user.sub);
+  }
+
+  // ─── Teacher onboarding ────────────────────────────────────────────────────
+
+  /**
+   * Marks the authenticated teacher's onboarding as complete.
+   * Called by the web frontend after the setup form is saved.
+   * Idempotent — safe to call multiple times.
+   */
+  @Post('onboarding/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mark teacher onboarding as complete (after setup form save)' })
+  @ApiResponse({ status: 200, description: 'Onboarding marked complete' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  async completeOnboarding(@CurrentUser() user: JwtPayload): Promise<{ ok: true }> {
+    await this.authService.completeOnboarding(user.sub);
+    return { ok: true };
+  }
+
+  /**
+   * Persists the teacher's default test type preferences for boys/girls classes.
+   * Both arrays are required — pass [] to clear. IDs are validated against
+   * the FitnessTestType catalog before writing.
+   */
+  @Post('onboarding/preferences')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Save teacher default test preferences (onboarding)' })
+  @ApiResponse({ status: 200, description: 'Preferences saved' })
+  @ApiResponse({ status: 400, description: 'One or more test type IDs do not exist' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  async saveOnboardingPreferences(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: OnboardingPreferencesDto,
+  ): Promise<{ ok: true }> {
+    await this.authService.setDefaultTestPreferences(
+      user.sub,
+      dto.defaultMaleTestIds,
+      dto.defaultFemaleTestIds,
+    );
+    return { ok: true };
   }
 
   // ─── Teacher Google OAuth ──────────────────────────────────────────────────
@@ -218,12 +262,13 @@ export class AuthController {
   @ApiResponse({ status: 200, type: AuthResponseDto })
   @ApiResponse({ status: 403, description: 'Not available in production' })
   async devLogin(
+    @Body() dto: DevLoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     if (process.env['NODE_ENV'] === 'production') {
       throw new ForbiddenException('Dev login is not available in production');
     }
-    const { accessToken, refreshToken } = await this.authService.devLogin();
+    const { accessToken, refreshToken } = await this.authService.devLogin(dto.simulateFirstLogin ?? false);
     this.setRefreshCookie(res, refreshToken);
     return { accessToken };
   }
@@ -237,20 +282,20 @@ export class AuthController {
   @Public()
   @Post('student')
   @HttpCode(HttpStatus.OK)
-  /** מגבלת ניסיונות: 10 בקשות לדקה לכל IP — מניעת ניחוש סיסמאות */
+  /** מגבלת ניסיונות: 10 בקשות לדקה לכל IP — מניעת ניחוש מזהים */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  @ApiOperation({ summary: 'Student login (class code + student code + password)' })
+  @ApiOperation({ summary: 'Student passwordless login (class code + national ID)' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 401, description: 'Invalid ID format or wrong password' })
+  @ApiResponse({ status: 404, description: 'Student not found in system (STUDENT_NOT_FOUND)' })
   @ApiResponse({ status: 429, description: 'Too many login attempts — try again later' })
   async studentLogin(
     @Body() dto: StudentLoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const student = await this.authService.validateStudentLogin(
-      dto.classCode,
-      dto.studentCode,
+      dto.nationalId,
       dto.password,
     );
     const payload: JwtPayload = {
@@ -300,9 +345,18 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout — clears refresh token cookie' })
+  @ApiOperation({ summary: 'Logout — revokes refresh token and clears cookie' })
   @ApiResponse({ status: 204, description: 'Logged out' })
-  logout(@Res({ passthrough: true }) res: Response): void {
+  async logout(
+    @Req() req: Request & { cookies: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    const token = req.cookies[REFRESH_COOKIE_NAME];
+    if (token) {
+      // Blacklist the jti so this refresh token cannot be replayed after logout,
+      // even if the attacker obtained a copy before the cookie was cleared.
+      await this.authService.revokeRefreshToken(token);
+    }
     res.clearCookie(REFRESH_COOKIE_NAME);
   }
 
@@ -311,7 +365,12 @@ export class AuthController {
   private setRefreshCookie(res: Response, token: string): void {
     res.cookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: 'lax',
+      // 'strict' for the long-lived refresh token — it is only sent by the
+      // browser in same-site requests (programmatic fetch from our own origin).
+      // 'lax' is kept for the short-lived OAuth cookies (login_token,
+      // fitgrade_mobile_auth) because they must survive a cross-site redirect
+      // from accounts.google.com back to our callback URL.
+      sameSite: 'strict',
       secure: process.env['NODE_ENV'] === 'production',
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,
       path: '/',

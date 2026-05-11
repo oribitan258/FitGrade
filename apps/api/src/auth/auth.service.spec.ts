@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { AuthRepository } from './auth.repository';
+import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service';
 import type { GoogleTeacherProfile, TeacherRecord, StudentLoginRecord } from './auth.types';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
@@ -26,8 +27,7 @@ const teacherRecord: TeacherRecord = {
 const studentLoginRecord: StudentLoginRecord = {
   studentId: 'student-1',
   classId: 'class-1',
-  // bcrypt hash of 'correctPassword' — pre-computed for tests
-  passwordHash: '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/pgR6gKHyS',
+  passwordHash: null,
 };
 
 const teacherPayload: JwtPayload = { sub: 'teacher-1', role: 'TEACHER' };
@@ -36,7 +36,7 @@ const teacherPayload: JwtPayload = { sub: 'teacher-1', role: 'TEACHER' };
 
 const mockAuthRepository = {
   findOrCreateTeacher: jest.fn(),
-  findStudentForLogin: jest.fn(),
+  findStudentForNationalIdLogin: jest.fn(),
 };
 
 const mockJwtService = {
@@ -73,6 +73,7 @@ describe('AuthService', () => {
         { provide: AuthRepository, useValue: mockAuthRepository },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        RefreshTokenBlacklistService,
       ],
     }).compile();
 
@@ -108,46 +109,27 @@ describe('AuthService', () => {
   // ── validateStudentLogin ──────────────────────────────────────────────────
 
   describe('validateStudentLogin', () => {
-    it('returns the student record when credentials are valid', async () => {
-      // Use a real bcrypt hash we can match
-      const realBcrypt = await import('bcrypt');
-      const hash = await realBcrypt.hash('correctPassword', 4); // rounds=4 for test speed
-      const record: StudentLoginRecord = { ...studentLoginRecord, passwordHash: hash };
+    it('returns the student record when nationalId is valid and found', async () => {
+      mockAuthRepository.findStudentForNationalIdLogin.mockResolvedValue(studentLoginRecord);
 
-      mockAuthRepository.findStudentForLogin.mockResolvedValue(record);
+      const result = await service.validateStudentLogin('123456782');
 
-      const result = await service.validateStudentLogin(
-        'AB3X7Q',
-        '301',
-        'correctPassword',
-      );
-
-      expect(result).toEqual(record);
-      expect(mockAuthRepository.findStudentForLogin).toHaveBeenCalledWith(
-        'AB3X7Q',
-        '301',
-      );
+      expect(result).toEqual(studentLoginRecord);
+      expect(mockAuthRepository.findStudentForNationalIdLogin).toHaveBeenCalledWith('123456782');
     });
 
-    it('throws UnauthorizedException when password is wrong', async () => {
-      const realBcrypt = await import('bcrypt');
-      const hash = await realBcrypt.hash('correctPassword', 4);
-      const record: StudentLoginRecord = { ...studentLoginRecord, passwordHash: hash };
-
-      mockAuthRepository.findStudentForLogin.mockResolvedValue(record);
-
+    it('throws UnauthorizedException when nationalId checksum is invalid', async () => {
+      // '000000001' → sum=1, 1%10≠0 → Luhn-invalid (unlike '000000000' which sums to 0)
       await expect(
-        service.validateStudentLogin('AB3X7Q', '301', 'wrongPassword'),
+        service.validateStudentLogin('000000001'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('throws UnauthorizedException when student/class is not found', async () => {
-      mockAuthRepository.findStudentForLogin.mockRejectedValue(
-        new UnauthorizedException('קוד כיתה, קוד תלמיד, או סיסמה שגויים'),
-      );
+    it('throws UnauthorizedException when student is not found', async () => {
+      mockAuthRepository.findStudentForNationalIdLogin.mockResolvedValue(null);
 
       await expect(
-        service.validateStudentLogin('BADCODE', '999', 'pass'),
+        service.validateStudentLogin('123456782'),
       ).rejects.toThrow(UnauthorizedException);
     });
   });
@@ -180,7 +162,7 @@ describe('AuthService', () => {
       expect(result).toBe('new-access-token');
       expect(mockJwtService.verifyAsync).toHaveBeenCalledWith(
         'valid-refresh-token',
-        { secret: 'test-refresh-secret' },
+        { secret: 'test-refresh-secret', algorithms: ['HS256'] },
       );
     });
 

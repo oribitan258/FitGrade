@@ -6,8 +6,6 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Activity,
   AlertTriangle,
@@ -17,9 +15,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ClipboardCopy,
   Dumbbell,
-  Hash,
   LayoutGrid,
   LayoutList,
   Loader2,
@@ -42,8 +38,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  createStudentSchema,
-  type CreateStudentInput,
   type GradeDistribution,
   type StudentData,
   type TestSummary,
@@ -82,19 +76,17 @@ import {
 } from '@/components/ui/select';
 import { cn, formatRawValue } from '@/lib/utils';
 import { formatClassWithGender } from '@/lib/class-utils';
+import { AddStudentDialog } from '@/components/students/add-student-dialog';
 import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
 import { SemesterPanel } from '@/components/ui/semester-panel';
 import { TestTypePicker } from '@/components/tests/test-type-picker';
 import { GradeMatrix } from '@/components/classes/grade-matrix';
 import { HoverBorderGradient } from '@/components/ui/hover-border-gradient';
 import { HoverGlowButton } from '@/components/ui/hover-glow-button';
+import { BackButton } from '@/components/ui/back-button';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const SEMESTER_LABELS: Record<'A' | 'B', string> = {
-  A: "סמסטר א'",
-  B: "סמסטר ב'",
-};
 
 const GENDER_LABELS: Record<'MALE' | 'FEMALE' | 'OTHER', string> = {
   MALE: 'זכר',
@@ -460,7 +452,7 @@ function ExemptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100">
@@ -600,7 +592,7 @@ function AbsenceDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-sm rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-1">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100">
@@ -640,17 +632,18 @@ function AbsenceDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="abs-reason" className="text-slate-700 font-medium">
-              סיבה
+              📝 הערה / סיבה
               <span className="ms-1 text-xs font-normal text-slate-400">(אופציונלי)</span>
             </Label>
-            <Input
+            <textarea
               id="abs-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="לדוגמה: מחלה"
+              placeholder="לדוגמה: מחלה, אישור מהורים, אירוע משפחתי..."
               disabled={loading}
-              className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-red-400"
-              aria-label="סיבת החיסור"
+              rows={3}
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
+              aria-label="סיבת החיסור או הערה"
             />
           </div>
           {error && (
@@ -754,97 +747,6 @@ function StudentRowActions({
   );
 }
 
-// ─── Add Student Dialog ───────────────────────────────────────────────────────
-
-interface AddStudentDialogProps {
-  classId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-}
-
-function AddStudentDialog({ classId, open, onOpenChange, onSuccess }: AddStudentDialogProps): React.JSX.Element {
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setError } =
-    useForm<CreateStudentInput>({ resolver: zodResolver(createStudentSchema) });
-
-  async function onSubmit(data: CreateStudentInput): Promise<void> {
-    try {
-      await apiRequest<StudentData>(`/classes/${classId}/students`, { method: 'POST', body: JSON.stringify(data) });
-      reset(); onOpenChange(false); onSuccess();
-    } catch (err) {
-      if (err instanceof ApiError && err.statusCode === 409) {
-        setError('studentCode', { message: 'קוד תלמיד זה כבר קיים בכיתה' });
-      } else {
-        setError('root', { message: err instanceof ApiError ? err.message : 'שגיאה בהוספת התלמיד' });
-      }
-    }
-  }
-
-  function handleClose(next: boolean): void { if (!next) reset(); onOpenChange(next); }
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg rounded-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-slate-800">הוסף תלמיד לכיתה</DialogTitle>
-          <DialogDescription className="text-slate-500">מלא את פרטי התלמיד. כל השדות חובה.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4 pt-1">
-          <div className="grid grid-cols-2 gap-3">
-            <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-              <Label htmlFor="sf" className="text-slate-700 font-medium">שם פרטי</Label>
-              <Input id="sf" placeholder="ישראל" className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-indigo-400" {...register('firstName')} />
-              {errors.firstName && <p className="text-xs text-red-600">{errors.firstName.message}</p>}
-            </motion.div>
-            <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-              <Label htmlFor="sl" className="text-slate-700 font-medium">שם משפחה</Label>
-              <Input id="sl" placeholder="ישראלי" className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-indigo-400" {...register('lastName')} />
-              {errors.lastName && <p className="text-xs text-red-600">{errors.lastName.message}</p>}
-            </motion.div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-              <Label htmlFor="sd" className="text-slate-700 font-medium">תאריך לידה</Label>
-              <Input id="sd" type="date" className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-indigo-400" {...register('dateOfBirth')} />
-              {errors.dateOfBirth && <p className="text-xs text-red-600">{errors.dateOfBirth.message}</p>}
-            </motion.div>
-            <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-              <Label htmlFor="sg" className="text-slate-700 font-medium">מין</Label>
-              <select id="sg" className={cn(SELECT_STYLES)} {...register('gender')}>
-                <option value="">בחר מין</option>
-                <option value="MALE">זכר</option>
-                <option value="FEMALE">נקבה</option>
-                <option value="OTHER">אחר</option>
-              </select>
-              {errors.gender && <p className="text-xs text-red-600">{errors.gender.message}</p>}
-            </motion.div>
-          </div>
-          <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-            <Label htmlFor="sc" className="text-slate-700 font-medium">קוד תלמיד</Label>
-            <Input id="sc" placeholder="301" className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-indigo-400" {...register('studentCode')} />
-            {errors.studentCode && <p className="text-xs text-red-600">{errors.studentCode.message}</p>}
-          </motion.div>
-          <motion.div className="space-y-1.5" whileHover={{ y: -1 }}>
-            <Label htmlFor="sp" className="text-slate-700 font-medium">סיסמה</Label>
-            <Input id="sp" type="password" placeholder="לפחות 8 תווים" className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:ring-indigo-400" {...register('password')} />
-            {errors.password && <p className="text-xs text-red-600">{errors.password.message}</p>}
-          </motion.div>
-          {errors.root && <p className="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">{errors.root.message}</p>}
-          <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => handleClose(false)} className="rounded-xl">ביטול</Button>
-            <motion.div whileTap={{ scale: 0.98 }}>
-              <Button type="submit" disabled={isSubmitting} className="gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 shadow-sm">
-                <UserPlus className="h-4 w-4" aria-hidden="true" />
-                {isSubmitting ? 'מוסיף...' : 'הוסף תלמיד'}
-              </Button>
-            </motion.div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Create session modal ─────────────────────────────────────────────────────
 
 /** Returns today's date as "YYYY-MM-DD" for the date input default value. */
@@ -922,7 +824,7 @@ function CreateSessionModal({ classId, open, onOpenChange, gradeLevel }: CreateS
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md rounded-2xl border border-white/80 bg-white/90 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-white/80 bg-white/90 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
         <DialogHeader>
           <DialogTitle className="text-slate-800 text-lg font-extrabold">פתח מבחן כושר חדש</DialogTitle>
           <DialogDescription className="text-slate-500 text-sm">
@@ -1113,7 +1015,7 @@ function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeD
           dir="rtl"
         >
           <SelectTrigger
-            className="h-11 w-[260px] rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm focus:ring-2 focus:ring-indigo-400"
+            className="h-11 w-full sm:w-[260px] rounded-xl border border-slate-200/80 bg-white/90 px-4 text-sm font-semibold text-slate-800 shadow-sm backdrop-blur-sm focus:ring-2 focus:ring-indigo-400"
             aria-label="בחר מבחן"
           >
             <SelectValue placeholder="בחר מבחן…" />
@@ -1794,7 +1696,7 @@ function AiControlCenterModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="fixed start-[50%] top-[50%] z-[9999] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border-0 bg-white/85 p-0 shadow-2xl shadow-slate-900/25 backdrop-blur-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <DialogContent className="fixed start-[50%] top-[50%] z-[9999] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border-0 bg-white/85 p-0 shadow-2xl shadow-slate-900/25 backdrop-blur-2xl overflow-hidden flex flex-col max-h-[90vh]">
 
         {/* ── Dark-glass header ─────────────────────────────────────── */}
         <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-br from-slate-800 via-slate-700 to-indigo-900 px-7 py-6">
@@ -1807,7 +1709,7 @@ function AiControlCenterModal({
               </div>
               <div>
                 <DialogTitle className="text-xl font-extrabold text-white">
-                  מרכז בקרה AI
+                  ✨ מרכז תובנות חכם
                 </DialogTitle>
                 <DialogDescription className="mt-0.5 text-sm text-white/65">
                   ניהול, מעקב ויצירת תוכניות אימון מותאמות אישית
@@ -2472,7 +2374,7 @@ function AiControlCenterModal({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden"
+              className="relative w-[calc(100vw-2rem)] max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden"
             >
               {/* Close button */}
               <button
@@ -2636,7 +2538,7 @@ function AiDispatchModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg rounded-3xl border-0 bg-white/80 p-0 shadow-2xl shadow-slate-900/20 backdrop-blur-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-lg rounded-3xl border-0 bg-white/80 p-0 shadow-2xl shadow-slate-900/20 backdrop-blur-2xl">
 
         {/* Gradient header */}
         <div className="relative overflow-hidden rounded-t-3xl bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-600 px-7 py-6">
@@ -2648,7 +2550,7 @@ function AiDispatchModal({
               </div>
               <div>
                 <DialogTitle className="text-lg font-extrabold text-white">
-                  שליחת תוכנית אימון AI
+                  ✨ שליחת תוכנית אימון מותאמת
                 </DialogTitle>
                 <DialogDescription className="mt-0.5 text-sm text-white/70">
                   תוכנית כושר מותאמת אישית לתלמידים מתחת לנורמה
@@ -2843,7 +2745,6 @@ export default function ClassDetailPage(): React.JSX.Element {
   const [isAiControlCenterOpen, setIsAiControlCenterOpen]     = useState(false);
   const [activeView, setActiveView]                           = useState<'list' | 'matrix'>('list');
   const [selectedTestId, setSelectedTestId]             = useState<string | null>(null);
-  const [copied, setCopied]                             = useState(false);
 
   // Today's attendance state
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -2857,6 +2758,9 @@ export default function ClassDetailPage(): React.JSX.Element {
   const { data: students,     error: studentsError, isLoading: studentsLoading, mutate: mutateStudents } = useStudents(classId);
   const { data: details,      isLoading: detailsLoading, mutate: mutateDetails } = useClassDetails(classId, activeSemester);
   const { data: availability }                            = useComparisonAvailability(classId);
+
+  // Tour signal — wait for class + students so the data-tour anchors render.
+  useSignalPageReady('class-detail', cls !== undefined && students !== undefined);
   const { data: testTypes } = useTestTypes();
 
   // Fetch today's attendance to drive absent/exempt button states
@@ -3003,13 +2907,6 @@ export default function ClassDetailPage(): React.JSX.Element {
   const lockedStudents   = useMemo(() => failingStudents.filter((s) =>  activePlanMap.has(s.id)), [failingStudents, activePlanMap]);
   const eligibleStudents = useMemo(() => failingStudents.filter((s) => !activePlanMap.has(s.id)), [failingStudents, activePlanMap]);
 
-  async function copyJoinCode(): Promise<void> {
-    if (!cls) return;
-    await navigator.clipboard.writeText(cls.joinCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   async function handleToggleAbsent(studentId: string): Promise<void> {
     const current  = todayAttendanceMap.get(studentId);
     const isAbsent = current?.status === 'ABSENT';
@@ -3060,13 +2957,15 @@ export default function ClassDetailPage(): React.JSX.Element {
   const selectedVisual    = getTabVisual(selectedTestIndex >= 0 ? selectedTestIndex : 0);
 
   return (
-    <AnimatePresence mode="wait">
+    <>
+      <BackButton />
+      <AnimatePresence mode="wait">
       <motion.div
         key="class-detail"
         variants={PAGE_ENTER}
         initial="hidden"
         animate="show"
-        className="space-y-6"
+        className="space-y-6 pt-16 px-4 md:pt-0 md:px-0"
         style={{ perspective: 1200 }}
       >
         {/* ── Page Header ─────────────────────────────────────────────── */}
@@ -3096,33 +2995,11 @@ export default function ClassDetailPage(): React.JSX.Element {
 
           {/* Meta row — badges + stats */}
           <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
-            {/* Semester + year */}
+            {/* Academic year */}
             <span className="rounded-full border border-indigo-200/70 bg-indigo-50 px-3 py-1 text-indigo-900">
-              {SEMESTER_LABELS[cls.semester]} · {cls.academicYear}
+              {cls.academicYear}
             </span>
 
-            {/* Join code — copyable */}
-            <button
-              type="button"
-              onClick={() => { void copyJoinCode(); }}
-              className="flex items-center gap-1.5 rounded-full border border-indigo-300/60 bg-indigo-50 px-3 py-1 font-mono text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
-              aria-label="העתק קוד הצטרפות"
-            >
-              <Hash className="h-3 w-3 text-indigo-500" aria-hidden="true" />
-              {cls.joinCode}
-              <ClipboardCopy className="h-2.5 w-2.5 text-indigo-400" aria-hidden="true" />
-              <AnimatePresence>
-                {copied && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }}
-                    transition={{ duration: 0.2 }}
-                    className="font-sans text-emerald-600"
-                  >
-                    הועתק!
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </button>
 
             {/* Student count */}
             <span className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-700">
@@ -3142,23 +3019,7 @@ export default function ClassDetailPage(): React.JSX.Element {
           </div>
         </motion.div>
 
-        {/* ── Semester mismatch warning ───────────────────────────────── */}
-        {cls.semester !== activeSemester && (
-          <motion.div
-            variants={ITEM}
-            className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
-            role="alert"
-          >
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" aria-hidden="true" />
-            <p className="text-sm text-amber-800">
-              <span className="font-semibold">שים לב:</span>{' '}
-              כיתה זו שייכת ל{SEMESTER_LABELS[cls.semester]}, אך המערכת מוגדרת כעת ל{SEMESTER_LABELS[activeSemester]}.
-              {' '}הנתונים נשמרים ל{SEMESTER_LABELS[cls.semester]}.
-            </p>
-          </motion.div>
-        )}
-
-        {/* ── Semester B empty banner ─────────────────────────────────── */}
+{/* ── Semester B empty banner ─────────────────────────────────── */}
         <SemesterEmptyBanner
           visible={activeSemester === 'B' && testSummaries.length === 0}
         />
@@ -3219,7 +3080,7 @@ export default function ClassDetailPage(): React.JSX.Element {
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 ring-1 ring-violet-200">
                     <Users className="h-5 w-5 text-violet-600" aria-hidden="true" />
                   </div>
-                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 ring-1 ring-indigo-200">AI</span>
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-bold tracking-wider text-indigo-700 ring-1 ring-indigo-200">✨ חכם</span>
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">חלוקת כוחות חכמה</p>
@@ -3297,7 +3158,7 @@ export default function ClassDetailPage(): React.JSX.Element {
                 )}
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">תכנית AI</p>
+                <p className="text-sm font-semibold text-slate-900">✨ תובנת מערכת</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
                   {failingStudents.length > 0
                     ? eligibleStudents.length > 0
@@ -3312,7 +3173,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         </motion.div>
 
         {/* ── Test type selector — premium dropdown ──────────────────── */}
-        <motion.div variants={ITEM}>
+        <motion.div variants={ITEM} data-tour="test-list">
           <TestTypeDropdown
             testSummaries={testSummaries}
             selectedTestId={selectedTestId}
@@ -3636,7 +3497,11 @@ export default function ClassDetailPage(): React.JSX.Element {
                               {student.firstName} {student.lastName}
                             </Link>
                             <div className="flex items-center gap-1.5">
-                              <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
+                              {student.nationalId && (
+                                <code className="font-mono text-xs text-slate-400">
+                                  ת.ז ****{student.nationalId.slice(-4)}
+                                </code>
+                              )}
                               {isAbsent && <span className="rounded-full bg-red-100 px-1.5 py-px text-[10px] font-bold text-red-600">חסר/ה</span>}
                               {isExempt && <span className="rounded-full bg-orange-100 px-1.5 py-px text-[10px] font-bold text-orange-600">פטור/ה</span>}
                             </div>
@@ -3695,6 +3560,7 @@ export default function ClassDetailPage(): React.JSX.Element {
 
       <AddStudentDialog
         classId={classId}
+        genderType={cls?.genderType ?? 'MIXED'}
         open={isAddStudentOpen}
         onOpenChange={setIsAddStudentOpen}
         onSuccess={() => { void mutateStudents(); }}
@@ -3755,5 +3621,6 @@ export default function ClassDetailPage(): React.JSX.Element {
         );
       })()}
     </AnimatePresence>
+    </>
   );
 }

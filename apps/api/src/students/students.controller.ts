@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -7,7 +8,10 @@ import {
   Param,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,6 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { StudentsService } from './students.service';
+import type { ImportResultDto } from './dto/import-students.dto';
 import { SemesterQueryDto } from '../classes/dto/semester-query.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { CreateTalmidautDto } from './dto/create-talmidaut.dto';
@@ -126,23 +131,47 @@ export class StudentsController {
   }
 
   /**
+   * Bulk-imports students from an uploaded Excel (.xlsx) or CSV file.
+   * Parses Hebrew headers from Mashov/Smart School exports.
+   * File limit: 5 MB.
+   */
+  @Post('import')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @ApiOperation({ summary: 'ייבוא רשימת תלמידים מקובץ Excel/CSV' })
+  @ApiParam({ name: 'classId', description: 'Class ID' })
+  @ApiResponse({ status: 200, type: Object, description: 'סיכום ייבוא' })
+  @ApiResponse({ status: 400, description: 'קובץ לא תקין' })
+  @ApiResponse({ status: 401, description: 'לא מחובר' })
+  @ApiResponse({ status: 403, description: 'אין גישה לכיתה זו' })
+  async importStudents(
+    @Param('classId') classId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<ImportResultDto> {
+    if (!file) throw new BadRequestException('לא הועלה קובץ');
+    return this.studentsService.importFromFile(classId, user.sub, file.buffer, file.mimetype);
+  }
+
+  /**
    * Creates a new student and enrolls them in the given class.
-   * studentCode must be unique within the class.
+   * Throws 409 if the nationalId is already enrolled in this or any other class.
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Add a student to a class' })
+  @ApiOperation({ summary: 'Add a student to a class (creates by nationalId)' })
   @ApiParam({ name: 'classId', description: 'Class ID' })
-  @ApiResponse({ status: 201, type: StudentResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 201, type: StudentResponseDto, description: 'Student created and enrolled' })
+  @ApiResponse({ status: 400, description: 'Invalid input or gender-class mismatch' })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   @ApiResponse({ status: 404, description: 'Class not found' })
-  @ApiResponse({ status: 409, description: 'Student code already taken in this class' })
+  @ApiResponse({ status: 409, description: 'Student already enrolled in this or another class' })
   async addStudentToClass(
     @Param('classId') classId: string,
     @Body() dto: CreateStudentDto,
     @CurrentUser() user: JwtPayload,
-  ): Promise<StudentResponseDto> {
-    return this.studentsService.addStudentToClass(classId, dto, user.sub);
+  ): Promise<{ student: StudentResponseDto }> {
+    const { student } = await this.studentsService.addStudentToClass(classId, dto, user.sub);
+    return { student };
   }
 }

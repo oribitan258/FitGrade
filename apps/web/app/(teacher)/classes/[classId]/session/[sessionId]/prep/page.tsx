@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { BackButton } from '@/components/ui/back-button';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
@@ -48,6 +49,7 @@ function getExecutionPath(
      name.includes('1000') ||
      name.includes('1500') ||
      name.includes('2000') ||
+     name.includes('3000') ||
      name.includes('מרחק'));
 
   if (isLongDistance) {
@@ -271,7 +273,9 @@ export default function PrepPage(): React.JSX.Element {
     session.testInputType === 'PASS_FAIL' ? 'עובר / נכשל' : 'הזנה';
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0B0A1F] text-white" dir="rtl">
+    <>
+      <BackButton />
+      <div className="flex min-h-screen flex-col bg-[#0B0A1F] text-white" dir="rtl">
 
       {/* ── Floating sports-icon background images ────────────────────────── */}
       <FloatingIcons />
@@ -479,5 +483,6 @@ export default function PrepPage(): React.JSX.Element {
         )}
       </AnimatePresence>
     </div>
+    </>
   );
 }

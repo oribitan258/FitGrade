@@ -3,15 +3,13 @@
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import {
   BookOpen,
   ChevronLeft,
   Clock,
   Dumbbell,
   Flame,
-  Hash,
+  GraduationCap,
   Plus,
   RefreshCw,
   Search,
@@ -22,27 +20,19 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { createClassSchema, type CreateClassInput, type ClassData } from '@fitgrade/types';
+import { type ClassData } from '@fitgrade/types';
 import type { TopAchievementItem } from '@fitgrade/types';
 import { formatClassWithGender } from '@/lib/class-utils';
-import { ApiError } from '@fitgrade/types';
 import { useClasses } from '@/hooks/use-classes';
 import { useTopAchievements } from '@/hooks/use-top-achievements';
-import { apiRequest } from '@/lib/api-client';
 import { TopResultsTicker } from '@/components/ui/top-results-ticker';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useSemester } from '@/contexts/semester-context';
 import { SemesterTransitionWrapper } from '@/components/layout/semester-transition-wrapper';
 import { SemesterPanel } from '@/components/ui/semester-panel';
+import { AddClassModal } from '@/components/classes/add-class-modal';
+import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
+import { useTour } from '@/components/tour/TourProvider';
 
 // ─── Animation presets ───────────────────────────────────────────────────────
 
@@ -127,11 +117,6 @@ const SEMESTER_LABELS: Record<'A' | 'B', string> = {
   B: "סמסטר ב'",
 };
 
-const SELECT_STYLES =
-  'flex h-11 w-full rounded-xl border border-input bg-white/50 backdrop-blur-sm px-3 py-2 text-sm ' +
-  'ring-offset-background focus-visible:outline-none focus-visible:ring-2 ' +
-  'focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
-
 // ─── Fallback ticker items (shown before real data arrives) ──────────────────
 
 const MOCK_TOP_ACHIEVEMENTS: TopAchievementItem[] = [
@@ -185,6 +170,63 @@ function FloatingDebris(): React.JSX.Element {
 
 // ─── Page Header ─────────────────────────────────────────────────────────────
 
+function AddClassButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      whileHover={{ scale: 1.025, transition: { type: 'spring', stiffness: 380, damping: 24 } }}
+      whileTap={{ scale: 0.97 }}
+      data-tour="add-class"
+      className="relative shrink-0 flex items-center gap-2.5 rounded-2xl px-4 py-2.5 text-sm font-bold text-slate-800 overflow-hidden min-h-[44px]"
+      style={{
+        background: hovered ? 'rgba(241,245,249,1.0)' : 'rgba(248,250,252,0.90)',
+        border: '1px solid rgba(226,232,240,0.80)',
+        boxShadow: hovered ? '0 4px 12px rgba(15,23,42,0.08)' : '0 1px 4px rgba(15,23,42,0.04)',
+        transition: 'background 0.15s, box-shadow 0.15s',
+      }}
+    >
+      {/* Hover ripple */}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            key="ripple"
+            className="absolute inset-0 pointer-events-none rounded-2xl"
+            initial={{ opacity: 0, scale: 0.82 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            aria-hidden="true"
+            style={{ background: 'radial-gradient(ellipse at 20% 50%, rgba(16,185,129,0.10), transparent 72%)' }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Icon capsule */}
+      <div
+        className="relative shrink-0 flex items-center justify-center rounded-xl overflow-hidden"
+        style={{
+          width: 30, height: 30,
+          background: '#10b981',
+          boxShadow: '0 0 14px rgba(16,185,129,0.28), 0 2px 6px rgba(0,0,0,0.15)',
+        }}
+        aria-hidden="true"
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.28) 0%, transparent 55%)' }}
+        />
+        <GraduationCap className="h-3.5 w-3.5 text-white" />
+      </div>
+
+      <span className="relative z-10">הוסף כיתה</span>
+    </motion.button>
+  );
+}
+
 function PageHeader({ onCreateClick }: { onCreateClick: () => void }): React.JSX.Element {
   return (
     <div className="flex items-start justify-between gap-4 pt-2">
@@ -195,21 +237,8 @@ function PageHeader({ onCreateClick }: { onCreateClick: () => void }): React.JSX
         </h1>
       </div>
 
-      {/* Button — RTL end side (left) */}
-      <motion.button
-        type="button"
-        onClick={onCreateClick}
-        whileHover={{
-          y: -2,
-          boxShadow: '0 8px 24px rgba(109,40,217,0.28)',
-          transition: { type: 'spring', stiffness: 400, damping: 25 },
-        }}
-        whileTap={{ scale: 0.97 }}
-        className="shrink-0 flex items-center gap-2 rounded-xl border border-white/65 bg-white/55 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-md transition-colors hover:bg-white/72"
-      >
-        <Plus className="h-4 w-4" aria-hidden="true" />
-        הוסף כיתה
-      </motion.button>
+      {/* Button — RTL end side (left) — matches dashboard QuickActionButton style */}
+      <AddClassButton onClick={onCreateClick} />
     </div>
   );
 }
@@ -336,199 +365,23 @@ function ClassSearchBar({ value, onChange, count, total }: ClassSearchBarProps):
   );
 }
 
-// ─── Create Class Dialog ─────────────────────────────────────────────────────
-
-interface CreateClassDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-}
-
-/** Hebrew grade labels ordered א'–י"ב, with their numeric equivalents. */
-const CLASS_GRADE_OPTIONS = [
-  { label: "א'",  value: 1  },
-  { label: "ב'",  value: 2  },
-  { label: "ג'",  value: 3  },
-  { label: "ד'",  value: 4  },
-  { label: "ה'",  value: 5  },
-  { label: "ו'",  value: 6  },
-  { label: "ז'",  value: 7  },
-  { label: "ח'",  value: 8  },
-  { label: "ט'",  value: 9  },
-  { label: "י'",  value: 10 },
-  { label: 'י"א', value: 11 },
-  { label: 'י"ב', value: 12 },
-] as const;
-
-function CreateClassDialog({
-  open,
-  onOpenChange,
-  onSuccess,
-}: CreateClassDialogProps): React.JSX.Element {
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors, isSubmitting },
-    reset,
-    setError,
-  } = useForm<CreateClassInput>({
-    resolver: zodResolver(createClassSchema),
-    defaultValues: { genderType: 'MIXED' },
-  });
-
-  async function onSubmit(data: CreateClassInput): Promise<void> {
-    try {
-      await apiRequest<ClassData>('/classes', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-      reset();
-      onOpenChange(false);
-      onSuccess();
-    } catch (err) {
-      setError('root', {
-        message: err instanceof ApiError ? err.message : 'שגיאה ביצירת הכיתה',
-      });
-    }
-  }
-
-  function handleClose(next: boolean): void {
-    if (!next) reset();
-    onOpenChange(next);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md rounded-2xl border border-white/60 bg-white/90 backdrop-blur-xl shadow-[0_20px_60px_rgba(15,23,42,0.20)]">
-        <DialogHeader>
-          <DialogTitle className="text-indigo-950">הוסף כיתה חדשה</DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="cls-name" className="text-slate-700 font-medium">שם הכיתה</Label>
-            <Input
-              id="cls-name"
-              placeholder="כיתה י' 1"
-              className="h-11 rounded-xl border-slate-200 bg-white/60 backdrop-blur-sm"
-              aria-describedby={errors.name ? 'cls-name-err' : undefined}
-              {...register('name')}
-            />
-            {errors.name && (
-              <p id="cls-name-err" className="text-sm text-destructive">{errors.name.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="cls-year" className="text-slate-700 font-medium">שנת לימודים</Label>
-            <Input
-              id="cls-year"
-              placeholder="2024-2025"
-              className="h-11 rounded-xl border-slate-200 bg-white/60 backdrop-blur-sm"
-              aria-describedby={errors.academicYear ? 'cls-year-err' : undefined}
-              {...register('academicYear')}
-            />
-            {errors.academicYear && (
-              <p id="cls-year-err" className="text-sm text-destructive">{errors.academicYear.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="cls-semester" className="text-slate-700 font-medium">סמסטר</Label>
-            <select
-              id="cls-semester"
-              className={cn(SELECT_STYLES)}
-              aria-describedby={errors.semester ? 'cls-semester-err' : undefined}
-              {...register('semester')}
-            >
-              <option value="">בחר סמסטר</option>
-              <option value="A">סמסטר א'</option>
-              <option value="B">סמסטר ב'</option>
-            </select>
-            {errors.semester && (
-              <p id="cls-semester-err" className="text-sm text-destructive">{errors.semester.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="cls-gender" className="text-slate-700 font-medium">הרכב כיתה</Label>
-            <select
-              id="cls-gender"
-              className={cn(SELECT_STYLES)}
-              {...register('genderType')}
-            >
-              <option value="MIXED">מעורב (ברירת מחדל)</option>
-              <option value="BOYS">בנים</option>
-              <option value="GIRLS">בנות</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="cls-grade" className="text-slate-700 font-medium">
-              שכבה
-              <span className="ms-1 text-xs text-slate-400 font-normal">(אופציונלי — לתגיות המלצה)</span>
-            </Label>
-            <select
-              id="cls-grade"
-              className={cn(SELECT_STYLES)}
-              defaultValue=""
-              onChange={(e) => {
-                const v = e.target.value;
-                setValue('gradeLevel', v !== '' ? Number(v) : undefined);
-              }}
-            >
-              <option value="">לא ידוע</option>
-              {CLASS_GRADE_OPTIONS.map(({ label, value }) => (
-                <option key={value} value={value}>כיתה {label}</option>
-              ))}
-            </select>
-          </div>
-
-          {errors.root && (
-            <p className="rounded-xl bg-red-50/80 backdrop-blur-sm border border-red-200/50 px-3 py-2 text-sm text-red-700">
-              {errors.root.message}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              onClick={() => { handleClose(false); }}
-              className="rounded-xl"
-            >
-              ביטול
-            </Button>
-            <motion.div whileTap={{ scale: 0.98 }}>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-xl bg-indigo-600/90 backdrop-blur-sm hover:bg-indigo-600 shadow-[0_4px_18px_rgba(99,102,241,0.45)]"
-              >
-                {isSubmitting ? 'יוצר...' : 'צור כיתה'}
-              </Button>
-            </motion.div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Class Card ───────────────────────────────────────────────────────────────
 
-function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX.Element {
+function ClassCard({ cls, index, tourAnchor }: { cls: ClassData; index: number; tourAnchor?: boolean }): React.JSX.Element {
   const theme: CardTheme = CARD_THEMES[index % CARD_THEMES.length]!;
   const [hovered, setHovered] = useState(false);
+  const { isTourActive } = useTour();
 
   /** Deterministic metric bars — visually approximate, based on studentCount parity */
   const attendancePct = Math.min(97, Math.max(58, 70 + ((cls.studentCount * 7 + index * 13) % 26)));
   const progressPct  = Math.min(94, Math.max(50, 63 + ((cls.studentCount * 11 + index * 17) % 32)));
 
-  /** Cards whose name contains "ח'1" get a permanent liquid-glass ripple */
-  const hasRipple = cls.name.includes("ח'1");
+  /**
+   * Cards whose name contains "ח'1" get a permanent liquid-glass ripple
+   * (decorative orange/cyan pulse). Suppressed entirely while the onboarding
+   * tour is active — the pulse looks like a Joyride beacon and confuses users.
+   */
+  const hasRipple = !isTourActive && cls.name.includes("ח'1");
 
   return (
     <motion.div
@@ -544,6 +397,7 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
         transition: { type: 'spring', stiffness: 300, damping: 22 },
       }}
       whileTap={{ scale: 0.975, transition: { type: 'spring', stiffness: 500, damping: 30 } }}
+      {...(tourAnchor === true ? { 'data-tour': 'class-card' } : {})}
     >
       <Link
         href={`/classes/${cls.id}`}
@@ -650,14 +504,6 @@ function ClassCard({ cls, index }: { cls: ClassData; index: number }): React.JSX
               </p>
             </div>
 
-            {/* Join code */}
-            <div className="flex items-center gap-2 mb-4">
-              <Hash className="w-3 h-3 text-slate-400 shrink-0" aria-hidden="true" />
-              <code className="rounded-lg bg-white/65 border border-white/45 px-2 py-0.5 font-mono text-[11px] font-bold tracking-widest text-slate-600">
-                {cls.joinCode}
-              </code>
-            </div>
-
             {/* Metric bars */}
             <div className="space-y-2.5 mb-4">
               {/* Attendance */}
@@ -723,15 +569,14 @@ export default function ClassesPage(): React.JSX.Element {
   const { achievements } = useTopAchievements(activeSemester);
   const effectiveAchievements = achievements ?? [];
 
+  useSignalPageReady('classes', classes !== undefined);
+
   /** Filter by class name (case-insensitive, strips diacritics) */
   const filteredClasses = useMemo(() => {
     if (!classes) return [];
     const q = searchQuery.trim().toLowerCase();
     if (!q) return classes;
-    return classes.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.joinCode.toLowerCase().includes(q),
-    );
+    return classes.filter((c) => c.name.toLowerCase().includes(q));
   }, [classes, searchQuery]);
 
   return (
@@ -741,7 +586,7 @@ export default function ClassesPage(): React.JSX.Element {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ease: EASE, duration: 0.5 }}
-        className="relative space-y-6"
+        className="relative space-y-6 pt-16 px-4 md:pt-0 md:px-0"
       >
         {/* ── Floating sport-icon debris (4% opacity) ─────────────────────── */}
         <FloatingDebris />
@@ -859,7 +704,7 @@ export default function ClassesPage(): React.JSX.Element {
             >
               <AnimatePresence mode="popLayout">
                 {filteredClasses.map((cls, i) => (
-                  <ClassCard key={cls.id} cls={cls} index={i} />
+                  <ClassCard key={cls.id} cls={cls} index={i} tourAnchor={i === 0} />
                 ))}
               </AnimatePresence>
             </motion.div>
@@ -868,11 +713,9 @@ export default function ClassesPage(): React.JSX.Element {
 
         </div>
 
-        {/* Create Class dialog */}
-        <CreateClassDialog
+        <AddClassModal
           open={isCreateOpen}
-          onOpenChange={setIsCreateOpen}
-          onSuccess={() => { void mutate(); }}
+          onClose={() => { setIsCreateOpen(false); void mutate(); }}
         />
       </motion.div>
     </AnimatePresence>

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ClassGenderType, Semester } from '@prisma/client';
+import { ClassGenderType } from '@prisma/client';
 
 export class ClassResponseDto {
   @ApiProperty()
@@ -10,9 +10,6 @@ export class ClassResponseDto {
 
   @ApiProperty({ example: '2024-2025' })
   academicYear!: string;
-
-  @ApiProperty({ enum: Semester })
-  semester!: Semester;
 
   @ApiProperty({ enum: ClassGenderType, description: 'Gender composition: BOYS | GIRLS | MIXED' })
   genderType!: ClassGenderType;

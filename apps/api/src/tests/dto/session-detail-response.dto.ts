@@ -33,6 +33,9 @@ export class SessionStudentDto {
 
   @ApiProperty()
   studentCode!: string;
+
+  @ApiProperty({ nullable: true })
+  nationalId!: string | null;
 }
 
 export class SessionDetailResponseDto {

@@ -11,10 +11,8 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { setAccessToken } from '../lib/storage';
-import { ApiError } from '@fitgrade/types';
+import { api, ApiError } from '../lib/api';
 import { COLORS, FONT_SIZE_BODY, FONT_SIZE_BUTTON, MIN_TOUCH_TARGET } from '../constants/ui';
-
-const API_BASE = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/api';
 
 /**
  * Teacher Google OAuth login screen.
@@ -24,10 +22,11 @@ const API_BASE = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/ap
  * 2. Browser navigates to GET /api/auth/google/mobile on the backend, which sets
  *    a short-lived cookie and redirects to the standard Google OAuth route.
  * 3. After Google auth, the backend callback detects the cookie and redirects to
- *    fitgrade://auth/callback?token=<accessToken>.
+ *    fitgrade://auth/callback?code=<oneTimeCode> (64-char hex, 2-min TTL, single-use).
  * 4. The OS intercepts the fitgrade:// deep-link scheme, closes the browser, and
  *    openAuthSessionAsync returns with the redirect URL.
- * 5. App parses the token, stores it in MMKV, and navigates to the teacher dashboard.
+ * 5. App extracts the one-time code and POSTs it to POST /auth/mobile-exchange to
+ *    receive the actual JWT access token, then stores it in MMKV.
  */
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -38,19 +37,26 @@ export default function LoginScreen(): React.JSX.Element {
     try {
       // The redirect URL uses the app's registered deep-link scheme (app.json: "scheme": "fitgrade")
       const redirectUrl = Linking.createURL('auth/callback');
+      const apiBase = process.env['EXPO_PUBLIC_API_URL'] ?? 'http://localhost:3001/api';
       const result = await WebBrowser.openAuthSessionAsync(
-        `${API_BASE}/auth/google/mobile`,
+        `${apiBase}/auth/google/mobile`,
         redirectUrl,
       );
 
       if (result.type === 'success') {
         const parsed = Linking.parse(result.url);
-        const token = parsed.queryParams?.['token'];
-        if (typeof token === 'string' && token !== '') {
-          setAccessToken(token);
+        const code = parsed.queryParams?.['code'];
+        if (typeof code === 'string' && code !== '') {
+          // Exchange the one-time code for the actual JWT via a server-side call.
+          // The code is single-use and expires after 2 minutes.
+          const { accessToken } = await api.post<{ accessToken: string }>(
+            '/auth/mobile-exchange',
+            { code },
+          );
+          setAccessToken(accessToken);
           router.replace('/(teacher)');
         } else {
-          Alert.alert('שגיאה', 'לא התקבל טוקן מהשרת — נסה שוב');
+          Alert.alert('שגיאה', 'לא התקבל קוד אימות מהשרת — נסה שוב');
         }
       } else if (result.type === 'cancel') {
         // User closed the browser — no error shown, just re-enable the button

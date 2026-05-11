@@ -15,4 +15,24 @@ export class TeacherProfileDto {
 
   @ApiProperty({ description: 'Google profile avatar URL', nullable: true })
   declare avatarUrl: string | null;
+
+  @ApiProperty({
+    description: 'false until the teacher finishes the welcome tour + setup form',
+    example: true,
+  })
+  declare isOnboardingComplete: boolean;
+
+  @ApiProperty({
+    description: 'Test type IDs preferred for MALE/BOYS classes (empty = system defaults)',
+    type: [String],
+    example: [],
+  })
+  declare defaultMaleTestIds: string[];
+
+  @ApiProperty({
+    description: 'Test type IDs preferred for FEMALE/GIRLS classes (empty = system defaults)',
+    type: [String],
+    example: [],
+  })
+  declare defaultFemaleTestIds: string[];
 }

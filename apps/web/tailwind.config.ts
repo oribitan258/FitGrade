@@ -167,7 +167,14 @@ const config: Config = {
   					transform: 'rotate(215deg) translateX(-500px)',
   					opacity: '0'
   				}
-  			}
+  			},
+  			// Sidebar logo shimmer — ping-pong so 0%/100% share the same keyframe,
+  			// guaranteeing a seamless infinite loop with zero boundary jump.
+  			// Light peak sweeps right→left→right with ease-in-out for a premium feel.
+  			'logo-shimmer': {
+  				'0%, 100%': { backgroundPosition: '0% center' },
+  				'50%':       { backgroundPosition: '100% center' },
+  			},
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
@@ -175,7 +182,8 @@ const config: Config = {
   			shimmer: 'shimmer 1.5s linear infinite',
   			'border-beam': 'border-beam calc(var(--duration)*1s) infinite linear',
   			'shine-spin': 'shine-spin var(--duration, 14s) linear infinite',
-  			meteor: 'meteor var(--duration, 5s) var(--delay, 0s) linear infinite'
+  			meteor: 'meteor var(--duration, 5s) var(--delay, 0s) linear infinite',
+  			'logo-shimmer': 'logo-shimmer 5s ease-in-out infinite',
   		},
   		backgroundImage: {
   			'gradient-brand': 'linear-gradient(135deg, #6D28D9 0%, #A855F7 50%, #C084FC 100%)',

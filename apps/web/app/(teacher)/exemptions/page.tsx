@@ -349,7 +349,7 @@ export default function ExemptionsPage(): React.JSX.Element {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.55 }}
-        className="space-y-5"
+        className="space-y-5 pt-16 px-4 md:pt-0 md:px-0"
         dir="rtl"
       >
         {/* ── Page header ───────────────────────────────────── */}

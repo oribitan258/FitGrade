@@ -1,7 +1,7 @@
 import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ClassGenderType, Semester } from '@prisma/client';
+import { ClassGenderType } from '@prisma/client';
 
 export class CreateClassDto {
   @ApiProperty({ example: "כיתה י' 1" })
@@ -19,10 +19,6 @@ export class CreateClassDto {
     message: 'academicYear must be in the format "YYYY-YYYY" (e.g. "2024-2025")',
   })
   academicYear!: string;
-
-  @ApiProperty({ enum: Semester, enumName: 'Semester', example: Semester.A })
-  @IsEnum(Semester)
-  semester!: Semester;
 
   /** Gender composition of the class — defaults to MIXED when omitted. */
   @ApiPropertyOptional({ enum: ClassGenderType, enumName: 'ClassGenderType', default: ClassGenderType.MIXED })

@@ -4,6 +4,93 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tour scroll behaviour ───────────────────────────────────────────────────
+ * Tour-targeted elements declare themselves with `data-tour="<name>"`. When
+ * react-joyride calls scrollIntoView on a target, browsers honour the
+ * scroll-margin-block on the destination — so the target lands with breathing
+ * room above and below, clear of sticky headers and tooltip placement.
+ *
+ * This is the *only* mechanism we use to keep targets in view. No
+ * imperative scroll listeners, no overflow:hidden toggles, no manual scroll
+ * restoration — pure native CSS, fully cooperative with user scroll.
+ * ─────────────────────────────────────────────────────────────────────────── */
+[data-tour] {
+  scroll-margin-block: 80px;
+}
+
+/* ── Tour beacon nuclear kill switch ────────────────────────────────────────
+ *
+ * Why this is so aggressive:
+ *   react-joyride v3 renders the beacon under MULTIPLE class names depending
+ *   on the render path: `react-joyride__beacon`, `floater-beacon`,
+ *   `button-beacon`. The previous narrow selector ([class*="__beacon"]) only
+ *   matched the double-underscore variant and missed the floater/button ones,
+ *   which is why the ghost beacon kept appearing during cross-page
+ *   transitions — those go through a different render path that emits the
+ *   single-dash variants.
+ *
+ *   Beyond the DOM, the pulse animation runs via a globally-named keyframe
+ *   `joyride-beacon-animation`. Even if a beacon element somehow escapes
+ *   our display-none, the keyframe override below replaces the pulse with
+ *   a no-op, so nothing visible can happen.
+ *
+ * Safety:
+ *   Verified via grep that NO element in apps/web outside the tour code uses
+ *   "beacon" in any class name. The broad [class*="beacon" i] selector has
+ *   no collision risk.
+ *
+ * Layers of defence (any one of these would suffice; all are present):
+ *   1. skipBeacon: true on every tour step (config-level)
+ *   2. disableBeacon: true on every tour step (legacy alias, config-level)
+ *   3. beaconComponent={NullBeacon} on the Joyride component (component-level)
+ *   4. key={stepIndex} forces Joyride remount per step (lifecycle-level)
+ *   5. CSS rule below — display:none on every beacon-classed element (DOM-level)
+ *   6. Keyframe override — animation cannot run even if rule #5 is bypassed
+ * ─────────────────────────────────────────────────────────────────────────── */
+[class*="beacon" i],
+[class*="Beacon"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Replace the named animation Joyride uses with a no-op. The latest
+ * @keyframes definition with a given name wins — globals.css loads after
+ * the Joyride bundle so this redefinition takes precedence anywhere the
+ * animation is referenced. */
+@keyframes joyride-beacon-animation {
+  from, to {
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+/* ── Tour app lockdown ──────────────────────────────────────────────────────
+ * While the tour is in its 'running' phase, every click in the app is
+ * deadened — sidebar links, stat cards, the schedule grid, the table of
+ * contents — nothing is interactive except the Joyride overlay and tooltip.
+ *
+ * The `tour-active` class is added/removed by a useEffect in TourProvider
+ * that watches state.phase === 'running'. The tour's own DOM lives under
+ * elements with id starting with "react-joyride", so the second rule
+ * re-enables pointer events for those subtrees only.
+ * ─────────────────────────────────────────────────────────────────────────── */
+body.tour-active {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+body.tour-active [id^="react-joyride"] {
+  pointer-events: auto !important;
+}
+
 /* ── Prismatic Glass — reusable "fragile violet glass" card style ─────────────
  * Apply class="prismatic-glass" to any card, modal, or container.
  * Provides: translucent violet gradient · backdrop blur · violet border ·
@@ -14,6 +101,11 @@
 @keyframes prismatic-sweep {
   from { transform: translateX(-130%) skewX(-12deg); }
   to   { transform: translateX(130%)  skewX(-12deg); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
 }
 
 @layer components {

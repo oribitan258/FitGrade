@@ -24,9 +24,11 @@ import {
   Clock,
   Edit2,
   Flag,
+  Moon,
   Pause,
   Play,
   RotateCcw,
+  Sun,
   X,
 } from 'lucide-react';
 import type { LiveStudentResult, SessionDetail, SessionStudent } from '@fitgrade/types';
@@ -34,6 +36,7 @@ import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
 import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
+import { BackButton } from '@/components/ui/back-button';
 
 // ─── Timer helpers ────────────────────────────────────────────────────────────
 
@@ -71,12 +74,16 @@ type TimerState = 'idle' | 'running' | 'paused';
 
 // ─── Completed result local state ────────────────────────────────────────────
 
+/** Maximum ms after recording that an undo is permitted (matches server-side rule). */
+const UNDO_WINDOW_MS = 30_000;
+
 interface CompletedEntry {
   resultId:        string | null; // null while the POST is in-flight
   elapsedMs:       number;
   calculatedGrade: number;
   submitting:      boolean;
   error:           string | null;
+  recordedAt:      number; // Date.now() at the moment of submission
 }
 
 // ─── Error toast ──────────────────────────────────────────────────────────────
@@ -220,6 +227,9 @@ export default function LiveSessionPage(): React.JSX.Element {
   const [toast, setToast] = useState<string | null>(null);
   const showToast = useCallback((msg: string) => setToast(msg), []);
 
+  // ── Sun-glare dark mode (outdoor high-contrast mode) ──────────────────────
+  const [darkMode, setDarkMode] = useState(false);
+
   // ── Roster confirmed by PreTestRosterSelection ────────────────────────────
   const [activeStudents, setActiveStudents] = useState<SessionStudent[] | null>(null);
 
@@ -250,6 +260,8 @@ export default function LiveSessionPage(): React.JSX.Element {
         calculatedGrade: r.calculatedGrade,
         submitting:      false,
         error:           null,
+        // Use server recordedAt if available; otherwise assume too old to undo
+        recordedAt:      r.recordedAt ? new Date(r.recordedAt).getTime() : 0,
       });
     }
     setCompleted(completedMap);
@@ -283,15 +295,22 @@ export default function LiveSessionPage(): React.JSX.Element {
     return pausedMsRef.current + (Date.now() - startedAtRef.current);
   }
 
-  function handleStart() {
-    startedAtRef.current = Date.now();
+  async function handleStart() {
+    try {
+      const session = await apiRequest<{ startedAt: string | null }>(
+        `/sessions/${sessionId}/start`,
+        { method: 'POST' },
+      );
+      // Use server-provided start time so all clients share the same reference
+      startedAtRef.current = session.startedAt
+        ? new Date(session.startedAt).getTime()
+        : Date.now();
+    } catch {
+      // Fallback to client clock if server is unreachable
+      startedAtRef.current = Date.now();
+    }
     setTimerState('running');
     rafIdRef.current = requestAnimationFrame(tick);
-
-    // Notify server (best-effort, non-blocking)
-    void apiRequest(`/sessions/${sessionId}/start`, { method: 'POST' }).catch(() => {
-      // Server-side startedAt is for audit only — ignore failures
-    });
   }
 
   function handlePause() {
@@ -326,8 +345,13 @@ export default function LiveSessionPage(): React.JSX.Element {
     async (studentId: string) => {
       if (timerState !== 'running') return;
 
+      // Haptic feedback on supported mobile devices
+      try { window.navigator.vibrate?.(50); } catch { /* unsupported */ }
+
       const elapsedMs    = getElapsedMs();
       const rawValue     = elapsedMs / 1000; // seconds
+
+      const tapTimestamp = Date.now();
 
       // Optimistic: move to completed immediately
       setPendingIds((prev) => prev.filter((id) => id !== studentId));
@@ -339,6 +363,7 @@ export default function LiveSessionPage(): React.JSX.Element {
           calculatedGrade: 0,  // will be updated on API response
           submitting:      true,
           error:           null,
+          recordedAt:      tapTimestamp,
         });
         return next;
       });
@@ -360,6 +385,7 @@ export default function LiveSessionPage(): React.JSX.Element {
             calculatedGrade: result.calculatedGrade,
             submitting:      false,
             error:           null,
+            recordedAt:      tapTimestamp,
           });
           return next;
         });
@@ -469,6 +495,7 @@ export default function LiveSessionPage(): React.JSX.Element {
             calculatedGrade: result.calculatedGrade,
             submitting:      false,
             error:           null,
+            recordedAt:      Date.now(),
           });
           return next;
         });
@@ -524,6 +551,7 @@ export default function LiveSessionPage(): React.JSX.Element {
 
   return (
     <>
+      <BackButton />
       {/* ── Global keyframes ──────────────────────────────────────── */}
       <style>{`
         @keyframes timerGlow {
@@ -544,21 +572,55 @@ export default function LiveSessionPage(): React.JSX.Element {
         transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.55 }}
         className="space-y-5"
         dir="rtl"
+        style={darkMode ? {
+          background: '#0f172a',
+          borderRadius: 24,
+          padding: 16,
+          margin: -4,
+        } : undefined}
       >
-        {/* ── Breadcrumb ──────────────────────────────────────────── */}
-        <nav className="flex items-center gap-1.5 text-sm flex-wrap" aria-label="ניווט עמודים">
-          <Link href="/classes" className="font-medium text-slate-400 hover:text-indigo-600 transition-colors">
-            הכיתות שלי
-          </Link>
-          <ChevronRight className="h-3.5 w-3.5 text-slate-300 rotate-180" aria-hidden="true" />
-          <Link href={`/classes/${classId}`} className="font-medium text-slate-400 hover:text-indigo-600 transition-colors">
-            כיתה
-          </Link>
-          <ChevronRight className="h-3.5 w-3.5 text-slate-300 rotate-180" aria-hidden="true" />
-          <span className="font-semibold text-slate-700 truncate max-w-[180px]">
-            {session.testNameHe}
-          </span>
-        </nav>
+        {/* ── Breadcrumb + sun-glare toggle ───────────────────────── */}
+        <div className="flex items-center justify-between gap-2">
+          <nav className="flex items-center gap-1.5 text-sm flex-wrap" aria-label="ניווט עמודים">
+            <Link
+              href="/classes"
+              className="font-medium transition-colors"
+              style={{ color: darkMode ? 'rgba(148,163,184,0.80)' : undefined }}
+            >
+              הכיתות שלי
+            </Link>
+            <ChevronRight className="h-3.5 w-3.5 rotate-180" style={{ color: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(203,213,225,1)' }} aria-hidden="true" />
+            <Link
+              href={`/classes/${classId}`}
+              className="font-medium transition-colors"
+              style={{ color: darkMode ? 'rgba(148,163,184,0.80)' : undefined }}
+            >
+              כיתה
+            </Link>
+            <ChevronRight className="h-3.5 w-3.5 rotate-180" style={{ color: darkMode ? 'rgba(255,255,255,0.20)' : 'rgba(203,213,225,1)' }} aria-hidden="true" />
+            <span
+              className="font-semibold truncate max-w-[140px]"
+              style={{ color: darkMode ? 'rgba(255,255,255,0.85)' : '#334155' }}
+            >
+              {session.testNameHe}
+            </span>
+          </nav>
+
+          {/* Sun-glare mode toggle — mobile only */}
+          <button
+            type="button"
+            onClick={() => { setDarkMode((prev) => !prev); }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors md:hidden"
+            style={{
+              background: darkMode ? 'rgba(251,191,36,0.15)' : 'rgba(0,0,0,0.06)',
+              border:     darkMode ? '1px solid rgba(251,191,36,0.30)' : '1px solid rgba(0,0,0,0.06)',
+              color:      darkMode ? '#fbbf24' : '#64748b',
+            }}
+            aria-label={darkMode ? 'עבור למצב בהיר' : 'מצב שמש — ניגודיות גבוהה'}
+          >
+            {darkMode ? <Moon className="h-4 w-4" aria-hidden="true" /> : <Sun className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        </div>
 
         {/* ── Stopwatch card ──────────────────────────────────────── */}
         <div
@@ -628,7 +690,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                 type="button"
                 onClick={handleStart}
                 whileTap={{ scale: 0.96 }}
-                className="flex items-center gap-2.5 rounded-2xl px-8 py-3.5 text-base font-bold text-white shadow-lg transition-all"
+                className="flex min-h-[52px] items-center gap-2.5 rounded-2xl px-8 py-3.5 text-base font-bold text-white shadow-lg transition-all"
                 style={{
                   background: 'linear-gradient(135deg, #2dd4bf, #10b981)',
                   boxShadow:  '0 4px 24px rgba(45,212,191,0.35)',
@@ -644,7 +706,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                 type="button"
                 onClick={handleStart}
                 whileTap={{ scale: 0.96 }}
-                className="flex items-center gap-2.5 rounded-2xl px-8 py-3.5 text-base font-bold text-white shadow-lg"
+                className="flex min-h-[52px] items-center gap-2.5 rounded-2xl px-8 py-3.5 text-base font-bold text-white shadow-lg"
                 style={{
                   background: 'linear-gradient(135deg, #2dd4bf, #10b981)',
                   boxShadow:  '0 4px 24px rgba(45,212,191,0.35)',
@@ -660,7 +722,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                 type="button"
                 onClick={handlePause}
                 whileTap={{ scale: 0.96 }}
-                className="flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold"
+                className="flex min-h-[52px] items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold"
                 style={{
                   background: 'rgba(255,255,255,0.08)',
                   border:     '1px solid rgba(255,255,255,0.14)',
@@ -677,7 +739,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                 type="button"
                 onClick={handleReset}
                 whileTap={{ scale: 0.96 }}
-                className="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold"
+                className="flex min-h-[52px] items-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold"
                 style={{
                   background: 'rgba(255,255,255,0.06)',
                   border:     '1px solid rgba(255,255,255,0.10)',
@@ -694,7 +756,7 @@ export default function LiveSessionPage(): React.JSX.Element {
                 type="button"
                 onClick={() => void handleEndSession()}
                 whileTap={{ scale: 0.96 }}
-                className="flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold"
+                className="flex min-h-[52px] items-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold"
                 style={{
                   background: 'rgba(239,68,68,0.15)',
                   border:     '1px solid rgba(239,68,68,0.30)',
@@ -722,7 +784,7 @@ export default function LiveSessionPage(): React.JSX.Element {
               >
                 <div className="mb-2 flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden="true" />
-                  <h2 className="text-sm font-bold text-slate-700">
+                  <h2 className="text-sm font-bold" style={{ color: darkMode ? 'rgba(255,255,255,0.85)' : '#334155' }}>
                     נרשמו ({completedCount})
                   </h2>
                 </div>
@@ -795,21 +857,25 @@ export default function LiveSessionPage(): React.JSX.Element {
                             <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
 
-                          {/* Undo button */}
-                          <button
-                            type="button"
-                            onClick={() => void handleUndo(studentId)}
-                            disabled={entry.submitting}
-                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-40"
-                            style={{
-                              background: 'rgba(239,68,68,0.10)',
-                              color:      '#ef4444',
-                            }}
-                            aria-label={`בטל תוצאה של ${student.firstName}`}
-                          >
-                            <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                            בטל
-                          </button>
+                          {/* Undo button — only shown within 30-second window */}
+                          {Date.now() - entry.recordedAt <= UNDO_WINDOW_MS && (
+                            <button
+                              type="button"
+                              onClick={() => void handleUndo(studentId)}
+                              disabled={entry.submitting}
+                              className="flex min-h-[36px] items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-40"
+                              style={{
+                                background: 'rgba(239,68,68,0.14)',
+                                border:     '1px solid rgba(239,68,68,0.22)',
+                                color:      '#ef4444',
+                              }}
+                              aria-label={`בטל תוצאה של ${student.firstName}`}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span className="hidden sm:inline">בטל</span>
+                              <span className="sm:hidden">בטל</span>
+                            </button>
+                          )}
                         </motion.div>
                       );
                     })}
@@ -827,11 +893,11 @@ export default function LiveSessionPage(): React.JSX.Element {
                   className="h-2 w-2 rounded-full"
                   style={{ background: timerState === 'running' ? '#f59e0b' : '#94a3b8' }}
                 />
-                <h2 className="text-sm font-bold text-slate-700">
+                <h2 className="text-sm font-bold" style={{ color: darkMode ? 'rgba(255,255,255,0.85)' : '#334155' }}>
                   ממתינים ({pendingCount})
                 </h2>
                 {timerState !== 'running' && (
-                  <span className="text-xs text-slate-400">— הפעל את השעון כדי לרשום</span>
+                  <span className="text-xs" style={{ color: darkMode ? 'rgba(148,163,184,0.70)' : '#94a3b8' }}>— הפעל את השעון כדי לרשום</span>
                 )}
               </div>
 
@@ -854,16 +920,16 @@ export default function LiveSessionPage(): React.JSX.Element {
                         exit={{ opacity: 0, scale: 0.96 }}
                         transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.3 }}
                         whileTap={isActive ? { scale: 0.98 } : {}}
-                        className="w-full text-start rounded-2xl px-5 py-4 transition-all"
+                        className="w-full min-h-[64px] text-start rounded-2xl px-5 py-4 transition-all"
                         style={{
-                          background:           isActive
-                            ? 'rgba(255,255,255,0.88)'
-                            : 'rgba(255,255,255,0.55)',
+                          background: isActive
+                            ? (darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.88)')
+                            : (darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.55)'),
                           backdropFilter:       'blur(12px)',
                           WebkitBackdropFilter: 'blur(12px)',
-                          border:               isActive
-                            ? '1px solid rgba(45,212,191,0.25)'
-                            : '1px solid rgba(255,255,255,0.60)',
+                          border: isActive
+                            ? (darkMode ? '1px solid rgba(45,212,191,0.40)' : '1px solid rgba(45,212,191,0.25)')
+                            : (darkMode ? '1px solid rgba(255,255,255,0.10)' : '1px solid rgba(255,255,255,0.60)'),
                           boxShadow: isActive
                             ? '0 2px 16px rgba(45,212,191,0.08)'
                             : '0 1px 8px rgba(15,23,42,0.05)',
@@ -884,10 +950,10 @@ export default function LiveSessionPage(): React.JSX.Element {
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-800 truncate">
+                            <p className="text-sm font-bold truncate" style={{ color: darkMode ? 'rgba(255,255,255,0.90)' : '#1e293b' }}>
                               {student.firstName} {student.lastName}
                             </p>
-                            <p className="text-[11px] text-slate-400">{student.studentCode}</p>
+                            <p className="text-[11px]" style={{ color: darkMode ? 'rgba(148,163,184,0.70)' : '#94a3b8' }}>{student.studentCode}</p>
                           </div>
 
                           {isActive && (

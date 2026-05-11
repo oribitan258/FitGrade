@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
+import { BackButton } from '@/components/ui/back-button';
 
 import { SprintHeatMode }           from '@/components/sprint/SprintHeatMode';
 import { PreTestRosterSelection }   from '@/components/pre-test-roster-selection';
@@ -19,19 +20,25 @@ export default function Sprint10x4Page(): React.ReactNode {
 
   if (activeStudents === null) {
     return (
-      <PreTestRosterSelection
-        students={session?.students ?? []}
-        testName={session?.testNameHe ?? DEFAULT_TEST_NAME}
-        isLoading={isLoading}
-        onConfirm={setActiveStudents}
-      />
+      <>
+        <BackButton />
+        <PreTestRosterSelection
+          students={session?.students ?? []}
+          testName={session?.testNameHe ?? DEFAULT_TEST_NAME}
+          isLoading={isLoading}
+          onConfirm={setActiveStudents}
+        />
+      </>
     );
   }
 
   return (
-    <SprintHeatMode
-      testName={session?.testNameHe ?? DEFAULT_TEST_NAME}
-      activeStudents={activeStudents}
-    />
+    <>
+      <BackButton />
+      <SprintHeatMode
+        testName={session?.testNameHe ?? DEFAULT_TEST_NAME}
+        activeStudents={activeStudents}
+      />
+    </>
   );
 }

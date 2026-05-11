@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AuditAction } from '@prisma/client';
+import { type AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateAuditLogParams {
@@ -22,8 +22,8 @@ export class AuditLogRepository {
         entityType: params.entityType,
         entityId: params.entityId,
         actorId: params.actorId,
-        oldValue: params.oldValue ?? null,
-        newValue: params.newValue ?? null,
+        oldValue: params.oldValue ? (params.oldValue as Prisma.InputJsonValue) : Prisma.DbNull,
+        newValue: params.newValue ? (params.newValue as Prisma.InputJsonValue) : Prisma.DbNull,
       },
     });
   }

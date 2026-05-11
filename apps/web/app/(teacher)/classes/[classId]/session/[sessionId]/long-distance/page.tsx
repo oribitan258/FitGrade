@@ -33,7 +33,7 @@ import {
 import { cn }              from '@/lib/utils';
 import { useTestSession }  from '@/hooks/use-test-session';
 import { apiRequest, logout } from '@/lib/api-client';
-import { ApiError }        from '@fitgrade/types';
+import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import type { SessionStudent } from '@fitgrade/types';
 import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 
@@ -89,45 +89,45 @@ const PE_NAV: NavDef[] = [
 
 interface FloatDef {
   src: string; w: number;
-  left: string; top: string;
+  insetInlineStart: string; top: string;
   delay: number; dur: number;
   blur: number; opacity: number;
 }
 
 const FLOAT_ICONS: FloatDef[] = [
-  { src: '/sports-icons/stopwatch.png',       w: 96,  left: '4%',   top: '8%',  delay: 0,   dur: 8.2,  blur: 0,   opacity: 0.90 },
-  { src: '/sports-icons/football-player.png', w: 108, left: '66%',  top: '3%',  delay: 1.2, dur: 10.4, blur: 1,   opacity: 0.60 },
-  { src: '/sports-icons/football.png',        w: 74,  left: '85%',  top: '50%', delay: 0.6, dur: 7.8,  blur: 2,   opacity: 0.48 },
-  { src: '/sports-icons/baseball.png',        w: 62,  left: '8%',   top: '74%', delay: 2.0, dur: 9.2,  blur: 0.5, opacity: 0.72 },
-  { src: '/sports-icons/stopwatch.png',       w: 50,  left: '48%',  top: '85%', delay: 1.5, dur: 11.8, blur: 3,   opacity: 0.38 },
-  { src: '/sports-icons/football.png',        w: 82,  left: '0.5%', top: '40%', delay: 0.9, dur: 8.8,  blur: 1.5, opacity: 0.54 },
-  { src: '/sports-icons/baseball.png',        w: 46,  left: '75%',  top: '20%', delay: 3.0, dur: 12.4, blur: 4,   opacity: 0.34 },
-  { src: '/sports-icons/football-player.png', w: 60,  left: '33%',  top: '90%', delay: 0.4, dur: 9.8,  blur: 2,   opacity: 0.30 },
+  { src: '/sports-icons/stopwatch.png',       w: 96,  insetInlineStart: '4%',   top: '8%',  delay: 0,   dur: 8.2,  blur: 0,   opacity: 0.90 },
+  { src: '/sports-icons/football-player.png', w: 108, insetInlineStart: '66%',  top: '3%',  delay: 1.2, dur: 10.4, blur: 1,   opacity: 0.60 },
+  { src: '/sports-icons/football.png',        w: 74,  insetInlineStart: '85%',  top: '50%', delay: 0.6, dur: 7.8,  blur: 2,   opacity: 0.48 },
+  { src: '/sports-icons/baseball.png',        w: 62,  insetInlineStart: '8%',   top: '74%', delay: 2.0, dur: 9.2,  blur: 0.5, opacity: 0.72 },
+  { src: '/sports-icons/stopwatch.png',       w: 50,  insetInlineStart: '48%',  top: '85%', delay: 1.5, dur: 11.8, blur: 3,   opacity: 0.38 },
+  { src: '/sports-icons/football.png',        w: 82,  insetInlineStart: '0.5%', top: '40%', delay: 0.9, dur: 8.8,  blur: 1.5, opacity: 0.54 },
+  { src: '/sports-icons/baseball.png',        w: 46,  insetInlineStart: '75%',  top: '20%', delay: 3.0, dur: 12.4, blur: 4,   opacity: 0.34 },
+  { src: '/sports-icons/football-player.png', w: 60,  insetInlineStart: '33%',  top: '90%', delay: 0.4, dur: 9.8,  blur: 2,   opacity: 0.30 },
 ];
 
 // ─── Demo roster (20 students) ──────────────────────────────────────────────────
 
 const DEMO_STUDENTS: SessionStudent[] = [
-  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209' },
-  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145' },
-  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312' },
-  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278' },
-  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163' },
-  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391' },
-  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224' },
-  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187' },
-  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356' },
-  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299' },
-  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134' },
-  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445' },
-  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267' },
-  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318' },
-  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203' },
-  { id: 's16', firstName: 'דנה',   lastName: 'רוז',     studentCode: '148' },
-  { id: 's17', firstName: 'יאיר',  lastName: 'שפירא',   studentCode: '271' },
-  { id: 's18', firstName: 'נועם',  lastName: 'חדד',     studentCode: '389' },
-  { id: 's19', firstName: 'ריקי',  lastName: 'בן-ארי',  studentCode: '215' },
-  { id: 's20', firstName: 'אביב',  lastName: 'קרן',     studentCode: '342' },
+  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209', nationalId: null },
+  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145', nationalId: null },
+  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312', nationalId: null },
+  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278', nationalId: null },
+  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163', nationalId: null },
+  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391', nationalId: null },
+  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224', nationalId: null },
+  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187', nationalId: null },
+  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356', nationalId: null },
+  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299', nationalId: null },
+  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134', nationalId: null },
+  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445', nationalId: null },
+  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267', nationalId: null },
+  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318', nationalId: null },
+  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203', nationalId: null },
+  { id: 's16', firstName: 'דנה',   lastName: 'רוז',     studentCode: '148', nationalId: null },
+  { id: 's17', firstName: 'יאיר',  lastName: 'שפירא',   studentCode: '271', nationalId: null },
+  { id: 's18', firstName: 'נועם',  lastName: 'חדד',     studentCode: '389', nationalId: null },
+  { id: 's19', firstName: 'ריקי',  lastName: 'בן-ארי',  studentCode: '215', nationalId: null },
+  { id: 's20', firstName: 'אביב',  lastName: 'קרן',     studentCode: '342', nationalId: null },
 ];
 
 // ─── Rank badge style ────────────────────────────────────────────────────────────
@@ -350,9 +350,12 @@ export default function LongDistanceRunPage(): React.ReactNode {
   const router = useRouter();
 
   const { data: session, isLoading: sessionLoading } = useTestSession(sessionId);
-  const sessionStudents: SessionStudent[] =
-    session?.students && session.students.length > 0 ? session.students : DEMO_STUDENTS;
-  const testName = session?.testNameHe ?? 'ריצת 1000 מטר';
+  const sessionStudents: SessionStudent[] = (() => {
+    if (sessionLoading || session == null) return DEMO_STUDENTS;
+    if (session.students.length === 0) return [];
+    return session.students;
+  })();
+  const testName = session?.testNameHe ?? 'ריצת מרחק';
 
   // Populated by PreTestRosterSelection before the race begins
   const [activeStudents, setActiveStudents] = useState<SessionStudent[]>([]);
@@ -380,6 +383,7 @@ export default function LongDistanceRunPage(): React.ReactNode {
   const [isSaving,      setIsSaving]      = useState(false);
   const [toast,         setToast]         = useState<string | null>(null);
   const [finishedTimes, setFinishedTimes] = useState<Map<string, number>>(new Map());
+  const [savedGrades,   setSavedGrades]   = useState<Map<string, number>>(new Map());
   const [mounted,       setMounted]       = useState(false);
 
   const totalCount    = students.length;
@@ -436,32 +440,50 @@ export default function LongDistanceRunPage(): React.ReactNode {
   const handleSave = useCallback(async (continueRace: boolean): Promise<void> => {
     cancelAnimationFrame(rafRef.current);
     setIsSaving(true);
-    try {
-      await Promise.all(
-        Array.from(finishedRef.current.entries()).map(([studentId, ms]) =>
-          apiRequest(`/sessions/${sessionId}/results`, {
-            method: 'POST',
-            body: JSON.stringify({ studentId, rawValue: (ms / 1000).toFixed(2) }),
-          }),
-        ),
-      );
-      if (continueRace) {
-        finishedRef.current = new Map();
-        setFinishedTimes(new Map());
-        if (progressBarRef.current) progressBarRef.current.style.width = '0%';
-        if (timerDisplayRef.current) timerDisplayRef.current.textContent = '00:00.00';
-        setRaceStarted(false);
-        setPhase('racing');
-        setIsSaving(false);
+    const entries = Array.from(finishedRef.current.entries());
+    const results = await Promise.allSettled(
+      entries.map(([studentId, ms]) =>
+        apiRequest<{ calculatedGrade: number }>(`/sessions/${sessionId}/results`, {
+          method: 'POST',
+          body: JSON.stringify({ studentId, rawValue: parseFloat((ms / 1000).toFixed(2)) }),
+        }).then((res) => ({ studentId, calculatedGrade: res.calculatedGrade })),
+      ),
+    );
+
+    const grades = new Map<string, number>();
+    const failed: string[] = [];
+    for (const [i, outcome] of results.entries()) {
+      if (outcome.status === 'fulfilled') {
+        grades.set(outcome.value.studentId, outcome.value.calculatedGrade);
       } else {
-        router.push(`/classes/${classId}`);
+        failed.push(entries[i]![0]);
       }
-    } catch (err) {
-      setToast(err instanceof ApiError ? err.message : 'שגיאה בשמירת תוצאות — נסה שוב');
-      setTimeout(() => setToast(null), 3000);
-      setIsSaving(false);
     }
-  }, [sessionId, classId, router]);
+    setSavedGrades(grades);
+
+    if (failed.length > 0) {
+      const failedNames = failed
+        .map((id) => students.find((s) => s.id === id)?.firstName ?? id)
+        .join(', ');
+      setToast(`שגיאה בשמירה עבור: ${failedNames}`);
+      setTimeout(() => setToast(null), 5000);
+      setIsSaving(false);
+      return;
+    }
+
+    if (continueRace) {
+      finishedRef.current = new Map();
+      setFinishedTimes(new Map());
+      setSavedGrades(new Map());
+      if (progressBarRef.current) progressBarRef.current.style.width = '0%';
+      if (timerDisplayRef.current) timerDisplayRef.current.textContent = '00:00.00';
+      setRaceStarted(false);
+      setPhase('racing');
+      setIsSaving(false);
+    } else {
+      router.push(`/classes/${classId}`);
+    }
+  }, [sessionId, classId, router, students]);
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -483,8 +505,9 @@ export default function LongDistanceRunPage(): React.ReactNode {
       student: students.find((s) => s.id === id),
       ms,
       rank: i + 1,
+      grade: savedGrades.get(id),
     }))
-    .filter((e) => e.student !== undefined) as { student: SessionStudent; ms: number; rank: number }[];
+    .filter((e) => e.student !== undefined) as { student: SessionStudent; ms: number; rank: number; grade?: number }[];
 
   const leaderboard = sortedResults.slice(0, 5);
 
@@ -492,6 +515,15 @@ export default function LongDistanceRunPage(): React.ReactNode {
 
   // ── Roster phase — shown before the race begins ───────────────────────────────
   if (phase === 'roster') {
+    if (!sessionLoading && session != null && sessionStudents.length === 0) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
+          <p className="text-xl font-bold text-foreground">אין תלמידים רשומים לכיתה זו</p>
+          <p className="text-sm text-muted-foreground">יש להוסיף תלמידים לכיתה לפני ביצוע מבחן</p>
+          <a href={`/classes/${classId}`} className="text-primary underline">חזור לכיתה</a>
+        </div>
+      );
+    }
     return (
       <PreTestRosterSelection
         students={sessionStudents}
@@ -565,7 +597,7 @@ export default function LongDistanceRunPage(): React.ReactNode {
         <motion.div
           key={i}
           className="pointer-events-none absolute"
-          style={{ left: icon.left, top: icon.top, zIndex: 2, filter: `blur(${icon.blur}px) drop-shadow(0 0 16px rgba(139,92,246,0.62))`, opacity: icon.opacity }}
+          style={{ insetInlineStart: icon.insetInlineStart, top: icon.top, zIndex: 2, filter: `blur(${icon.blur}px) drop-shadow(0 0 16px rgba(139,92,246,0.62))`, opacity: icon.opacity }}
           animate={{ y: [0, -18, 3, -11, 0], rotate: [0, 3, -2, 4, 0] }}
           transition={{ duration: icon.dur, delay: icon.delay, repeat: Infinity, ease: 'easeInOut' }}
           aria-hidden="true"
@@ -638,8 +670,8 @@ export default function LongDistanceRunPage(): React.ReactNode {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="absolute start-1/2 top-4 z-50 -translate-x-1/2 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white"
-              style={{ background: 'rgba(239,68,68,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(252,165,165,0.32)', boxShadow: '0 0 24px rgba(239,68,68,0.35)' }}
+              className="absolute top-4 z-50 rounded-2xl px-5 py-2.5 text-sm font-semibold text-white"
+              style={{ left: '50%', transform: 'translateX(-50%)', background: 'rgba(239,68,68,0.88)', backdropFilter: 'blur(12px)', border: '1px solid rgba(252,165,165,0.32)', boxShadow: '0 0 24px rgba(239,68,68,0.35)' }}
             >
               {toast}
             </motion.div>
@@ -938,7 +970,7 @@ export default function LongDistanceRunPage(): React.ReactNode {
                 {/* Results list */}
                 <div className="flex-1 overflow-y-auto px-6 py-4">
                   <div className="mx-auto max-w-2xl space-y-2">
-                    {sortedResults.map(({ student, ms, rank }, i) => (
+                    {sortedResults.map(({ student, ms, rank, grade }, i) => (
                       <motion.div
                         key={student.id}
                         initial={{ opacity: 0, x: 18 }}
@@ -979,7 +1011,7 @@ export default function LongDistanceRunPage(): React.ReactNode {
                           <p className="text-[11px] text-white/35">#{student.studentCode}</p>
                         </div>
                         <div
-                          className="shrink-0 rounded-xl px-3 py-1"
+                          className="shrink-0 rounded-xl px-3 py-1 text-center"
                           style={rank === 1 ? {
                             background: 'rgba(251,191,36,0.24)',
                             border: '1px solid rgba(251,191,36,0.40)',
@@ -989,11 +1021,16 @@ export default function LongDistanceRunPage(): React.ReactNode {
                           }}
                         >
                           <span
-                            className="text-sm font-black tabular-nums"
+                            className="block text-sm font-black tabular-nums"
                             style={{ color: rank === 1 ? '#fbbf24' : '#86efac' }}
                           >
                             {formatTimer(ms)}
                           </span>
+                          {grade !== undefined && (
+                            <span className="block text-[10px] font-semibold text-white/55">
+                              {getHebrewGradeLabel(grade)}
+                            </span>
+                          )}
                         </div>
                       </motion.div>
                     ))}

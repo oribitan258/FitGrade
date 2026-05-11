@@ -1,21 +1,15 @@
-import { IsNotEmpty, IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class StudentLoginDto {
-  /** The class join code — used to identify which class the student belongs to. */
-  @ApiProperty({ example: 'AB3X7Q' })
+  /** תעודת זהות — 1–9 ספרות (יורחב ל-9 עם אפסים מובילים לפני אימות Luhn) */
+  @ApiProperty({ example: '123456789', description: 'תעודת זהות ישראלית — עד 9 ספרות' })
   @IsString()
-  @IsNotEmpty()
-  classCode!: string;
+  @Matches(/^\d{1,9}$/, { message: 'תעודת זהות לא תקינה' })
+  nationalId!: string;
 
-  /** The student's assigned code within the class. */
-  @ApiProperty({ example: '301' })
+  @ApiPropertyOptional({ description: 'סיסמת כניסה' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  studentCode!: string;
-
-  @ApiProperty({ example: 'myPassword123' })
-  @IsString()
-  @IsNotEmpty()
-  password!: string;
+  password?: string;
 }

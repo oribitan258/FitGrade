@@ -81,8 +81,8 @@ export class StudentProfileResponseDto {
   @ApiProperty()
   lastName!: string;
 
-  @ApiProperty()
-  dateOfBirth!: Date;
+  @ApiProperty({ nullable: true })
+  dateOfBirth!: Date | null;
 
   @ApiProperty()
   gender!: string;

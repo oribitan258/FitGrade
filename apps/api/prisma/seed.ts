@@ -26,7 +26,6 @@ import {
   Gender,
   Prisma,
   PrismaClient,
-  Semester,
   TestCategory,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -66,12 +65,11 @@ interface StudentDef {
 }
 
 interface NormBandInput {
-  gender:   Gender;
-  minAge:   number;
-  maxAge:   number;
-  minValue: string;
-  maxValue: string;
-  score:    number;
+  gender:     Gender;
+  gradeLevel: number;
+  minValue:   string;
+  maxValue:   string;
+  score:      number;
 }
 
 // TEST_TYPES and NORM_SPECS are replaced by NORM_CONFIG imported from norms.config.ts.
@@ -105,13 +103,9 @@ function rawAtScoreFromThresholds(score: number, t: ScoreThresholds): number {
   return t.s50 + (50 - score) * slope;
 }
 
-/**
- * Returns the raw value a student of the given gender/age should achieve
- * to match their performance tier, using NORM_CONFIG thresholds.
- */
-function rawForTier(testKey: string, gender: Gender, age: number, tier: Tier): number {
-  const thresholds = findThresholds(testKey, gender as 'MALE' | 'FEMALE', age);
-  if (!thresholds) throw new Error(`No norm thresholds for ${testKey}/${gender}/age=${age}`);
+function rawForTier(testKey: string, gender: Gender, gradeLevel: number, tier: Tier): number {
+  const thresholds = findThresholds(testKey, gender as 'MALE' | 'FEMALE', gradeLevel);
+  if (!thresholds) throw new Error(`No norm thresholds for ${testKey}/${gender}/grade=${gradeLevel}`);
   return rawAtScoreFromThresholds(TIER_GRADE[tier], thresholds);
 }
 
@@ -135,80 +129,63 @@ function generateBandsFromThresholds(
   thresholds: ScoreThresholds,
   isTime:     boolean,
   gender:     Gender,
-  minAge:     number,
-  maxAge:     number,
+  gradeLevel: number,
 ): NormBandInput[] {
-  /** Small epsilon makes the threshold value itself fall in the intended band. */
   const EPS = 0.0001;
   const bands: NormBandInput[] = [];
   const raw = (s: number): number => rawAtScoreFromThresholds(s, thresholds);
 
   if (isTime) {
-    // Score 100: [0, raw(100)+ε)
     bands.push({
-      gender, minAge, maxAge, score: 100,
+      gender, gradeLevel, score: 100,
       minValue: '0',
       maxValue: String(+(raw(100) + EPS).toFixed(4)),
     });
-
-    // Scores 99 → 2
     for (let s = 99; s >= 2; s--) {
-      const lo = raw(s + 1) + EPS;
-      const hi = raw(s) + EPS;
       bands.push({
-        gender, minAge, maxAge, score: s,
-        minValue: String(+lo.toFixed(4)),
-        maxValue: String(+hi.toFixed(4)),
+        gender, gradeLevel, score: s,
+        minValue: String(+(raw(s + 1) + EPS).toFixed(4)),
+        maxValue: String(+(raw(s)     + EPS).toFixed(4)),
       });
     }
-
-    // Score 1 catch-all
     bands.push({
-      gender, minAge, maxAge, score: 1,
+      gender, gradeLevel, score: 1,
       minValue: String(+(raw(2) + EPS).toFixed(4)),
       maxValue: '999999',
     });
   } else {
-    // Score 100: [raw(100), 999999)
     bands.push({
-      gender, minAge, maxAge, score: 100,
+      gender, gradeLevel, score: 100,
       minValue: String(+Math.max(0, raw(100)).toFixed(4)),
       maxValue: '999999',
     });
-
-    // Scores 99 → 2
     for (let s = 99; s >= 2; s--) {
-      const lo = raw(s);
-      const hi = raw(s + 1);
+      const lo = +Math.max(0, raw(s)    ).toFixed(4);
+      const hi = +Math.max(0, raw(s + 1)).toFixed(4);
+      if (lo >= hi) continue; // degenerate band — raw values collapsed at floor 0
       bands.push({
-        gender, minAge, maxAge, score: s,
-        minValue: String(+Math.max(0, lo).toFixed(4)),
-        maxValue: String(+Math.max(0, hi).toFixed(4)),
+        gender, gradeLevel, score: s,
+        minValue: String(lo),
+        maxValue: String(hi),
       });
     }
-
-    // Score 1 catch-all
-    bands.push({
-      gender, minAge, maxAge, score: 1,
-      minValue: '0',
-      maxValue: String(+Math.max(0, raw(2)).toFixed(4)),
-    });
+    const catchAllMax = +Math.max(0, raw(2)).toFixed(4);
+    if (catchAllMax > 0) {
+      bands.push({
+        gender, gradeLevel, score: 1,
+        minValue: '0',
+        maxValue: String(catchAllMax),
+      });
+    }
   }
 
   return bands;
 }
 
-/**
- * Validates that no two bands for the same (gender, minAge, maxAge) group overlap
- * on the raw value range [minValue, maxValue).
- *
- * Throws if any overlap is detected — ensures seed data integrity (BUG-017).
- */
 function validateNoBandOverlaps(testKey: string, bands: NormBandInput[]): void {
-  // Group bands by (gender, minAge, maxAge)
   const groups = new Map<string, NormBandInput[]>();
   for (const b of bands) {
-    const key = `${b.gender}|${b.minAge}|${b.maxAge}`;
+    const key = `${b.gender}|${b.gradeLevel}`;
     const group = groups.get(key) ?? [];
     group.push(b);
     groups.set(key, group);
@@ -369,6 +346,7 @@ interface TalmidautSnapshot {
   participation: number;
   uniform:       number;
   behavior:      number;
+  lessonDate:    Date;
   recordedAt:    Date;
 }
 
@@ -388,18 +366,21 @@ function talmidautSnapshots(tier: Tier, studentIdx: number): TalmidautSnapshot[]
       participation: jitter(p, studentIdx % 5),
       uniform:       jitter(u, studentIdx % 4),
       behavior:      jitter(b, studentIdx % 3),
+      lessonDate:    new Date('2025-10-31'),
       recordedAt:    new Date('2025-10-31'),
     },
     {
       participation: jitter(p, (studentIdx + 1) % 5),
       uniform:       jitter(u, (studentIdx + 2) % 4),
       behavior:      jitter(b, (studentIdx + 1) % 3),
+      lessonDate:    new Date('2025-12-31'),
       recordedAt:    new Date('2025-12-31'),
     },
     {
       participation: jitter(p, (studentIdx + 2) % 5),
       uniform:       jitter(u, (studentIdx + 3) % 4),
       behavior:      jitter(b, (studentIdx + 2) % 3),
+      lessonDate:    new Date('2026-02-28'),
       recordedAt:    new Date('2026-02-28'),
     },
   ];
@@ -439,26 +420,33 @@ async function cleanupDevData(): Promise<void> {
 }
 
 async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
-  console.log('\nSeeding FitnessTestTypes + NormTables (16 tests, piecewise interpolation)...');
+  console.log('\nWiping all existing NormTable rows...');
+  await prisma.normTable.deleteMany({});
+
+  console.log('Seeding FitnessTestTypes + NormTables (16 tests, grade-level based)...');
   const testTypeIds = new Map<string, string>();
 
   for (const config of NORM_CONFIG) {
-    // Build all bands for every gender × age group in this test's config
+    // Build all bands for every gender × grade-level group in this test's config
     const bands: NormBandInput[] = [];
-    for (const ageGroup of config.ageGroups) {
-      for (const [genderStr, thresholds] of Object.entries(ageGroup.byGender) as [string, import('./norms.config').ScoreThresholds | undefined][]) {
+    for (const levelGroup of config.gradeLevels) {
+      for (const [genderStr, thresholds] of Object.entries(levelGroup.byGender) as [string, import('./norms.config').ScoreThresholds | undefined][]) {
         if (!thresholds) continue;
         const gender = genderStr as Gender;
-        const groupBands = generateBandsFromThresholds(
-          thresholds,
-          !config.higherIsBetter,
-          gender,
-          ageGroup.minAge,
-          ageGroup.maxAge,
-        );
-        bands.push(...groupBands);
+        for (const gradeLevel of levelGroup.grades) {
+          const groupBands = generateBandsFromThresholds(
+            thresholds,
+            !config.higherIsBetter,
+            gender,
+            gradeLevel,
+          );
+          bands.push(...groupBands);
+        }
       }
     }
+
+    // Validate no overlapping value bands per (gender, gradeLevel) group (BUG-017)
+    validateNoBandOverlaps(config.testKey, bands);
 
     const created = await prisma.fitnessTestType.create({
       data: {
@@ -474,12 +462,11 @@ async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
         normTables: {
           createMany: {
             data: bands.map((b) => ({
-              gender:   b.gender,
-              minAge:   b.minAge,
-              maxAge:   b.maxAge,
-              minValue: new Prisma.Decimal(b.minValue),
-              maxValue: new Prisma.Decimal(b.maxValue),
-              score:    b.score,
+              gender:     b.gender,
+              gradeLevel: b.gradeLevel,
+              minValue:   new Prisma.Decimal(b.minValue),
+              maxValue:   new Prisma.Decimal(b.maxValue),
+              score:      b.score,
             })),
           },
         },
@@ -487,12 +474,9 @@ async function seedTestTypesAndNorms(): Promise<Map<string, string>> {
       select: { id: true },
     });
 
-    // Validate no overlapping value bands before inserting (BUG-017)
-    validateNoBandOverlaps(config.testKey, bands);
-
     testTypeIds.set(config.testKey, created.id);
-    const groupCount = config.ageGroups.reduce((n, g) => n + Object.keys(g.byGender).length, 0);
-    console.log(`  ✓ ${config.nameHe} — ${bands.length} norm bands (${groupCount} age/gender groups)`);
+    const totalGrades = config.gradeLevels.reduce((n, g) => n + g.grades.length * Object.keys(g.byGender).length, 0);
+    console.log(`  ✓ ${config.nameHe} — ${bands.length} norm bands (${totalGrades} grade/gender combos)`);
   }
 
   return testTypeIds;
@@ -520,7 +504,6 @@ async function seedClass(opts: {
     data: {
       name,
       academicYear:     '2025-2026',
-      semester:         Semester.A,
       joinCode,
       joinCodeExpiresAt: new Date('2099-12-31'),
       teacherId,
@@ -565,8 +548,9 @@ async function seedClass(opts: {
     });
 
     const results = studentRecords.map(({ id: studentId, def }) => {
-      // Compute formula-consistent raw value for this student's gender, age, and tier
-      const raw = rawForTier(testKey, def.gender, classAge, def.tier);
+      // Compute formula-consistent raw value for this student's gender, grade, and tier
+      const effectiveGrade = gradeLevel ?? 7;
+      const raw = rawForTier(testKey, def.gender, effectiveGrade, def.tier);
       return {
         sessionId:       session.id,
         studentId,
@@ -587,6 +571,7 @@ async function seedClass(opts: {
     participation: number;
     uniform:       number;
     behavior:      number;
+    lessonDate:    Date;
     recordedAt:    Date;
   }> = [];
 

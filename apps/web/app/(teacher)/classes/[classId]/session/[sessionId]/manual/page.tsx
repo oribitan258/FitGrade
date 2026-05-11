@@ -12,6 +12,7 @@ import type { SessionStudent } from '@fitgrade/types';
 import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 import { useSemester } from '@/contexts/semester-context';
 import { cn } from '@/lib/utils';
+import { BackButton } from '@/components/ui/back-button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -338,7 +339,9 @@ export default function ManualSessionPage(): React.JSX.Element {
     : 'grid-cols-[1fr_9rem_8rem]';
 
   return (
-    <div className="space-y-6">
+    <>
+      <BackButton />
+      <div className="space-y-6">
       {/* ── Breadcrumb ────────────────────────────────────────── */}
       <nav aria-label="ניווט עמודים" className="flex items-center gap-1.5 text-sm">
         <Link
@@ -453,7 +456,11 @@ export default function ManualSessionPage(): React.JSX.Element {
                       <p className="truncate text-sm font-semibold text-slate-800">
                         {student.firstName} {student.lastName}
                       </p>
-                      <code className="font-mono text-xs text-slate-400">{student.studentCode}</code>
+                      {student.nationalId && (
+                        <code className="font-mono text-xs text-slate-400">
+                          ת.ז ****{student.nationalId.slice(-4)}
+                        </code>
+                      )}
                     </div>
                   </div>
 
@@ -587,5 +594,6 @@ export default function ManualSessionPage(): React.JSX.Element {
         </motion.button>
       </div>
     </div>
+    </>
   );
 }

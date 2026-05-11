@@ -18,6 +18,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      // Explicit algorithm whitelist prevents the "alg:none" and RS256→HS256
+      // confusion attacks where an attacker substitutes the algorithm header.
+      algorithms: ['HS256'],
     });
   }
 

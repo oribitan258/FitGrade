@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Activity, Dumbbell, GraduationCap, Target, Timer, Trophy } from 'lucide-react';
+import { Activity, Dumbbell, Target, Timer, Trophy } from 'lucide-react';
 import { DevLoginButton } from './dev-login-button';
 
 const GOOGLE_AUTH_URL = `${process.env['API_URL'] ?? 'http://localhost:3001/api'}/auth/google`;
@@ -39,7 +39,7 @@ const BG_ICONS: Array<{
 export default function LoginPage(): React.JSX.Element {
   return (
     <main
-      className="relative flex min-h-screen items-center justify-center overflow-hidden overflow-x-hidden p-4"
+      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden p-4"
       style={{ background: 'linear-gradient(135deg, #070b1a 0%, #0d1135 40%, #0a0720 100%)' }}
     >
       {/* ── Aurora orbs — dark indigo/violet ─────────────────────────── */}
@@ -94,7 +94,7 @@ export default function LoginPage(): React.JSX.Element {
         initial={{ opacity: 0, y: 32, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 160, damping: 24, delay: 0.1 }}
-        className="relative z-10 w-full max-w-sm"
+        className="relative z-10 mx-auto w-full max-w-[340px]"
       >
         {/* Glow halo behind card */}
         <div
@@ -103,8 +103,9 @@ export default function LoginPage(): React.JSX.Element {
         />
 
         <div
-          className="relative rounded-3xl p-8"
+          className="relative flex flex-col rounded-3xl p-8"
           style={{
+            minHeight: '460px',
             background: 'rgba(255,255,255,0.06)',
             backdropFilter: 'blur(40px)',
             WebkitBackdropFilter: 'blur(40px)',
@@ -113,18 +114,12 @@ export default function LoginPage(): React.JSX.Element {
           }}
         >
           {/* Brand */}
-          <div className="mb-8 flex flex-col items-center text-center">
-            <motion.div
-              className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
-              style={{
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                boxShadow: '0 0 32px rgba(99,102,241,0.65), 0 0 64px rgba(139,92,246,0.30)',
-              }}
-              animate={{ scale: [1, 1.06, 1] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              <GraduationCap className="h-8 w-8 text-white" aria-hidden="true" />
-            </motion.div>
+          <div className="mb-6 flex flex-col items-center text-center">
+            <img
+              src="/logo_transparent.png"
+              alt="FitGrade"
+              className="mx-auto -mb-8 w-44 h-44 object-contain"
+            />
             <h1 className="text-2xl font-extrabold text-white tracking-tight">FitGrade</h1>
             <p className="mt-1 text-sm font-medium" style={{ color: 'rgba(165,180,252,0.85)' }}>
               מערכת ניהול ציונים לחינוך גופני
@@ -132,9 +127,15 @@ export default function LoginPage(): React.JSX.Element {
           </div>
 
           <div className="flex flex-col gap-4">
-            <p className="text-center text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: 'rgba(148,163,184,0.70)' }}>
-              כניסה למורים
-            </p>
+            <div className="text-center">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: 'rgba(148,163,184,0.70)' }}>
+                כניסה למורים
+              </p>
+              <h2 className="mt-2 text-xl font-extrabold text-white tracking-tight">ברוכים הבאים</h2>
+              <p className="mt-1 text-sm" style={{ color: 'rgba(148,163,184,0.65)' }}>
+                התחברו עם חשבון Google שלכם
+              </p>
+            </div>
 
             {/* Google sign-in button */}
             <motion.a

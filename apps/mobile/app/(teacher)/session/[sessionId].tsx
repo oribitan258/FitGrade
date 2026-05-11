@@ -79,13 +79,15 @@ interface StopwatchModeProps {
 function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): React.JSX.Element {
   const { data: students, isLoading } = useClassStudents(classId);
 
-  // Timer — uses Date.now() math (not a counter) for accuracy
+  // Timer — direct DOM write via ref; zero React re-renders while ticking
   const startedAtMs = useRef(new Date(startedAt).getTime());
-  const [elapsed, setElapsed] = useState(0);
+  const timerTextRef = useRef<React.ElementRef<typeof Text>>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed(Date.now() - startedAtMs.current);
+      timerTextRef.current?.setNativeProps({
+        text: formatElapsed(Date.now() - startedAtMs.current),
+      });
     }, 100);
     return () => clearInterval(interval);
   }, []);
@@ -93,7 +95,7 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
   // Per-student tap state
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [tapped, setTapped] = useState<TappedEntry[]>([]);
-  const tappedIds = new Set(tapped.map((t) => t.studentId));
+  const tappedIds = useMemo(() => new Set(tapped.map((t) => t.studentId)), [tapped]);
   /** Students whose tap failed both attempts — shown with a red "נכשל — נסה שוב" overlay. */
   const [errorIds, setErrorIds] = useState<Set<string>>(new Set());
 
@@ -188,7 +190,14 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
         text: 'אשר',
         style: 'destructive',
         onPress: () => {
-          setTapped((prev) => prev.filter((t) => t.studentId !== entry.studentId));
+          void api
+            .delete(`/sessions/${sessionId}/results/${entry.studentId}`)
+            .then(() => {
+              setTapped((prev) => prev.filter((t) => t.studentId !== entry.studentId));
+            })
+            .catch(() => {
+              Alert.alert('שגיאה', 'לא ניתן לבטל את התוצאה — נסה שוב');
+            });
         },
       },
     ]);
@@ -202,28 +211,78 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
     );
   }
 
-  const allStudents = students ?? [];
-  const pending = allStudents.filter((s) => !tappedIds.has(s.id));
-  const tappedMap = new Map(tapped.map((t) => [t.studentId, t]));
+  const allStudents = useMemo(() => students ?? [], [students]);
+
+  const renderListItem = useCallback(({ item }: { item: ListItem }) => {
+    const fullName = `${item.student.firstName} ${item.student.lastName}`;
+
+    if (item.kind === 'pending') {
+      const isPending = pendingIds.has(item.student.id);
+      const isError = errorIds.has(item.student.id);
+      return (
+        <TouchableOpacity
+          style={[styles.stopwatchRow, isError && styles.stopwatchRowError]}
+          onPress={() => void handleStudentTap(item.student)}
+          disabled={isPending}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isError
+              ? `רישום נכשל עבור ${fullName} — לחץ לניסיון נוסף`
+              : `רשום זמן עבור ${fullName}`
+          }
+        >
+          <Text style={styles.stopwatchName}>{fullName}</Text>
+          {isPending ? (
+            <ActivityIndicator color={COLORS.primary} style={styles.rowIcon} />
+          ) : isError ? (
+            <Text style={styles.errorTag}>נכשל — נסה שוב</Text>
+          ) : (
+            <Text style={styles.tapIcon}>⏱</Text>
+          )}
+        </TouchableOpacity>
+      );
+    }
+
+    const entry = tappedMap.get(item.student.id);
+    if (!entry) return null;
+    return (
+      <TouchableOpacity
+        style={styles.completedRow}
+        onLongPress={() => handleUndo(entry, fullName)}
+        accessibilityLabel={`${fullName} — ${formatElapsed(entry.elapsedMs)}, לחיצה ארוכה לביטול`}
+      >
+        <Text style={styles.completedName}>{fullName}</Text>
+        <Text style={styles.completedTime}>{formatElapsed(entry.elapsedMs)}</Text>
+        <View style={styles.gradePill}>
+          <Text style={styles.gradePillText}>{getHebrewGradeLabel(entry.grade)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [pendingIds, errorIds, tappedMap, handleStudentTap, handleUndo]);
+  const tappedMap = useMemo(() => new Map(tapped.map((t) => [t.studentId, t])), [tapped]);
+  const pending = useMemo(
+    () => allStudents.filter((s) => !tappedIds.has(s.id)),
+    [allStudents, tappedIds],
+  );
 
   type ListItem =
     | { kind: 'pending'; student: StudentData }
     | { kind: 'completed'; student: StudentData; entry: TappedEntry };
 
-  const listData: ListItem[] = [
+  const listData = useMemo<ListItem[]>(() => [
     ...pending.map((s) => ({ kind: 'pending' as const, student: s })),
     ...tapped.map((entry) => ({
       kind: 'completed' as const,
       student: allStudents.find((s) => s.id === entry.studentId)!,
       entry,
     })),
-  ];
+  ], [pending, tapped, allStudents]);
 
   return (
     <View style={styles.sessionContainer}>
       {/* Big timer */}
       <View style={styles.timerContainer}>
-        <Text style={styles.timerText}>{formatElapsed(elapsed)}</Text>
+        <Text ref={timerTextRef} style={styles.timerText}>{formatElapsed(0)}</Text>
         <Text style={styles.timerSubLabel}>
           {pending.length} ממתינים · {tapped.length} נרשמו
         </Text>
@@ -236,55 +295,7 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
         keyboardShouldPersistTaps="handled"
         initialNumToRender={20}
         maxToRenderPerBatch={10}
-        renderItem={({ item }) => {
-          const fullName = `${item.student.firstName} ${item.student.lastName}`;
-
-          if (item.kind === 'pending') {
-            const isPending = pendingIds.has(item.student.id);
-            const isError = errorIds.has(item.student.id);
-            return (
-              <TouchableOpacity
-                style={[styles.stopwatchRow, isError && styles.stopwatchRowError]}
-                onPress={() => void handleStudentTap(item.student)}
-                disabled={isPending}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isError
-                    ? `רישום נכשל עבור ${fullName} — לחץ לניסיון נוסף`
-                    : `רשום זמן עבור ${fullName}`
-                }
-              >
-                {/* RTL row: name on RIGHT, indicator on LEFT */}
-                <Text style={styles.stopwatchName}>{fullName}</Text>
-                {isPending ? (
-                  <ActivityIndicator color={COLORS.primary} style={styles.rowIcon} />
-                ) : isError ? (
-                  <Text style={styles.errorTag}>נכשל — נסה שוב</Text>
-                ) : (
-                  <Text style={styles.tapIcon}>⏱</Text>
-                )}
-              </TouchableOpacity>
-            );
-          }
-
-          // Completed entry
-          const entry = tappedMap.get(item.student.id);
-          if (!entry) return null;
-          return (
-            <TouchableOpacity
-              style={styles.completedRow}
-              onLongPress={() => handleUndo(entry, fullName)}
-              accessibilityLabel={`${fullName} — ${formatElapsed(entry.elapsedMs)}, לחיצה ארוכה לביטול`}
-            >
-              {/* RTL: name → elapsed → grade (right to left) */}
-              <Text style={styles.completedName}>{fullName}</Text>
-              <Text style={styles.completedTime}>{formatElapsed(entry.elapsedMs)}</Text>
-              <View style={styles.gradePill}>
-                <Text style={styles.gradePillText}>{getHebrewGradeLabel(entry.grade)}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={renderListItem}
         ListEmptyComponent={
           <View style={styles.center}>
             <Text style={styles.emptyText}>אין תלמידים בכיתה זו</Text>
@@ -295,10 +306,12 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
   );
 }
 
-// ─── Manual Entry Mode (REPS / PASS_FAIL / GENERAL) ──────────────────────────
+// ─── Manual Entry Mode (REPS / PASS_FAIL / GENERAL / TIME) ──────────────────
 
 interface ManualEntry {
   rawValueText: string;
+  minutesText: string;
+  secondsText: string;
   submitted: boolean;
   grade: number | null;
   submitting: boolean;
@@ -318,7 +331,7 @@ function ManualMode({ sessionId, classId, inputType }: ManualModeProps): React.J
     if (!students) return;
     const initial: Record<string, ManualEntry> = {};
     students.forEach((s) => {
-      initial[s.id] = { rawValueText: '', submitted: false, grade: null, submitting: false };
+      initial[s.id] = { rawValueText: '', minutesText: '', secondsText: '', submitted: false, grade: null, submitting: false };
     });
     setEntries(initial);
   }, [students]);
@@ -388,6 +401,34 @@ function ManualMode({ sessionId, classId, inputType }: ManualModeProps): React.J
       [studentId]: { ...prev[studentId]!, rawValueText: text },
     }));
   }, []);
+
+  const handleChangeMinutes = useCallback((studentId: string, text: string): void => {
+    setEntries((prev) => ({
+      ...prev,
+      [studentId]: { ...prev[studentId]!, minutesText: text.replace(/\D/g, '') },
+    }));
+  }, []);
+
+  const handleChangeSeconds = useCallback((studentId: string, text: string): void => {
+    setEntries((prev) => ({
+      ...prev,
+      [studentId]: { ...prev[studentId]!, secondsText: text.replace(/\D/g, '') },
+    }));
+  }, []);
+
+  const handleSubmitTime = useCallback(
+    async (studentId: string, minutesText: string, secondsText: string): Promise<void> => {
+      const minutes = parseInt(minutesText || '0', 10);
+      const seconds = parseInt(secondsText || '0', 10);
+      if (isNaN(minutes) || isNaN(seconds) || seconds >= 60) {
+        Alert.alert('שגיאה', 'יש להזין דקות ושניות תקינות (שניות 0–59)');
+        return;
+      }
+      const totalSeconds = minutes * 60 + seconds;
+      await handleSubmitNumeric(studentId, String(totalSeconds));
+    },
+    [handleSubmitNumeric],
+  );
 
   if (isLoading) {
     return (
@@ -462,6 +503,52 @@ function ManualMode({ sessionId, classId, inputType }: ManualModeProps): React.J
             );
           }
 
+          // TIME: MM:SS dual-field input for distance runs
+          if (inputType === 'TIME') {
+            return (
+              <View style={[styles.manualRow, { height: PASSFAIL_ROW_HEIGHT }]}>
+                <Text style={styles.manualName}>{fullName}</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : (
+                  <View style={styles.numericEntry}>
+                    <TouchableOpacity
+                      style={styles.numericSaveBtn}
+                      onPress={() => void handleSubmitTime(item.id, entry?.minutesText ?? '', entry?.secondsText ?? '')}
+                      accessibilityRole="button"
+                      accessibilityLabel={`שמור זמן עבור ${fullName}`}
+                    >
+                      <Text style={styles.numericSaveBtnText}>שמור</Text>
+                    </TouchableOpacity>
+                    <TextInput
+                      style={[styles.numericInput, { width: 44 }]}
+                      value={entry?.secondsText ?? ''}
+                      onChangeText={(text) => handleChangeSeconds(item.id, text)}
+                      keyboardType="number-pad"
+                      textAlign="center"
+                      maxLength={2}
+                      placeholder="שנ'"
+                      placeholderTextColor={COLORS.muted}
+                      accessibilityLabel={`שניות עבור ${fullName}`}
+                    />
+                    <Text style={{ color: COLORS.muted, fontSize: 16, alignSelf: 'center' }}>:</Text>
+                    <TextInput
+                      style={[styles.numericInput, { width: 44 }]}
+                      value={entry?.minutesText ?? ''}
+                      onChangeText={(text) => handleChangeMinutes(item.id, text)}
+                      keyboardType="number-pad"
+                      textAlign="center"
+                      maxLength={2}
+                      placeholder="דק'"
+                      placeholderTextColor={COLORS.muted}
+                      accessibilityLabel={`דקות עבור ${fullName}`}
+                    />
+                  </View>
+                )}
+              </View>
+            );
+          }
+
           // REPS / GENERAL: text input + save button
           return (
             <View style={styles.manualRow}>
@@ -520,6 +607,13 @@ export default function SessionScreen(): React.JSX.Element {
   const resolvedClassId = classId ?? '';
   const resolvedInputType = (inputType ?? 'GENERAL') as TestInputType;
   const resolvedStartedAt = startedAt ?? '';
+  const resolvedTestNameHe = testNameHe ?? '';
+
+  // Distance runs use MM:SS manual entry, not live stopwatch tap
+  const DISTANCE_KEYWORDS = ['800', '1000', '1500', '2000', '3000', 'מרחק'];
+  const isDistanceRun =
+    resolvedInputType === 'TIME' &&
+    DISTANCE_KEYWORDS.some((kw) => resolvedTestNameHe.includes(kw));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -539,7 +633,7 @@ export default function SessionScreen(): React.JSX.Element {
         </Text>
       </View>
 
-      {resolvedInputType === 'TIME' ? (
+      {resolvedInputType === 'TIME' && !isDistanceRun ? (
         <StopwatchMode
           sessionId={resolvedSessionId}
           classId={resolvedClassId}

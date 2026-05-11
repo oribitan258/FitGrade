@@ -74,8 +74,8 @@ export class StudentReportResponseDto {
   @ApiProperty({ description: 'MALE | FEMALE' })
   gender!: string;
 
-  @ApiProperty()
-  dateOfBirth!: Date;
+  @ApiProperty({ nullable: true })
+  dateOfBirth!: Date | null;
 
   @ApiProperty()
   studentCode!: string;

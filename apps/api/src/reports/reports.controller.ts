@@ -86,7 +86,22 @@ export class ReportsController {
     const HEADERS = ['שם פרטי', 'שם משפחה', 'קוד תלמיד', 'ממוצע כושר', 'ניהול', 'ציון מומלץ', 'ציון מורה', 'הערה'];
 
     const escape = (v: string | number | null | undefined): string => {
-      const s = String(v ?? '');
+      let s = String(v ?? '');
+
+      // ── CSV Formula / Macro Injection Prevention ──────────────────────────
+      // Spreadsheet apps (Excel, LibreOffice, Numbers) treat cells beginning
+      // with =, +, -, @, tab (\t), or carriage return (\r) as formula triggers.
+      // Prepending a single quote forces the application to interpret the cell
+      // as a plain text literal.  The quote is invisible in the rendered cell
+      // but blocks DDE/HYPERLINK payloads entirely.
+      // Reference: OWASP CSV Injection — https://owasp.org/www-community/attacks/CSV_Injection
+      if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) {
+        s = `'${s}`;
+      }
+
+      // ── Standard RFC 4180 quoting ─────────────────────────────────────────
+      // Wrap in double quotes when the value contains a comma, double quote,
+      // or newline.  Internal double quotes are escaped by doubling them.
       return s.includes(',') || s.includes('"') || s.includes('\n')
         ? `"${s.replace(/"/g, '""')}"`
         : s;

@@ -950,6 +950,101 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 
 ---
 
+## Enrollment & Import QA — 2026-04-19T20:03:00Z
+
+### Audit Scope
+Static analysis of `apps/api/src/students/students.repository.ts`, `students.service.ts`, `dto/import-students.dto.ts`, `dto/create-student.dto.ts`, and `packages/types/src/schemas.ts`. Live API tests against http://localhost:3001. E2E test suite `test/enrollment-import.e2e-spec.ts`.
+
+---
+
+### [HIGH] ENROLL-001: `000000000` All-Zeros National ID Passes Luhn Validation and Is Enrolled as Real Student
+
+**Severity:** HIGH
+**Area:** validation
+**File:** `apps/api/src/students/students.service.ts:isValidIsraeliId`
+**Status:** FALSE POSITIVE — CLOSED
+**Resolution:** `000000000` is mathematically Luhn-valid: sum of all zero digits = 0, and 0 % 10 = 0. The application code is correct. The E2E test `T3.7` was using the wrong fixture (`INVALID_LUHN = '000000000'`). Fixed in `enrollment-import.e2e-spec.ts` — replaced with `'123456789'` (sum=47, genuinely Luhn-invalid).
+
+---
+
+### [HIGH] ENROLL-002: Excel Import Accepts Luhn-Invalid Rows When the Conflicting Student Already Exists — `errors[]` Is Empty Instead of Populated
+
+**Severity:** HIGH
+**Area:** import | validation
+**File:** `apps/api/src/students/students.service.ts:importFromFile` + `apps/api/src/students/students.repository.ts:importStudents`
+**Status:** FALSE POSITIVE — CLOSED
+**Resolution:** Same root cause as ENROLL-001. `000000000` is Luhn-valid (sum=0), so it correctly passes into `validRows`, not `errors[]`. The test T2.2 used the wrong fixture. Fixed alongside ENROLL-001 — both tests now use `'123456789'` as the Luhn-invalid ID.
+
+---
+
+### [LOW] ENROLL-003: `CreateStudentInput` Interface in `students.repository.ts` Declares `nationalId` as Optional — Allows Enroll Without ID at Repository Layer
+
+**Severity:** LOW
+**Area:** validation
+**File:** `apps/api/src/students/students.repository.ts:107` (`CreateStudentInput.nationalId?: string`)
+**Repro:**
+1. Inspect `CreateStudentInput` interface: `nationalId?: string` — optional
+2. The service enforces nationalId via the DTO, but any future code path calling `enrollStudent()` directly (e.g., a new controller, a migration script) can omit it without a compile error
+
+**Expected:** `nationalId` should be required at the repository interface level (`nationalId: string`), consistent with the DTO's non-optional `@Matches` requirement.
+**Actual:** `nationalId?: string` — silently optional, inconsistent with DTO contract
+**Status:** FIXED
+**Resolution:** Removed `?` from `CreateStudentInput.nationalId` in `students.repository.ts:112`. Simplified `addStudentToClass` in `students.service.ts` — eliminated the `string | undefined` branch since the DTO guarantees presence. TypeScript compiles clean (`tsc --noEmit` 0 errors). All 23 E2E tests pass.
+
+---
+
+### [LOW] ENROLL-004: `re-enrollment path` (existing student, new class) Not Wrapped in `$transaction` — Partial Write Possible
+
+**Severity:** LOW
+**Area:** enrollment
+**File:** `apps/api/src/students/students.repository.ts:enrollStudent` (lines 554–568)
+**Repro:**
+1. Enroll a student who already exists in DB (known `nationalId`) into a new class
+2. `classEnrollment.create()` succeeds but the subsequent `student.findUniqueOrThrow()` read fails (e.g., network blip, statement timeout)
+3. The enrollment row is already committed; the 500 response leaves the caller unaware of the successful enrollment
+
+**Expected:** The re-enrollment branch (`classEnrollment.create` + `student.findUniqueOrThrow`) should be wrapped in a `$transaction` or the read should be inlined in the create's `include` so both complete atomically.
+**Actual:** Two sequential unguarded Prisma calls outside any transaction
+**Status:** FIXED
+**Fix applied:** Wrapped the re-enrollment path (`classEnrollment.create` + `student.findUniqueOrThrow`) in a `$transaction` in `students.repository.ts:enrollStudent`.
+
+---
+
+### Enrollment & Import — Passed Checks
+- PASS: `nationalId` has no `@IsOptional()` in `CreateStudentDto` — required at DTO layer
+- PASS: `@Matches(/^\d{1,9}$/)` regex enforces numeric-only pattern in DTO
+- PASS: `@Matches` message is in Hebrew ("תעודת זהות חייבת להכיל ספרות בלבד (עד 9)")
+- PASS: `nationalId` in `createStudentSchema` (packages/types) has no `.optional()` call
+- PASS: `createStudentSchema` uses `required_error: 'תעודת זהות חובה'` in Hebrew
+- PASS: `enrollStudent` uses `findUnique({ where: { nationalId } })` — no raw SQL
+- PASS: 409 branch checks `classEnrollment` existence before throwing (`findUnique` → `if enrollment !== null → throw ConflictException`)
+- PASS: Re-enrollment branch uses `classEnrollment.create` WITHOUT `student.create` — no duplicate Student row
+- PASS: New-student path wraps `student.create` + `classEnrollment.create` inside `$transaction`
+- PASS: P2002 catch block exists as safety net in the new-student path
+- PASS: `importFromFile` applies Luhn validation per-row (`isValidIsraeliId` called in loop)
+- PASS: Missing required columns (nationalId, firstName, lastName) throw `BadRequestException` with Hebrew message
+- PASS: Invalid Luhn in import adds row to `errors[]` (verified with `'123456789'`, sum=47)
+- PASS: `reEnrolled` counter is correctly incremented for existing-student-new-class (not `added++`)
+- PASS: All-blank file returns `{ added:0, existing:0, reEnrolled:0, errors:[] }` early return at line 589
+- PASS: No try/catch around `xlsx.read` — malformed binary returns the NestJS global exception filter's 500; T2.4 accepts any non-2xx status for this case
+- PASS: Audit log fired on enrollment (`STUDENT_ENROLLED`) — both in `addStudentToClass` and `importFromFile`
+- PASS: No token → 401 (T5.1 confirmed live)
+- PASS: Student-role JWT → 403 (T5.2 confirmed live)
+- PASS: Same-class duplicate → 409 Hebrew conflict message (T3.2 confirmed live)
+- PASS: Re-enroll into different class → 200 + `reEnrolled:true` + no duplicate Student row (T3.3/T3.4 confirmed live)
+- PASS: Missing nationalId field → 400 (T3.5 confirmed live)
+
+### Enrollment & Import — Batch Summary
+
+| Severity | Count |
+|----------|-------|
+| CRITICAL | 0 |
+| HIGH | 2 |
+| LOW | 2 |
+| **Total** | **4** |
+
+---
+
 ### Batch 5 — Audit Summary
 
 | Agent | Bugs Found | CRITICAL | HIGH | MEDIUM | LOW |

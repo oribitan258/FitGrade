@@ -1,6 +1,6 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Prisma } from '@prisma/client';
+import { FitnessInputType, Gender, Prisma } from '@prisma/client';
 import { GradingService } from './grading.service';
 import { GradingRepository } from './grading.repository';
 
@@ -8,20 +8,24 @@ import { GradingRepository } from './grading.repository';
 
 const mockGradingRepository = {
   findStudentById: jest.fn(),
+  findClassGradeLevel: jest.fn(),
   findNormRow: jest.fn(),
   findTestTypeInputType: jest.fn(),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Fixed session date used across all calculateGrade tests. */
-const SESSION_DATE = new Date('2025-09-01');
-
-/** Returns a Date representing a person who is exactly `age` years old at SESSION_DATE. */
-function dobForAge(age: number): Date {
-  const d = new Date(SESSION_DATE);
-  d.setFullYear(d.getFullYear() - age);
-  return d;
+function setupNormBasedTest(
+  gender: Gender = Gender.MALE,
+  gradeLevel: number = 10,
+  score: number = 75,
+): void {
+  mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+    inputType: FitnessInputType.REPS,
+  });
+  mockGradingRepository.findStudentById.mockResolvedValue({ gender });
+  mockGradingRepository.findClassGradeLevel.mockResolvedValue(gradeLevel);
+  mockGradingRepository.findNormRow.mockResolvedValue({ score });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -41,151 +45,312 @@ describe('GradingService', () => {
     jest.clearAllMocks();
   });
 
-  // ── calculateGrade ──────────────────────────────────────────────────────────
+  // ─── calculateGrade — REPS / TIME / GENERAL (norm-table path) ──────────────
 
-  describe('calculateGrade', () => {
-    beforeEach(() => {
-      // Default: norm-based test type (not PASS_FAIL)
-      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
-        inputType: 'REPS',
-      });
-    });
-
+  describe('calculateGrade — norm-table path', () => {
     it('returns the score from the matching norm row (happy path)', async () => {
-      mockGradingRepository.findStudentById.mockResolvedValue({
-        gender: 'MALE',
-        dateOfBirth: dobForAge(16),
-      });
-      mockGradingRepository.findNormRow.mockResolvedValue({ score: 80 });
+      setupNormBasedTest(Gender.MALE, 10, 80);
 
-      const result = await service.calculateGrade('student-1', 'test-1', 500, SESSION_DATE);
+      const result = await service.calculateGrade('student-1', 'test-1', 500, 'class-1');
 
       expect(result).toBe(80);
-      expect(mockGradingRepository.findStudentById).toHaveBeenCalledWith(
-        'student-1',
-      );
+      expect(mockGradingRepository.findStudentById).toHaveBeenCalledWith('student-1');
+      expect(mockGradingRepository.findClassGradeLevel).toHaveBeenCalledWith('class-1');
       expect(mockGradingRepository.findNormRow).toHaveBeenCalledWith(
         'test-1',
-        'MALE',
-        16,
+        Gender.MALE,
+        10,
         new Prisma.Decimal(500),
       );
     });
 
-    it('passes correct age for a female student (push-ups scenario)', async () => {
-      mockGradingRepository.findStudentById.mockResolvedValue({
-        gender: 'FEMALE',
-        dateOfBirth: dobForAge(15),
-      });
-      mockGradingRepository.findNormRow.mockResolvedValue({ score: 65 });
+    it('passes FEMALE gender to findNormRow (gender separation)', async () => {
+      setupNormBasedTest(Gender.FEMALE, 9, 65);
 
-      const result = await service.calculateGrade('student-2', 'pushups', 15, SESSION_DATE);
+      const result = await service.calculateGrade('student-2', 'pushups', 15, 'class-2');
 
       expect(result).toBe(65);
       expect(mockGradingRepository.findNormRow).toHaveBeenCalledWith(
         'pushups',
-        'FEMALE',
-        15,
+        Gender.FEMALE,
+        9,
         new Prisma.Decimal(15),
       );
     });
 
-    it('throws NotFoundException when student does not exist', async () => {
+    it('same rawValue calls findNormRow with different gender per student', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: FitnessInputType.REPS,
+      });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(10);
+
+      mockGradingRepository.findStudentById.mockResolvedValueOnce({ gender: Gender.MALE });
+      mockGradingRepository.findNormRow.mockResolvedValueOnce({ score: 85 });
+      const maleScore = await service.calculateGrade('male-student', 'test-1', 30, 'class-1');
+
+      mockGradingRepository.findStudentById.mockResolvedValueOnce({ gender: Gender.FEMALE });
+      mockGradingRepository.findNormRow.mockResolvedValueOnce({ score: 70 });
+      const femaleScore = await service.calculateGrade('female-student', 'test-1', 30, 'class-1');
+
+      expect(maleScore).toBe(85);
+      expect(femaleScore).toBe(70);
+      expect(mockGradingRepository.findNormRow).toHaveBeenNthCalledWith(1, 'test-1', Gender.MALE, 10, new Prisma.Decimal(30));
+      expect(mockGradingRepository.findNormRow).toHaveBeenNthCalledWith(2, 'test-1', Gender.FEMALE, 10, new Prisma.Decimal(30));
+    });
+
+    it('returns score 0 when norm row score is exactly 0 (not treated as falsy)', async () => {
+      setupNormBasedTest(Gender.MALE, 10, 0);
+
+      const result = await service.calculateGrade('student-1', 'test-1', 1, 'class-1');
+
+      expect(result).toBe(0);
+    });
+
+    it('returns score 100 when norm row score is exactly 100', async () => {
+      setupNormBasedTest(Gender.MALE, 10, 100);
+
+      const result = await service.calculateGrade('student-1', 'test-1', 999, 'class-1');
+
+      expect(result).toBe(100);
+    });
+
+    it('passes rawValue as Prisma.Decimal to findNormRow', async () => {
+      setupNormBasedTest(Gender.MALE, 10, 55);
+
+      await service.calculateGrade('student-1', 'test-1', 12.5, 'class-1');
+
+      const calledDecimal = mockGradingRepository.findNormRow.mock.calls[0][3] as Prisma.Decimal;
+      expect(calledDecimal).toBeInstanceOf(Prisma.Decimal);
+      expect(calledDecimal.toNumber()).toBe(12.5);
+    });
+
+    it('passes correct gradeLevel for each grade (grade 7)', async () => {
+      setupNormBasedTest(Gender.MALE, 7, 60);
+
+      await service.calculateGrade('s', 't', 100, 'c');
+
+      expect(mockGradingRepository.findNormRow).toHaveBeenCalledWith('t', Gender.MALE, 7, new Prisma.Decimal(100));
+    });
+
+    it('TIME inputType goes through norm-table path (no special handling)', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: FitnessInputType.TIME,
+      });
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.MALE });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(10);
+      mockGradingRepository.findNormRow.mockResolvedValue({ score: 72 });
+
+      const result = await service.calculateGrade('s', 'sprint-test', 8.5, 'c');
+
+      expect(result).toBe(72);
+      expect(mockGradingRepository.findNormRow).toHaveBeenCalledWith('sprint-test', Gender.MALE, 10, new Prisma.Decimal(8.5));
+    });
+
+    it('GENERAL inputType goes through norm-table path (no special handling)', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: FitnessInputType.GENERAL,
+      });
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.FEMALE });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(8);
+      mockGradingRepository.findNormRow.mockResolvedValue({ score: 75 });
+
+      const result = await service.calculateGrade('s', 'general-test', 5, 'c');
+
+      expect(result).toBe(75);
+    });
+  });
+
+  // ─── calculateGrade — PASS_FAIL path ────────────────────────────────────────
+
+  describe('calculateGrade — PASS_FAIL path', () => {
+    beforeEach(() => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: FitnessInputType.PASS_FAIL,
+      });
+    });
+
+    it('returns 100 for rawValue = 1 (pass)', async () => {
+      expect(await service.calculateGrade('s', 'pf', 1, 'c')).toBe(100);
+    });
+
+    it('returns 0 for rawValue = 0 (fail)', async () => {
+      expect(await service.calculateGrade('s', 'pf', 0, 'c')).toBe(0);
+    });
+
+    it('returns 100 for rawValue = 1.5 (>= 1 → pass)', async () => {
+      expect(await service.calculateGrade('s', 'pf', 1.5, 'c')).toBe(100);
+    });
+
+    it('returns 100 for rawValue = 2 (any value >= 1)', async () => {
+      expect(await service.calculateGrade('s', 'pf', 2, 'c')).toBe(100);
+    });
+
+    it('returns 0 for rawValue = 0.5 (< 1 → fail)', async () => {
+      expect(await service.calculateGrade('s', 'pf', 0.5, 'c')).toBe(0);
+    });
+
+    it('returns 0 for rawValue = -1 (< 1 → fail)', async () => {
+      expect(await service.calculateGrade('s', 'pf', -1, 'c')).toBe(0);
+    });
+
+    it('does NOT call findStudentById for PASS_FAIL', async () => {
+      await service.calculateGrade('s', 'pf', 1, 'c');
+      expect(mockGradingRepository.findStudentById).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call findClassGradeLevel for PASS_FAIL', async () => {
+      await service.calculateGrade('s', 'pf', 1, 'c');
+      expect(mockGradingRepository.findClassGradeLevel).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call findNormRow for PASS_FAIL', async () => {
+      await service.calculateGrade('s', 'pf', 0, 'c');
+      expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── calculateGrade — error paths ───────────────────────────────────────────
+
+  describe('calculateGrade — error paths', () => {
+    it('propagates NotFoundException when student does not exist', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({
+        inputType: FitnessInputType.REPS,
+      });
       mockGradingRepository.findStudentById.mockRejectedValue(
         new NotFoundException('Student not found'),
       );
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(7);
 
       await expect(
-        service.calculateGrade('no-such-student', 'test-1', 300, SESSION_DATE),
+        service.calculateGrade('no-such-student', 'test-1', 300, 'class-1'),
       ).rejects.toThrow(NotFoundException);
 
       expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException when no norm row covers the raw value', async () => {
-      mockGradingRepository.findStudentById.mockResolvedValue({
-        gender: 'MALE',
-        dateOfBirth: dobForAge(16),
-      });
-      mockGradingRepository.findNormRow.mockResolvedValue(null);
-
-      await expect(
-        service.calculateGrade('student-1', 'test-1', 99999, SESSION_DATE),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('throws NotFoundException when no norm row covers the student age', async () => {
-      // Student is 30 — outside any seeded age range
-      mockGradingRepository.findStudentById.mockResolvedValue({
-        gender: 'MALE',
-        dateOfBirth: dobForAge(30),
-      });
-      mockGradingRepository.findNormRow.mockResolvedValue(null);
-
-      await expect(
-        service.calculateGrade('student-1', 'test-1', 480, SESSION_DATE),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('returns 100 for PASS_FAIL test when rawValue is 1 (pass)', async () => {
+    it('throws BadRequestException when class gradeLevel is null', async () => {
       mockGradingRepository.findTestTypeInputType.mockResolvedValue({
-        inputType: 'PASS_FAIL',
+        inputType: FitnessInputType.REPS,
       });
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.MALE });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(null);
 
-      const result = await service.calculateGrade('student-1', 'pf-test', 1, SESSION_DATE);
+      await expect(
+        service.calculateGrade('s', 'test-1', 300, 'class-no-grade'),
+      ).rejects.toThrow(BadRequestException);
 
-      expect(result).toBe(100);
-      expect(mockGradingRepository.findStudentById).not.toHaveBeenCalled();
       expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
     });
 
-    it('returns 0 for PASS_FAIL test when rawValue is 0 (fail)', async () => {
+    it('throws BadRequestException with Hebrew message when gradeLevel is null', async () => {
       mockGradingRepository.findTestTypeInputType.mockResolvedValue({
-        inputType: 'PASS_FAIL',
+        inputType: FitnessInputType.REPS,
       });
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.MALE });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(null);
 
-      const result = await service.calculateGrade('student-1', 'pf-test', 0, SESSION_DATE);
+      await expect(
+        service.calculateGrade('s', 'test-1', 300, 'c'),
+      ).rejects.toThrow('אין נתוני נורמה תואמים למבחן זה עבור שכבת גיל ומגדר אלו.');
+    });
 
-      expect(result).toBe(0);
+    it('throws BadRequestException when no norm row covers the raw value', async () => {
+      setupNormBasedTest(Gender.MALE, 10, 0);
+      mockGradingRepository.findNormRow.mockResolvedValue(null);
+
+      await expect(
+        service.calculateGrade('s', 'test-1', 99999, 'class-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException with Hebrew message when no norm row found', async () => {
+      setupNormBasedTest(Gender.MALE, 10, 0);
+      mockGradingRepository.findNormRow.mockResolvedValue(null);
+
+      await expect(
+        service.calculateGrade('s', 'long-run-test', 480, 'class-grade1'),
+      ).rejects.toThrow('אין נתוני נורמה תואמים למבחן זה עבור שכבת גיל ומגדר אלו.');
+    });
+
+    it('propagates NotFoundException when test type does not exist', async () => {
+      mockGradingRepository.findTestTypeInputType.mockRejectedValue(
+        new NotFoundException('Test type not found'),
+      );
+
+      await expect(
+        service.calculateGrade('s', 'nonexistent-test', 50, 'c'),
+      ).rejects.toThrow(NotFoundException);
+
       expect(mockGradingRepository.findStudentById).not.toHaveBeenCalled();
       expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
     });
   });
 
-  // ── computeAge ──────────────────────────────────────────────────────────────
+  // ─── calculateGrade — repository call sequence ───────────────────────────────
 
-  describe('computeAge', () => {
-    it('returns correct age when birthday has passed this year', () => {
-      const dob = new Date(2008, 0, 1); // 1 Jan 2008
-      const ref = new Date(2025, 5, 1); // 1 Jun 2025
-      expect(service.computeAge(dob, ref)).toBe(17);
+  describe('calculateGrade — repository call sequence', () => {
+    it('calls repositories in correct order for norm-based test', async () => {
+      const callOrder: string[] = [];
+      mockGradingRepository.findTestTypeInputType.mockImplementation(async () => {
+        callOrder.push('findTestTypeInputType');
+        return { inputType: FitnessInputType.REPS };
+      });
+      mockGradingRepository.findStudentById.mockImplementation(async () => {
+        callOrder.push('findStudentById');
+        return { gender: Gender.MALE };
+      });
+      mockGradingRepository.findClassGradeLevel.mockImplementation(async () => {
+        callOrder.push('findClassGradeLevel');
+        return 10;
+      });
+      mockGradingRepository.findNormRow.mockImplementation(async () => {
+        callOrder.push('findNormRow');
+        return { score: 77 };
+      });
+
+      await service.calculateGrade('s', 't', 50, 'c');
+
+      expect(callOrder[0]).toBe('findTestTypeInputType');
+      expect(callOrder[callOrder.length - 1]).toBe('findNormRow');
     });
 
-    it('returns correct age when birthday has not yet occurred this year', () => {
-      const dob = new Date(2008, 11, 31); // 31 Dec 2008
-      const ref = new Date(2025, 5, 1);  // 1 Jun 2025
-      expect(service.computeAge(dob, ref)).toBe(16);
+    it('short-circuits after gradeLevel=null — skips findNormRow', async () => {
+      mockGradingRepository.findTestTypeInputType.mockResolvedValue({ inputType: FitnessInputType.REPS });
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.MALE });
+      mockGradingRepository.findClassGradeLevel.mockResolvedValue(null);
+
+      await service.calculateGrade('s', 't', 50, 'c').catch(() => {});
+
+      expect(mockGradingRepository.findNormRow).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── getStudentGender ────────────────────────────────────────────────────────
+
+  describe('getStudentGender', () => {
+    it('returns MALE gender for a male student', async () => {
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.MALE });
+
+      const gender = await service.getStudentGender('male-student');
+
+      expect(gender).toBe(Gender.MALE);
+      expect(mockGradingRepository.findStudentById).toHaveBeenCalledWith('male-student');
     });
 
-    it('returns correct age on the exact birthday', () => {
-      const dob = new Date(2008, 5, 1); // 1 Jun 2008
-      const ref = new Date(2025, 5, 1); // 1 Jun 2025
-      expect(service.computeAge(dob, ref)).toBe(17);
+    it('returns FEMALE gender for a female student', async () => {
+      mockGradingRepository.findStudentById.mockResolvedValue({ gender: Gender.FEMALE });
+
+      const gender = await service.getStudentGender('female-student');
+
+      expect(gender).toBe(Gender.FEMALE);
     });
 
-    it('returns 0 for a newborn (same day)', () => {
-      const today = new Date(2025, 5, 1);
-      expect(service.computeAge(today, today)).toBe(0);
-    });
+    it('propagates NotFoundException when student does not exist', async () => {
+      mockGradingRepository.findStudentById.mockRejectedValue(
+        new NotFoundException('Student not found'),
+      );
 
-    it('returns 0 when just under one year old', () => {
-      const dob = new Date(2025, 0, 2); // 2 Jan 2025
-      const ref = new Date(2025, 0, 1); // 1 Jan 2025 — birthday tomorrow
-      // ref is before dob? That should not happen in practice but age should be -1 or 0.
-      // More realistic: dob one day before a full year
-      const dob2 = new Date(2024, 5, 2); // 2 Jun 2024
-      const ref2 = new Date(2025, 5, 1); // 1 Jun 2025 — one day short of a full year
-      expect(service.computeAge(dob2, ref2)).toBe(0);
+      await expect(service.getStudentGender('no-student')).rejects.toThrow(NotFoundException);
     });
   });
 });

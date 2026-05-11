@@ -130,13 +130,13 @@ export class ReportsService {
     const conductWeightPct =
       (cls.talmidautWeight ?? teacherDefaults.defaultConductWeight) / 100;
 
-    // Guard: if a specific semester was requested but has NO sessions at all,
-    // return empty immediately. This prevents year-wide Talmidaut conduct scores
-    // from leaking into a semester that has zero test activity ("ghost data").
-    if (semester !== undefined) {
-      const sessionCount = await this.reportsRepository.countTestSessionsForSemester(classId, semester);
-      if (sessionCount === 0) return [];
-    }
+    // IMPORTANT: Do NOT short-circuit on zero sessions.
+    // The report is the single source of truth for the class roster.
+    // Every enrolled student must appear as a row even if they have no grades
+    // for the requested semester (fitnessAvg defaults to 0, testBreakdown to []).
+    // The previous guard here returned [] when sessionCount === 0, which caused
+    // the front-end to render "no students" for classes that simply hadn't
+    // recorded any tests yet this semester.
 
     const students = await this.reportsRepository.findStudentsInClass(classId);
     if (students.length === 0) return [];

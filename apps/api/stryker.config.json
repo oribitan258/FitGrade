@@ -1,0 +1,70 @@
+{
+  "$schema": "https://stryker-mutator.io/schemas/stryker-config.json",
+
+  "packageManager": "pnpm",
+
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "package.json",
+    "config": {
+      "rootDir": "src",
+      "testRegex": ".*\\.spec\\.ts$",
+      "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+      "moduleFileExtensions": ["js", "json", "ts"],
+      "testEnvironment": "node",
+      "collectCoverage": false
+    },
+    "enableFindRelatedTests": true
+  },
+
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+
+  "mutate": [
+    "src/grading/grading.service.ts",
+    "src/students/students.service.ts",
+    "src/tests/tests.service.ts",
+    "src/attendance/attendance.service.ts",
+    "src/reports/reports.service.ts"
+  ],
+
+  "mutator": {
+    "plugins": null,
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayDeclaration",
+      "ObjectLiteral"
+    ]
+  },
+
+  "reporters": ["html", "json", "progress"],
+
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 50
+  },
+
+  "timeoutMS": 10000,
+  "timeoutFactor": 1.5,
+  "concurrency": 4,
+
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "test",
+    "prisma"
+  ],
+
+  "comment": "Mutation testing for FitGrade high-risk service files. Run with: npx stryker run. CI nightly gate: break threshold 50% (build fails if any targeted file scores below 50%). Target: grading.service.ts >= 80% mutation score."
+}

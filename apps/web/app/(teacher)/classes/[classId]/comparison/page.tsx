@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bar,
@@ -33,6 +33,7 @@ import type {
 } from '@/hooks/use-comparison';
 import type { StudentData } from '@fitgrade/types';
 import { cn } from '@/lib/utils';
+import { BackButton } from '@/components/ui/back-button';
 
 // ─── Animation presets ────────────────────────────────────────────────────
 
@@ -290,7 +291,8 @@ function StudentDrillDown({
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="space-y-1 pt-1">
+            <div className="overflow-x-auto">
+            <div className="min-w-[280px] space-y-1 pt-1">
               {/* Table header */}
               <div className="grid grid-cols-4 gap-2 rounded-xl bg-slate-100/80 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 <span className="col-span-2">שם</span>
@@ -334,6 +336,7 @@ function StudentDrillDown({
                   </span>
                 </div>
               ))}
+            </div>
             </div>
           </motion.div>
         )}
@@ -533,7 +536,6 @@ function LoadingSkeleton(): React.JSX.Element {
 
 export default function ComparisonPage(): React.JSX.Element {
   const { classId } = useParams<{ classId: string }>();
-  const router = useRouter();
 
   const { data: cls }                           = useClass(classId);
   const { data: students }                      = useStudents(classId);
@@ -547,29 +549,19 @@ export default function ComparisonPage(): React.JSX.Element {
     [students],
   );
 
-  function handleBack(): void {
-    router.push(`/classes/${classId}`);
-  }
-
   return (
+    <>
+    <BackButton />
     <div dir="rtl" className="min-h-screen">
       <motion.div
         variants={PAGE_ENTER}
         initial="hidden"
         animate="show"
-        className="mx-auto max-w-3xl space-y-6 px-4 py-6 md:px-0"
+        className="mx-auto max-w-3xl space-y-6 px-4 pt-16 pb-6 md:px-0 md:pt-6"
       >
         {/* ── Page Header ──────────────────────────────────────────── */}
         <motion.div variants={ITEM}>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleBack}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/70 text-slate-600 shadow-sm backdrop-blur-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-              aria-label="חזרה לכיתה"
-            >
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </button>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-slate-400">{cls?.name ?? '...'}</p>
               <div className="flex items-center gap-2">
@@ -624,5 +616,6 @@ export default function ComparisonPage(): React.JSX.Element {
         )}
       </motion.div>
     </div>
+    </>
   );
 }

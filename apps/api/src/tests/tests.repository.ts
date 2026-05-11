@@ -116,15 +116,15 @@ export class TestsRepository {
   async findSessionWithOwnership(
     sessionId: string,
     teacherId: string,
-  ): Promise<{ testTypeId: string; conductedAt: Date; inputType: import('@prisma/client').FitnessInputType; testNameHe: string }> {
+  ): Promise<{ testTypeId: string; conductedAt: Date; inputType: import('@prisma/client').FitnessInputType; testNameHe: string; classId: string }> {
     const session = await this.prisma.testSession.findFirst({
       where: { id: sessionId, class: { teacherId } },
-      select: { testTypeId: true, conductedAt: true, testType: { select: { inputType: true, nameHe: true } } },
+      select: { classId: true, testTypeId: true, conductedAt: true, testType: { select: { inputType: true, nameHe: true } } },
     });
     if (session === null) {
       throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
     }
-    return { testTypeId: session.testTypeId, conductedAt: session.conductedAt, inputType: session.testType.inputType, testNameHe: session.testType.nameHe };
+    return { classId: session.classId, testTypeId: session.testTypeId, conductedAt: session.conductedAt, inputType: session.testType.inputType, testNameHe: session.testType.nameHe };
   }
 
   /**
@@ -160,6 +160,7 @@ export class TestsRepository {
                     firstName: true,
                     lastName: true,
                     studentCode: true,
+                    nationalId: true,
                   },
                 },
               },
@@ -276,14 +277,13 @@ export class TestsRepository {
         normTables: {
           select: {
             gender: true,
-            minAge: true,
-            maxAge: true,
+            gradeLevel: true,
             score: true,
             minValue: true,
             maxValue: true,
           },
           orderBy: [
-            { minAge: 'asc' },
+            { gradeLevel: 'asc' },
             { gender: 'asc' },
             { score: 'desc' },
           ],
@@ -299,8 +299,7 @@ export class TestsRepository {
       higherIsBetter: testType.higherIsBetter,
       bands: testType.normTables.map((b) => ({
         gender: b.gender,
-        minAge: b.minAge,
-        maxAge: b.maxAge,
+        gradeLevel: b.gradeLevel,
         score: b.score,
         minValue: Number(b.minValue),
         maxValue: Number(b.maxValue),

@@ -11,13 +11,15 @@ interface AuthResponse {
 
 export function DevLoginButton(): React.JSX.Element {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading,           setLoading]           = useState(false);
+  const [simulateFirstLogin, setSimulateFirstLogin] = useState(false);
 
   const handleDevLogin = async (): Promise<void> => {
     setLoading(true);
     try {
       const res = await apiRequest<AuthResponse>('/auth/dev-login', {
         method: 'POST',
+        body: JSON.stringify({ simulateFirstLogin }),
       });
       setToken(res.accessToken);
       router.replace('/dashboard');
@@ -29,15 +31,27 @@ export function DevLoginButton(): React.JSX.Element {
   };
 
   return (
-    <Button
-      variant="outline"
-      size="lg"
-      className="h-12 w-full"
-      onClick={handleDevLogin}
-      disabled={loading}
-      aria-busy={loading}
-    >
-      {loading ? 'מתחבר...' : 'Dev Login (Bypass)'}
-    </Button>
+    <div className="flex flex-col gap-2 w-full">
+      <Button
+        variant="outline"
+        size="lg"
+        className="h-12 w-full"
+        onClick={handleDevLogin}
+        disabled={loading}
+        aria-busy={loading}
+      >
+        {loading ? 'מתחבר...' : 'Dev Login (Bypass)'}
+      </Button>
+
+      <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-500 justify-center">
+        <input
+          type="checkbox"
+          checked={simulateFirstLogin}
+          onChange={(e) => { setSimulateFirstLogin(e.target.checked); }}
+          className="h-3.5 w-3.5 accent-violet-600"
+        />
+        Simulate First Login (resets onboarding)
+      </label>
+    </div>
   );
 }
