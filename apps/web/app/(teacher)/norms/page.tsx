@@ -272,6 +272,7 @@ export default function AchievementTablesPage(): React.JSX.Element {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [gender, setGender]                 = useState<GenderOpt>('MALE');
   const [gradeLevel, setGradeLevel]         = useState<number>(7);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [search, setSearch]                 = useState('');
 
   useEffect(() => {

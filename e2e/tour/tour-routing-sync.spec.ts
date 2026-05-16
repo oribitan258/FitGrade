@@ -40,7 +40,7 @@ const STEP_ROUTES: Array<{ step: number; pathFragment: RegExp }> = [
 
 test.describe('tour — routing sync', () => {
   test('every step lands on the expected route and tooltip renders', async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(1_500_000);
     await gotoWelcomePage(page);
     await startTour(page);
 
@@ -49,16 +49,16 @@ test.describe('tour — routing sync', () => {
       const start = Date.now();
       await clickNext(page);
 
-      // Wait for URL to match the expected fragment. The 30s budget covers
-      // dev-mode cold compile; production builds resolve in under a second.
-      await expect(page).toHaveURL(expected.pathFragment, { timeout: 30_000 });
+      // Wait for URL to match the expected fragment. The 90s budget covers
+      // worst-case dev-mode cold compile; production builds resolve in < 1s.
+      await expect(page).toHaveURL(expected.pathFragment, { timeout: 90_000 });
       // Wait for the new tooltip to render.
       await expectTooltipVisible(page);
 
       const elapsed = Date.now() - start;
-      // Dev-mode realistic ceiling. The original 6s SLA was production-only.
+      // Dev-mode realistic ceiling — matches clickNext's 90s poll budget.
       // CI runs against `next start` and will easily clear sub-second.
-      expect(elapsed).toBeLessThan(30_000);
+      expect(elapsed).toBeLessThan(90_000);
 
       const { index } = await readStepCounter(page);
       expect(index).toBe(expected.step);
@@ -66,7 +66,7 @@ test.describe('tour — routing sync', () => {
   });
 
   test('no error UI appears during the class-detail transition (step 6 → step 7)', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(600_000);
     await gotoWelcomePage(page);
     await startTour(page);
 

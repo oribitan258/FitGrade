@@ -33,10 +33,10 @@ export default defineConfig({
   timeout: 60_000,
 
   /* Per-`expect()` timeout — used by `expect(locator).toBeVisible()`,
-     `expect.poll()`, and similar. 15s comfortably covers a cold-compile
-     transition window plus the 2s page-ready fallback in TourProvider. */
+     `expect.poll()`, and similar. 30s covers worst-case dev-mode cold compile
+     (typically 5-25s) plus the 2s page-ready fallback in TourProvider. */
   expect: {
-    timeout: 15_000,
+    timeout: 30_000,
   },
 
   reporter: [

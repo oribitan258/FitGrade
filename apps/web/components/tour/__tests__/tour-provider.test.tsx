@@ -13,6 +13,7 @@
  *   after a push and the machine would stall in navigating forever.
  */
 
+/* eslint-disable @typescript-eslint/no-var-requires */
 import React from 'react';
 import { act, render } from '@testing-library/react';
 

@@ -1368,7 +1368,7 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
                 />
                 <Tooltip
                   formatter={(value: number, name: string) => [
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{value}</span>,
+                    <span key="val" style={{ fontWeight: 700, fontSize: 13 }}>{value}</span>,
                     name === 'semA' ? "מחצית א'" : "מחצית ב'",
                   ]}
                   contentStyle={{
@@ -1544,7 +1544,7 @@ export default function ReportsPage(): React.JSX.Element {
   const { data: rows, isLoading: reportLoading, mutate: mutateReport } = useClassReport(selectedClassId, semesterParam);
 
   useSignalPageReady('reports', classes !== undefined);
-  const { data: bank = [] } = useCommentsBank();
+  useCommentsBank();
   const { data: globalPolicy } = useGradingPolicy();
   const { data: reportSettings } = useReportSettings();
 

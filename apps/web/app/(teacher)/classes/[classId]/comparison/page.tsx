@@ -145,7 +145,7 @@ interface GradeDistributionRowProps {
 function DistributionBar({
   dist,
   label,
-  color,
+  color: _color,
 }: {
   dist: ComparisonGradeDistributionDto;
   label: string;

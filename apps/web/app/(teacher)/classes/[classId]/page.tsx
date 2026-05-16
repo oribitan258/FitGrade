@@ -8,7 +8,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
-  AlertTriangle,
   BarChart2,
   Brain,
   CalendarDays,
@@ -81,8 +80,6 @@ import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
 import { SemesterPanel } from '@/components/ui/semester-panel';
 import { TestTypePicker } from '@/components/tests/test-type-picker';
 import { GradeMatrix } from '@/components/classes/grade-matrix';
-import { HoverBorderGradient } from '@/components/ui/hover-border-gradient';
-import { HoverGlowButton } from '@/components/ui/hover-glow-button';
 import { BackButton } from '@/components/ui/back-button';
 import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 

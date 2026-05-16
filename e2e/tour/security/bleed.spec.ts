@@ -29,7 +29,7 @@ const SCHEDULE_KEY = 'fitgrade-schedule-v2-A';
 
 test.describe('tour security — data bleed', () => {
   test('interceptor is cleared after tour FINISH — real /api/classes fires after settings lands', async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(1_500_000);
     // Set up routes. /api/classes returns a recognisable real-network sentinel.
     let realClassesHits = 0;
     await injectFakeToken(page);

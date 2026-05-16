@@ -1132,8 +1132,8 @@ function ProfileView({
           className="rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 p-6 text-center shadow-[0_4px_24px_rgba(16,185,129,0.08)]"
         >
           <Leaf className="mx-auto h-8 w-8 text-emerald-500 mb-2" aria-hidden="true" />
-          <h3 className="font-bold text-slate-700">מוכן לסמסטר ב'?</h3>
-          <p className="mt-1 text-sm text-slate-500">עבור לתצוגת סמסטר ב' כדי לראות את הנתונים החדשים.</p>
+          <h3 className="font-bold text-slate-700">מוכן לסמסטר ב&apos;?</h3>
+          <p className="mt-1 text-sm text-slate-500">עבור לתצוגת סמסטר ב&apos; כדי לראות את הנתונים החדשים.</p>
           <motion.button
             type="button"
             onClick={() => onSemesterChange('B')}
@@ -1143,7 +1143,7 @@ function ProfileView({
             whileTap={{ scale: 0.95 }}
             className="mt-4 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_4px_20px_rgba(16,185,129,0.40)] hover:bg-emerald-700"
           >
-            מעבר לסמסטר ב' ←
+            מעבר לסמסטר ב&apos; ←
           </motion.button>
         </motion.div>
       )}

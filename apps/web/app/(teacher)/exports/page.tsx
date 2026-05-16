@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import { Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { useClasses } from '@/hooks/use-classes';
 import { useSemester } from '@/contexts/semester-context';
-import { apiRequest } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 const EASE = [0.22, 1, 0.36, 1] as const;

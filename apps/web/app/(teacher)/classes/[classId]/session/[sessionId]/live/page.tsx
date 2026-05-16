@@ -31,7 +31,7 @@ import {
   Sun,
   X,
 } from 'lucide-react';
-import type { LiveStudentResult, SessionDetail, SessionStudent } from '@fitgrade/types';
+import type { LiveStudentResult, SessionStudent } from '@fitgrade/types';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import { useTestSession } from '@/hooks/use-test-session';
 import { apiRequest } from '@/lib/api-client';
@@ -453,7 +453,7 @@ export default function LiveSessionPage(): React.JSX.Element {
         showToast(msg);
       }
     },
-    [activeStudents, completed, session, sessionId, showToast, students],
+    [activeStudents, completed, sessionId, showToast, students],
   );
 
   // ── Edit a result (delete + re-submit with corrected rawValue) ─────────────
@@ -984,7 +984,7 @@ export default function LiveSessionPage(): React.JSX.Element {
             >
               <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500 mb-2" aria-hidden="true" />
               <p className="font-bold text-slate-800 mb-1">כל התלמידים נרשמו!</p>
-              <p className="text-sm text-slate-500 mb-4">לחץ "סיים סשן" לסגירת הסשן ושמירת כל הציונים.</p>
+              <p className="text-sm text-slate-500 mb-4">לחץ &ldquo;סיים סשן&rdquo; לסגירת הסשן ושמירת כל הציונים.</p>
               <button
                 type="button"
                 onClick={() => void handleEndSession()}

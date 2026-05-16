@@ -25,7 +25,7 @@ import {
   useAnimate,
   useAnimation,
 } from 'framer-motion';
-import { Pause, Play, RotateCcw, Square, Users, CheckCircle2, Zap } from 'lucide-react';
+import { Pause, Play, RotateCcw, Square, CheckCircle2, Zap } from 'lucide-react';
 
 import { useBeepEngine } from '@/hooks/use-beep-engine';
 import { useBeepStudents } from '@/hooks/use-beep-students';
@@ -166,6 +166,7 @@ export function BeepTestConsole({
   // ── Screen flash: white on normal beep, violet on level change ────────────
   const [flashScope, flashAnimate]       = useAnimate<HTMLDivElement>();
   const flashColorRef                    = useRef<string>('#ffffff');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const levelChangeFlashControls         = useAnimation();
 
   // ── Student state ─────────────────────────────────────────────────────────

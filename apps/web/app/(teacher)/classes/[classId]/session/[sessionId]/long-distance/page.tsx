@@ -33,7 +33,7 @@ import {
 import { cn }              from '@/lib/utils';
 import { useTestSession }  from '@/hooks/use-test-session';
 import { apiRequest, logout } from '@/lib/api-client';
-import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
+import { getHebrewGradeLabel } from '@fitgrade/types';
 import type { SessionStudent } from '@fitgrade/types';
 import { PreTestRosterSelection } from '@/components/pre-test-roster-selection';
 

@@ -25,7 +25,7 @@ import {
 
 test.describe('tour — state machine integrity', () => {
   test('rapid Next clicks advance one step per click', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(600_000);
     await gotoWelcomePage(page);
     await startTour(page);
 

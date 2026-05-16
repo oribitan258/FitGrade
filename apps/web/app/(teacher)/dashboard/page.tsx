@@ -1,37 +1,30 @@
 'use client';
 
-import Image from 'next/image';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import CountUp from 'react-countup';
 import type {
   BelowNormItem,
   ClassData,
-  ClassGenderType,
   DashboardStats,
   EventData,
   Gender,
   MissingResultItem,
   RecentSession,
 } from '@fitgrade/types';
-import { formatClassWithGender } from '@/lib/class-utils';
 import { useClasses } from '@/hooks/use-classes';
 import { useDashboardStats } from '@/hooks/use-dashboard-stats';
 import { useUpcomingEvent } from '@/hooks/use-events';
 import {
   Activity,
   AlertTriangle,
-  BellPlus,
   BookOpen,
   Calendar,
   CalendarDays,
   CalendarPlus,
-  CheckCircle2,
   ChevronLeft,
-  ChevronRight,
   ClipboardX,
   Dumbbell,
-  FileText,
   GraduationCap,
   Heart,
   History,
@@ -39,14 +32,11 @@ import {
   Loader2,
   Plus,
   Timer,
-  Trash2,
   TrendingDown,
   TrendingUp,
   Trophy,
-  Upload,
   UserPlus,
   Users,
-  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -68,7 +58,7 @@ import type { TodayScheduleItem } from '@/hooks/use-today-schedule';
 import { useClassAverages } from '@/hooks/use-class-averages';
 import type { MonthlyClassAverage } from '@/hooks/use-class-averages';
 import { SemesterPanel } from '@/components/ui/semester-panel';
-import { apiRequest, apiUpload } from '@/lib/api-client';
+import { apiRequest } from '@/lib/api-client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AddClassModal } from '@/components/classes/add-class-modal';
 import { getHebrewGradeLabel } from '@fitgrade/types';
@@ -217,6 +207,7 @@ function HebrewDate(): React.JSX.Element {
 
 type ScheduleStatus = 'now' | 'next' | 'later' | 'past';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SCHEDULE_STATUS_CONFIG: Record<ScheduleStatus, { label: string; dotColor: string; textColor: string; trackColor: string; cometColor: string }> = {
   now:   { label: 'עכשיו',      dotColor: '#10b981', textColor: '#065f46', trackColor: 'rgba(16,185,129,0.18)',  cometColor: 'rgba(16,185,129,0.90)' },
   next:  { label: 'הבא',        dotColor: '#7c3aed', textColor: '#4c1d95', trackColor: 'rgba(124,58,237,0.12)', cometColor: 'rgba(192,132,252,0.95)' },
@@ -331,6 +322,7 @@ function ClassRankingRow({
 
 // ─── Class Ranking Widget (replaces BarChart) ─────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ClassRankingWidget({ classAverages }: { classAverages: { className: string; avgScore: number }[] }): React.JSX.Element {
   const ranked = [...classAverages].sort((a, b) => b.avgScore - a.avgScore).slice(0, 6);
 
@@ -497,6 +489,7 @@ function ScheduleLessonRow({ lesson, isLast, studentCount }: {
 
 // ─── Daily Pulse Widget ───────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DailyPulse({ lessons }: { lessons: TodayScheduleItem[] }): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
 
@@ -611,6 +604,7 @@ function DailyPulse({ lessons }: { lessons: TodayScheduleItem[] }): React.JSX.El
 
 // ─── Achievement Gem Widget ───────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AchievementGem(): React.JSX.Element {
   const [hovered, setHovered] = useState(false);
 
@@ -681,6 +675,7 @@ function AchievementGem(): React.JSX.Element {
 
 // ─── Quick Entry Widget ───────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function QuickEntry({ lessons }: { lessons: TodayScheduleItem[] }): React.JSX.Element {
   const [hovered, setHovered]       = useState(false);
   const [btnHovered, setBtnHovered] = useState(false);
@@ -1835,18 +1830,21 @@ const MINISTRY_NORM = 74;
 
 type FitnessLevel = 'above' | 'average' | 'below';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function fitnessLevel(avg: number): FitnessLevel {
   if (avg >= 80) return 'above';
   if (avg >= 65) return 'average';
   return 'below';
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const LEVEL_CONFIG: Record<FitnessLevel, { label: string; bg: string; text: string; dot: string }> = {
   above:   { label: 'מעל לנורמה',  bg: 'bg-emerald-100',  text: 'text-emerald-700', dot: 'bg-emerald-500' },
   average: { label: 'ממוצע',        bg: 'bg-amber-100',    text: 'text-amber-700',   dot: 'bg-amber-500'   },
   below:   { label: 'מתחת לנורמה', bg: 'bg-red-100',      text: 'text-red-700',     dot: 'bg-red-500'     },
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SEMESTER_LABELS: Record<'A' | 'B', string> = { A: "סמסטר א'", B: "סמסטר ב'" };
 
 const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'] as const;
@@ -2379,7 +2377,7 @@ export default function DashboardPage(): React.JSX.Element {
   // by a semester change, so the sidebar toggle feels instant while the mass
   // SWR refetch is scheduled as low-priority work — eliminating the freeze.
   const deferredSemester = useDeferredValue(activeSemester);
-  const { data: stats,        isLoading: statsLoading,   error: statsError   } = useDashboardStats(deferredSemester);
+  const { data: stats,        isLoading: statsLoading   } = useDashboardStats(deferredSemester);
   const { data: upcomingEvent, isLoading: eventLoading } = useUpcomingEvent();
 
   useSignalPageReady('dashboard', stats !== undefined);

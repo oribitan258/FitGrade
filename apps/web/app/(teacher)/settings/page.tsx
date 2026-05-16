@@ -365,7 +365,7 @@ export default function SettingsPage(): React.JSX.Element {
                       <p className="text-xs text-red-500">יש להזין ערך בין 0 ל-100</p>
                     )}
                     <p className="text-xs text-slate-400">
-                      תלמידים מתחת לציון זה יסומנו כ"לא עובר" בדוחות
+                      תלמידים מתחת לציון זה יסומנו כ&ldquo;לא עובר&rdquo; בדוחות
                     </p>
                   </FieldWrapper>
                 )}

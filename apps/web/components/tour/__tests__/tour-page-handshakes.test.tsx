@@ -9,6 +9,7 @@
  * signal arrives too early (before the machine entered awaiting).
  */
 
+/* eslint-disable @typescript-eslint/no-var-requires */
 import React, { useEffect, useState } from 'react';
 import { act, render } from '@testing-library/react';
 

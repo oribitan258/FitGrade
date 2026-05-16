@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileUp, Loader2, Upload, UserPlus, X } from 'lucide-react';
+import { FileUp, Loader2, Upload, UserPlus } from 'lucide-react';
 import {
   createStudentSchema,
   type CreateStudentInput,

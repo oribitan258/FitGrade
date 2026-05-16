@@ -30,8 +30,7 @@ import {
   UserCheck,
   XCircle,
 } from 'lucide-react';
-import { getHebrewGradeLabel, getGradeColorKey } from '@fitgrade/types';
-import type { ReportTestResult } from '@fitgrade/types';
+import { getHebrewGradeLabel } from '@fitgrade/types';
 import { useStudentReport } from '@/hooks/use-student-report';
 import { useReportSettings } from '@/hooks/use-report-settings';
 import { useSemester } from '@/contexts/semester-context';

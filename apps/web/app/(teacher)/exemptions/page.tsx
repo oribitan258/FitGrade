@@ -23,7 +23,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
-  X,
 } from 'lucide-react';
 import { GlowingSearch } from '@/components/ui/glowing-search';
 import { useClasses, useStudents } from '@/hooks/use-classes';

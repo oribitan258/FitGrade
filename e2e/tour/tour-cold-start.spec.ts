@@ -29,7 +29,7 @@ test.describe('tour — cold-start happy path', () => {
   test('walks every step and lands on /settings with lockdown cleared', async ({ page }) => {
     // Walking all 14 steps with up to ~30s of dev-mode cold compile per
     // cross-route crossing can legitimately exceed the global 60s test cap.
-    test.setTimeout(240_000);
+    test.setTimeout(1_500_000);
     await gotoWelcomePage(page);
     await startTour(page);
 

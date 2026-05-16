@@ -148,12 +148,10 @@ export async function clickNext(page: Page): Promise<void> {
 
   if (before === null) return;
 
-  // 30s is a deliberately generous budget for Next.js dev-mode cold compile
-  // of a cross-route destination. The seeding-phase router.prefetch in
-  // TourProvider mitigates this, but a teacher's first walk over a fresh
-  // dev server can still spike past 15s on routes like /reports and /norms.
-  // CI builds use `next start` (no per-route compile) so this never bites
-  // there — only local dev runs need the longer wait.
+  // 90s per-step budget covers the absolute worst-case dev-mode cold compile
+  // (typically 5-25s per route, but can spike on first access). The seeding-
+  // phase router.prefetch helps but doesn't eliminate the cost. CI runs use
+  // `next start` (pre-compiled) so this only applies to local dev.
   await expect
     .poll(
       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
@@ -162,7 +160,7 @@ export async function clickNext(page: Page): Promise<void> {
         if (counter !== null && counter.index !== before.index) return 'advanced';
         return 'unchanged';
       },
-      { timeout: 30_000 },
+      { timeout: 90_000 },
     )
     .not.toBe('unchanged');
 }

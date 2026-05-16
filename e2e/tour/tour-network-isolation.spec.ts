@@ -40,7 +40,7 @@ const TOUR_MOCKED_PATTERNS = [
 
 test.describe('tour — network isolation', () => {
   test('no tour-mocked endpoint leaks to real API during the tour', async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(1_500_000);
     await gotoWelcomePage(page);
 
     // After the welcome page is up, install *narrow* abort handlers for

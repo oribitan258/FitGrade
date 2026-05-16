@@ -307,7 +307,7 @@ function UltimateTestCard({ themeIndex, label, unit, inputType, score, rawValue,
             {delta >= 0
               ? <TrendingUp className="h-3 w-3" aria-hidden="true" />
               : <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
-            {delta >= 0 ? '+' : ''}{delta} נק' מהנורמה
+            {delta >= 0 ? '+' : ''}{delta} נק&apos; מהנורמה
           </div>
 
           {/* Norm baseline */}
@@ -316,7 +316,7 @@ function UltimateTestCard({ themeIndex, label, unit, inputType, score, rawValue,
               className="inline-block h-2 w-2 rounded-full border-[1.5px] bg-white flex-shrink-0"
               style={{ borderColor: ringColor }}
             />
-            נורמה ארצית: <span className="font-semibold text-slate-600">{NATIONAL_NORM} נק'</span>
+            נורמה ארצית: <span className="font-semibold text-slate-600">{NATIONAL_NORM} נק&apos;</span>
           </div>
         </div>
       </div>
@@ -732,7 +732,7 @@ interface ClassProgressChartProps {
   testUnit:     string | null;
 }
 
-function ClassProgressChart({ progressData, testName, testUnit }: ClassProgressChartProps): React.JSX.Element {
+function ClassProgressChart({ progressData, testName: _testName, testUnit: _testUnit }: ClassProgressChartProps): React.JSX.Element {
   const gradientId = useId().replace(/:/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
 

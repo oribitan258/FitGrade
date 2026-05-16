@@ -275,8 +275,8 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
                     required
                     className={INPUT_CLS}
                   >
-                    <option value="A">מחצית א'</option>
-                    <option value="B">מחצית ב'</option>
+                    <option value="A">מחצית א&apos;</option>
+                    <option value="B">מחצית ב&apos;</option>
                   </select>
                 </div>
                 <div>

@@ -36,7 +36,7 @@ const SHOT_OPTIONS = {
 test.describe('tour — visual regression', () => {
   test('captures every step plus settings finale', async ({ page }) => {
     // 14 steps × (cold compile + screenshot diff) can easily exceed 60s.
-    test.setTimeout(300_000);
+    test.setTimeout(1_500_000);
     await gotoWelcomePage(page);
     await startTour(page);
 

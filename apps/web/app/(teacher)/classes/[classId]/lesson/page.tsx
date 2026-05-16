@@ -61,13 +61,6 @@ interface StudentSlot {
 
 type SlotsMap = Record<string, StudentSlot>;
 
-interface SessionResult {
-  id:              string;
-  studentId:       string;
-  rawValue:        number;
-  calculatedGrade: number;
-}
-
 interface SessionInfo {
   id:            string;
   testInputType: 'TIME' | 'REPS' | 'PASS_FAIL' | 'GENERAL';

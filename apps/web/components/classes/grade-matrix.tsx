@@ -73,7 +73,7 @@ export function GradeMatrix({
   classId,
   students,
   testSummaries,
-  testWeight,
+  testWeight: _testWeight,
   onRefresh,
 }: GradeMatrixProps): React.JSX.Element {
 

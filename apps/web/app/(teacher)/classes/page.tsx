@@ -21,7 +21,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { type ClassData } from '@fitgrade/types';
-import type { TopAchievementItem } from '@fitgrade/types';
 import { formatClassWithGender } from '@/lib/class-utils';
 import { useClasses } from '@/hooks/use-classes';
 import { useTopAchievements } from '@/hooks/use-top-achievements';
@@ -116,16 +115,6 @@ const SEMESTER_LABELS: Record<'A' | 'B', string> = {
   A: "סמסטר א'",
   B: "סמסטר ב'",
 };
-
-// ─── Fallback ticker items (shown before real data arrives) ──────────────────
-
-const MOCK_TOP_ACHIEVEMENTS: TopAchievementItem[] = [
-  { rank: 1, studentId: 'stu-1', studentName: 'אורי ברק',   classId: 'cls-1', className: "י' 1", classGenderType: 'BOYS',  examName: 'ריצת 2000 מטר', score: 95, rawValue: 424,  unit: null },
-  { rank: 2, studentId: 'stu-2', studentName: 'שירה אבידן', classId: 'cls-1', className: "י' 1", classGenderType: 'GIRLS', examName: 'שכיבות סמיכה', score: 92, rawValue: 38,   unit: null },
-  { rank: 3, studentId: 'stu-3', studentName: 'דניאל לוי',  classId: 'cls-2', className: "ט' 2", classGenderType: 'BOYS',  examName: 'קפיצה למרחק',  score: 90, rawValue: 182,  unit: 'ס"מ' },
-  { rank: 4, studentId: 'stu-4', studentName: 'מיכל כהן',   classId: 'cls-2', className: "ט' 2", classGenderType: 'GIRLS', examName: 'מתח',           score: 88, rawValue: 12,   unit: null },
-  { rank: 5, studentId: 'stu-5', studentName: 'יוסי פרץ',   classId: 'cls-3', className: "ח' 1", classGenderType: 'MIXED', examName: 'ריצת 100 מטר', score: 86, rawValue: 13.8, unit: null },
-];
 
 // ─── Floating debris config ──────────────────────────────────────────────────
 

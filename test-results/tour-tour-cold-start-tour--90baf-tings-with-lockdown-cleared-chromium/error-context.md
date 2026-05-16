@@ -12,68 +12,380 @@
 # Error details
 
 ```
-Error: Timeout 30000ms exceeded while waiting on the predicate
+Error: Timeout 90000ms exceeded while waiting on the predicate
 ```
 
 # Page snapshot
 
 ```yaml
-- generic [active] [ref=e1]:
-  - alert [ref=e2]
-  - generic [ref=e3]: "50"
-  - main [ref=e4]:
+- generic [active]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - generic:
+          - img
+        - img
+      - generic:
+        - complementary:
+          - generic:
+            - generic:
+              - generic: FitGrade
+              - generic:
+                - generic: מדדים, לא ניחושים
+            - img
+          - generic:
+            - generic:
+              - generic: ●
+              - generic: סמסטר פעיל
+            - radiogroup "בחירת תצוגה":
+              - radio "מחצית א'" [checked]:
+                - generic: מחצית א'
+              - radio "מחצית ב'":
+                - generic: מחצית ב'
+          - navigation "ניווט ראשי":
+            - generic:
+              - generic:
+                - generic:
+                  - link "ראשי":
+                    - /url: /dashboard
+                    - generic: ראשי
+                    - img
+                - generic:
+                  - link "הכיתות שלי":
+                    - /url: /classes
+                    - generic: הכיתות שלי
+                    - img
+                - generic:
+                  - link "מערכת שעות":
+                    - /url: /schedule
+                    - generic: מערכת שעות
+                    - img
+              - generic:
+                - paragraph: כלים
+              - generic:
+                - generic:
+                  - link "טבלאות הישגים":
+                    - /url: /norms
+                    - generic: טבלאות הישגים
+                    - img
+                - generic:
+                  - link "הפקת דוחות":
+                    - /url: /reports
+                    - generic: הפקת דוחות
+                    - img
+              - generic:
+                - paragraph: חינוך גופני
+              - generic:
+                - generic:
+                  - link "פטורים":
+                    - /url: /exemptions
+                    - generic: פטורים
+                    - img
+                - generic:
+                  - link "תלמידים מצטיינים":
+                    - /url: /outstanding-students
+                    - generic: תלמידים מצטיינים
+                    - img
+                - generic:
+                  - link "אירועים וטורנירים":
+                    - /url: /events
+                    - generic: אירועים וטורנירים
+                    - img
+                - generic:
+                  - link "מתכנן שיעור":
+                    - /url: /exercise-bank
+                    - generic: מתכנן שיעור
+                    - img
+            - generic:
+              - generic:
+                - link "הגדרות":
+                  - /url: /settings
+                  - generic: הגדרות
+                  - img
+          - generic:
+            - button "התנתק מהמערכת":
+              - generic: התנתק
+              - img
+      - main:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                - generic:
+                  - img
+                - generic:
+                  - img
+                - generic:
+                  - img
+                - generic:
+                  - img
+                - generic:
+                  - img
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading "שלום, מורה!" [level=1]
+                      - generic:
+                        - generic:
+                          - button "הוסף תלמיד":
+                            - generic:
+                              - img
+                            - generic: הוסף תלמיד
+                          - button "תכנן שיעור":
+                            - generic:
+                              - img
+                            - generic: תכנן שיעור
+                          - button "הוסף כיתה":
+                            - generic:
+                              - img
+                            - generic: הוסף כיתה
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: אין שיעור פעיל
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: "23"
+                        - generic: ":"
+                        - generic: "02"
+                      - generic:
+                        - img
+                        - generic: יום שבת, 16 במאי 2026
+                      - generic:
+                        - generic: מחצית א׳ פעילה
+                    - generic:
+                      - generic:
+                        - generic:
+                          - img
+                          - generic: לוח שיעורים היום
+                      - generic:
+                        - generic:
+                          - paragraph: אין שיעורים מתוכננים להיום
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - img
+                          - generic: דורש טיפול
+                        - generic:
+                          - generic:
+                            - img
+                            - generic: 3 תלמידים נעדרו השבוע מכיתה ז' 2
+                          - generic:
+                            - img
+                            - generic: 2 תלמידים חדשים מחכים לשיבוץ
+                      - generic:
+                        - generic:
+                          - img
+                          - generic: תזכורות
+                          - button "הוסף תזכורת":
+                            - img
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: לערוך מבחן ריצה לכיתה ט' 1
+                            - generic: בעוד 3 ימים
+                          - generic:
+                            - generic:
+                              - generic: לעדכן ציונים לסמסטר ב'
+                            - generic: בעוד 5 ימים
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - paragraph: ממוצע כושר כללי
+                          - generic:
+                            - img
+                        - generic:
+                          - text: "78"
+                          - generic:
+                            - img
+                            - generic: +4 מנורמה
+                      - generic:
+                        - generic:
+                          - paragraph: נוכחות ממוצעת
+                          - generic:
+                            - img
+                        - generic:
+                          - text: 92%
+                          - generic:
+                            - generic: יציב לאורך הסמסטר
+                      - generic:
+                        - generic:
+                          - paragraph: תלמידים לטיפול
+                          - generic:
+                            - img
+                        - generic:
+                          - text: "3"
+                          - generic:
+                            - img
+                            - generic: לחץ לרשימה המלאה
+                        - paragraph:
+                          - text: לחץ לפרטים
+                          - img
+                      - generic:
+                        - generic:
+                          - paragraph: תוצאות חסרות
+                          - generic:
+                            - img
+                        - generic:
+                          - text: "5"
+                          - generic:
+                            - generic: לחץ לרשימה המלאה
+                        - paragraph:
+                          - text: לחץ לפרטים
+                          - img
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                      - generic:
+                        - heading "אירוע קרוב" [level=2]
+                        - paragraph: לוח אירועים בית-ספרי
+                    - generic:
+                      - generic:
+                        - generic: "23"
+                        - generic:
+                          - paragraph: יום ספורט בית-ספרי
+                          - paragraph: מאי 2026 · מגרש בית הספר
+                      - generic: עוד 7 ימים
+                    - link "לכל האירועים":
+                      - /url: /events
+                      - img
+                      - text: לכל האירועים
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: מגמת שיפור
+                            - heading "ממוצעי כיתות - מגמת שיפור" [level=2]
+                            - paragraph: ביצועים לפי חודש
+                          - generic:
+                            - generic:
+                              - generic: ח'5
+                            - generic:
+                              - generic: ח'2
+                            - generic:
+                              - generic: ט'1
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: ספט׳
+                                    - generic:
+                                      - generic: אוק׳
+                                    - generic:
+                                      - generic: נוב׳
+                                    - generic:
+                                      - generic: דצמ׳
+                                    - generic:
+                                      - generic: "13"
+                                    - generic:
+                                      - generic: "14"
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: "50"
+                                    - generic:
+                                      - generic: "65"
+                                    - generic:
+                                      - generic: "80"
+                                    - generic:
+                                      - generic: "100"
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - img
+                          - generic:
+                            - heading "דורש טיפול" [level=2]
+                            - paragraph: מבט כולל מהיר
+                        - generic:
+                          - button "3 מתחת לנורמה":
+                            - text: "3"
+                            - paragraph: מתחת לנורמה
+                          - button "5 לא הוזנו":
+                            - text: "5"
+                            - paragraph: לא הוזנו
+                          - generic:
+                            - text: "74"
+                            - paragraph: פעילים סה"כ
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - img
+                          - generic:
+                            - heading "מפגשי מבחן אחרונים" [level=2]
+                            - paragraph: 5 המפגשים האחרונים שנערכו
+                        - list:
+                          - listitem:
+                            - generic:
+                              - generic: "15"
+                              - generic: 05/
+                            - generic:
+                              - paragraph: ריצת 60 מטר
+                              - paragraph: ח'5 · שישי
+                            - generic: הושלם
+                          - listitem:
+                            - generic:
+                              - generic: "14"
+                              - generic: 05/
+                            - generic:
+                              - paragraph: קפיצה לגובה
+                              - paragraph: ח'2 · חמישי
+                            - generic: הושלם
+  - generic:
+    - alert
+  - generic: "50"
+  - generic:
     - generic:
       - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic:
-      - img
-    - generic [ref=e6]:
-      - generic [ref=e7]:
-        - img "FitGrade" [ref=e8]
-        - heading "FitGrade" [level=1] [ref=e9]
-        - paragraph [ref=e10]: מערכת ניהול ציונים לחינוך גופני
-      - generic [ref=e11]:
-        - generic [ref=e12]:
-          - paragraph [ref=e13]: כניסה למורים
-          - heading "ברוכים הבאים" [level=2] [ref=e14]
-          - paragraph [ref=e15]: התחברו עם חשבון Google שלכם
-        - link "כניסה עם חשבון Google" [ref=e16] [cursor=pointer]:
-          - /url: http://localhost:3001/api/auth/google
-          - img [ref=e17]
-          - text: כניסה עם Google
-        - generic [ref=e24]: או
-        - generic [ref=e26]:
-          - button "Dev Login (Bypass)" [ref=e27] [cursor=pointer]
-          - generic [ref=e28] [cursor=pointer]:
-            - checkbox "Simulate First Login (resets onboarding)" [ref=e29]
-            - text: Simulate First Login (resets onboarding)
-        - paragraph [ref=e30]:
-          - link "כניסה לתלמידים" [ref=e31] [cursor=pointer]:
-            - /url: /student-login
 ```
 
 # Test source
 
 ```ts
+  55  |  *      even when isLoading flips to false (UX choice: avoid flash for fast
+  56  |  *      loads). In dev mode with cold-compile this is the dominant cost.
   57  |  *   2. Exit animation — 600 ms opacity/scale fade after canHide=true. The
   58  |  *      <AnimatePresence> wrapper only unmounts the child after this completes.
   59  |  *
@@ -168,49 +480,47 @@ Error: Timeout 30000ms exceeded while waiting on the predicate
   148 | 
   149 |   if (before === null) return;
   150 | 
-  151 |   // 30s is a deliberately generous budget for Next.js dev-mode cold compile
-  152 |   // of a cross-route destination. The seeding-phase router.prefetch in
-  153 |   // TourProvider mitigates this, but a teacher's first walk over a fresh
-  154 |   // dev server can still spike past 15s on routes like /reports and /norms.
-  155 |   // CI builds use `next start` (no per-route compile) so this never bites
-  156 |   // there — only local dev runs need the longer wait.
-> 157 |   await expect
-      |   ^ Error: Timeout 30000ms exceeded while waiting on the predicate
-  158 |     .poll(
-  159 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
-  160 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
-  161 |         const counter = await readStepCounter(page).catch(() => null);
-  162 |         if (counter !== null && counter.index !== before.index) return 'advanced';
-  163 |         return 'unchanged';
-  164 |       },
-  165 |       { timeout: 30_000 },
-  166 |     )
-  167 |     .not.toBe('unchanged');
-  168 | }
-  169 | 
-  170 | export async function clickBack(page: Page): Promise<void> {
-  171 |   await page.getByRole('button', { name: /^הקודם$/ }).click();
-  172 | }
-  173 | 
-  174 | export async function clickSkipX(page: Page): Promise<void> {
-  175 |   await page.getByRole('button', { name: 'דלג על הסיור' }).click();
-  176 | }
-  177 | 
-  178 | /** Returns true if document.body has the lockdown class. */
-  179 | export async function isTourActiveBodyClass(page: Page): Promise<boolean> {
-  180 |   return page.evaluate(() => document.body.classList.contains('tour-active'));
-  181 | }
-  182 | 
-  183 | /** Waits up to `timeout` ms for the body class to reach `expected`. */
-  184 | export async function waitForTourActive(
-  185 |   page: Page,
-  186 |   expected: boolean,
-  187 |   timeout = 2000,
-  188 | ): Promise<void> {
-  189 |   await expect.poll(
-  190 |     async () => isTourActiveBodyClass(page),
-  191 |     { timeout },
-  192 |   ).toBe(expected);
-  193 | }
-  194 | 
+  151 |   // 90s per-step budget covers the absolute worst-case dev-mode cold compile
+  152 |   // (typically 5-25s per route, but can spike on first access). The seeding-
+  153 |   // phase router.prefetch helps but doesn't eliminate the cost. CI runs use
+  154 |   // `next start` (pre-compiled) so this only applies to local dev.
+> 155 |   await expect
+      |   ^ Error: Timeout 90000ms exceeded while waiting on the predicate
+  156 |     .poll(
+  157 |       async (): Promise<'advanced' | 'settings' | 'unchanged'> => {
+  158 |         if (/\/settings(\/|$|\?)/.test(page.url())) return 'settings';
+  159 |         const counter = await readStepCounter(page).catch(() => null);
+  160 |         if (counter !== null && counter.index !== before.index) return 'advanced';
+  161 |         return 'unchanged';
+  162 |       },
+  163 |       { timeout: 90_000 },
+  164 |     )
+  165 |     .not.toBe('unchanged');
+  166 | }
+  167 | 
+  168 | export async function clickBack(page: Page): Promise<void> {
+  169 |   await page.getByRole('button', { name: /^הקודם$/ }).click();
+  170 | }
+  171 | 
+  172 | export async function clickSkipX(page: Page): Promise<void> {
+  173 |   await page.getByRole('button', { name: 'דלג על הסיור' }).click();
+  174 | }
+  175 | 
+  176 | /** Returns true if document.body has the lockdown class. */
+  177 | export async function isTourActiveBodyClass(page: Page): Promise<boolean> {
+  178 |   return page.evaluate(() => document.body.classList.contains('tour-active'));
+  179 | }
+  180 | 
+  181 | /** Waits up to `timeout` ms for the body class to reach `expected`. */
+  182 | export async function waitForTourActive(
+  183 |   page: Page,
+  184 |   expected: boolean,
+  185 |   timeout = 2000,
+  186 | ): Promise<void> {
+  187 |   await expect.poll(
+  188 |     async () => isTourActiveBodyClass(page),
+  189 |     { timeout },
+  190 |   ).toBe(expected);
+  191 | }
+  192 | 
 ```

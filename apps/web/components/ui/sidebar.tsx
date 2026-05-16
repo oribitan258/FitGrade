@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck — auto-generated shadcn primitive; @types/react deduplication mismatch in monorepo
+/* eslint-enable @typescript-eslint/ban-ts-comment */
 "use client"
 
 import * as React from "react"

@@ -8,6 +8,7 @@ interface MousePosition {
   y: number;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function useMousePosition(): MousePosition {
   const [mousePosition, setMousePosition] = useState<MousePosition>({ x: 0, y: 0 });
 

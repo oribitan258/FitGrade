@@ -158,7 +158,7 @@ export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopRes
                 ))
               ) : (
                 /* ── Real items ─────────────────────────────────────────────── */
-                items.map(({ studentName, examName, score, className, classGenderType, rawValue, unit }, i) => {
+                items.map(({ studentName, examName, score: _score, className, classGenderType, rawValue, unit }, i) => {
                   const Icon        = resolveIcon(examName);
                   const color       = resolveColor(examName);
                   const classLabel  = formatClassWithGender(className, classGenderType);
