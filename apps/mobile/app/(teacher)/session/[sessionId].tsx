@@ -9,7 +9,7 @@
  *   testNameHe  — Hebrew test name shown in the header
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -212,6 +212,7 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
   }
 
   const allStudents = useMemo(() => students ?? [], [students]);
+  const tappedMap = useMemo(() => new Map(tapped.map((t) => [t.studentId, t])), [tapped]);
 
   const renderListItem = useCallback(({ item }: { item: ListItem }) => {
     const fullName = `${item.student.firstName} ${item.student.lastName}`;
@@ -259,7 +260,6 @@ function StopwatchMode({ sessionId, classId, startedAt }: StopwatchModeProps): R
       </TouchableOpacity>
     );
   }, [pendingIds, errorIds, tappedMap, handleStudentTap, handleUndo]);
-  const tappedMap = useMemo(() => new Map(tapped.map((t) => [t.studentId, t])), [tapped]);
   const pending = useMemo(
     () => allStudents.filter((s) => !tappedIds.has(s.id)),
     [allStudents, tappedIds],

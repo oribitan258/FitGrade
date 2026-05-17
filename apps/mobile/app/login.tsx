@@ -11,7 +11,8 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { setAccessToken } from '../lib/storage';
-import { api, ApiError } from '../lib/api';
+import { api } from '../lib/api';
+import { ApiError } from '@fitgrade/types';
 import { COLORS, FONT_SIZE_BODY, FONT_SIZE_BUTTON, MIN_TOUCH_TARGET } from '../constants/ui';
 
 /**
