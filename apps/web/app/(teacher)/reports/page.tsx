@@ -54,7 +54,7 @@ import { useGradingPolicy, updateClassGradingPolicy } from '@/hooks/use-grading-
 import { useReportSettings } from '@/hooks/use-report-settings';
 import { apiRequest } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
-import { ApiError } from '@fitgrade/types';
+import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import type { ReportRow } from '@fitgrade/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -480,17 +480,17 @@ function FinalGradesTab({
                 </td>
                 <td className="px-4 py-3 align-middle">
                   <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.fitnessAvg))}>
-                    {row.fitnessAvg > 0 ? row.fitnessAvg : '—'}
+                    {row.fitnessAvg > 0 ? getHebrewGradeLabel(row.fitnessAvg) : '—'}
                   </span>
                 </td>
                 <td className="px-4 py-3 align-middle">
                   <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(row.conductScore))}>
-                    {row.conductScore > 0 ? row.conductScore : '—'}
+                    {row.conductScore > 0 ? getHebrewGradeLabel(row.conductScore) : '—'}
                   </span>
                 </td>
                 <td className="px-4 py-3 align-middle">
                   <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 text-sm font-black tabular-nums text-indigo-700 shadow-[0_0_10px_rgba(99,102,241,0.15)]">
-                    {row.recommendedFinalGrade}
+                    {getHebrewGradeLabel(row.recommendedFinalGrade)}
                   </span>
                 </td>
                 <td className="px-4 py-3 align-middle">

@@ -318,26 +318,29 @@ export class AuthController {
   // ─── Token refresh ─────────────────────────────────────────────────────────
 
   /**
-   * Exchanges the httpOnly refresh token cookie for a new access token.
-   * No request body needed — the cookie is read automatically.
+   * Exchanges the httpOnly refresh token cookie for a new access + refresh token pair.
+   * The old refresh token is immediately revoked (rotation — BUG-030).
+   * The new refresh token is set as a fresh httpOnly cookie.
    */
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   /** מגבלת ניסיונות: 20 בקשות לדקה לכל IP — מניעת ניצול טוקני רענון */
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
-  @ApiOperation({ summary: 'Refresh access token using httpOnly cookie' })
+  @ApiOperation({ summary: 'Refresh access token using httpOnly cookie (rotates refresh token)' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
-  @ApiResponse({ status: 401, description: 'Missing, invalid, or expired refresh token' })
+  @ApiResponse({ status: 401, description: 'Missing, invalid, expired, or already-rotated refresh token' })
   @ApiResponse({ status: 429, description: 'Too many refresh attempts — try again later' })
   async refresh(
     @Req() req: Request & { cookies: Record<string, string> },
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const token = req.cookies[REFRESH_COOKIE_NAME];
     if (token === undefined || token === '') {
       throw new UnauthorizedException('טוקן רענון חסר');
     }
-    const accessToken = await this.authService.refreshAccessToken(token);
+    const { accessToken, refreshToken } = await this.authService.refreshAccessToken(token);
+    this.setRefreshCookie(res, refreshToken);
     return { accessToken };
   }
 

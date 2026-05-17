@@ -22,6 +22,11 @@ export class QuickGradeOverrideDto {
   @Min(0)
   @Max(100)
   gradeOverride!: number | null;
+
+  @ApiPropertyOptional({ description: 'Reason for the grade override (required when gradeOverride is non-null)' })
+  @IsOptional()
+  @IsString()
+  overrideReason?: string;
 }
 
 export class QuickGradeResponseDto {

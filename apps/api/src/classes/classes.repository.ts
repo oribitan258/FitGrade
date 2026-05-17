@@ -265,4 +265,41 @@ export class ClassesRepository {
       throw e;
     }
   }
+
+  /**
+   * Removes a student's enrollment from a class.
+   *
+   * Two-step: first verify the class exists and belongs to the teacher
+   * (403 vs 404 distinction — SEC-003 pattern), then verify the enrollment
+   * exists before deleting.
+   *
+   * Hard-deletes the ClassEnrollment row. Historical TestResult and
+   * AttendanceRecord rows are preserved (FK to Student, not to Enrollment).
+   */
+  async removeStudentEnrollment(
+    classId: string,
+    studentId: string,
+    teacherId: string,
+  ): Promise<void> {
+    const cls = await this.prisma.class.findUnique({
+      where: { id: classId },
+      select: { teacherId: true },
+    });
+    if (cls === null) {
+      throw new NotFoundException(`כיתה ${classId} לא נמצאה`);
+    }
+    if (cls.teacherId !== teacherId) {
+      throw new ForbiddenException();
+    }
+
+    const enrollment = await this.prisma.classEnrollment.findFirst({
+      where: { classId, studentId },
+      select: { id: true },
+    });
+    if (enrollment === null) {
+      throw new NotFoundException('התלמיד אינו רשום לכיתה זו');
+    }
+
+    await this.prisma.classEnrollment.delete({ where: { id: enrollment.id } });
+  }
 }

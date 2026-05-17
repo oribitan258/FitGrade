@@ -138,12 +138,12 @@ export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopRes
                   <span
                     key={`${groupKey}-fallback-${i}`}
                     style={{
-                      display:     'inline-flex',
-                      alignItems:  'center',
-                      gap:         12,
-                      paddingLeft:  28,
-                      paddingRight: 28,
-                      flexShrink:  0,
+                      display:          'inline-flex',
+                      alignItems:       'center',
+                      gap:              12,
+                      paddingInlineStart: 28,
+                      paddingInlineEnd:   28,
+                      flexShrink:       0,
                     }}
                   >
                     <Trophy
@@ -168,12 +168,12 @@ export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopRes
                     <span
                       key={`${groupKey}-${i}`}
                       style={{
-                        display:    'inline-flex',
-                        alignItems: 'center',
-                        gap:        8,
-                        paddingLeft:  16,
-                        paddingRight: 16,
-                        flexShrink: 0,
+                        display:          'inline-flex',
+                        alignItems:       'center',
+                        gap:              8,
+                        paddingInlineStart: 16,
+                        paddingInlineEnd:   16,
+                        flexShrink:       0,
                       }}
                     >
                       {/* Sport icon */}
@@ -222,7 +222,7 @@ export function TopResultsTicker({ items, fallbackText, semester = 'A' }: TopRes
                       {/* Divider */}
                       <span
                         className="text-slate-200 text-[15px] font-thin"
-                        style={{ marginLeft: 12 }}
+                        style={{ marginInlineStart: 12 }}
                         aria-hidden="true"
                       >
                         |

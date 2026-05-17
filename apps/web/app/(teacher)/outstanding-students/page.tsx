@@ -293,10 +293,10 @@ function RankRow({
       </div>
       <span className="hidden shrink-0 text-xs text-slate-400 sm:block">{resultCount} מבחנים</span>
       <span
-        className="shrink-0 rounded-xl px-2.5 py-1 text-sm font-extrabold tabular-nums"
+        className="shrink-0 rounded-xl px-2.5 py-1 text-sm font-extrabold"
         style={{ background: gradeStyle.bg, border: `1px solid ${gradeStyle.border}`, color: gradeStyle.text }}
       >
-        {avgGrade}
+        {getHebrewGradeLabel(avgGrade)}
       </span>
     </motion.div>
   );

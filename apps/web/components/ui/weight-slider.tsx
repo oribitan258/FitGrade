@@ -71,7 +71,7 @@ export function WeightSlider({
         {/* Divider line */}
         <div
           className="absolute inset-y-0 w-0.5 bg-white/60 transition-[left] duration-150"
-          style={{ left: `${fitnessWeight}%` }}
+          style={{ insetInlineStart: `${fitnessWeight}%` }}
         />
       </div>
 

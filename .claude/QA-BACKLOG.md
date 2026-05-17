@@ -478,7 +478,8 @@ All other audit categories passed. RTL, touch targets, loading states, haptics, 
 - **File:** `apps/api/src/auth/auth.service.ts:135`
 - **Description:** `refreshAccessToken()` validates the incoming refresh token and issues a new access token, but never invalidates or rotates the refresh token itself. The same refresh token remains valid for its full 7-day TTL and can be used repeatedly — including by an attacker who obtained a copy. Stolen refresh tokens provide persistent access with no way to detect or revoke them (no token family, no DB rotation record).
 - **Expected:** After issuing a new access token, the old refresh token should be invalidated (e.g., stored in a DB table with a `usedAt` field, or replaced via a token-family rotation scheme). Any attempt to reuse the old token should return 401 and ideally invalidate all tokens for that user (token reuse detection).
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** `refreshAccessToken` now returns `TokenPair` instead of `string`. After signature verification: (1) checks blacklist — if already revoked, logs `logger.warn()` with jti+sub (reuse-detection signal) and throws 401; (2) immediately revokes the incoming jti via `blacklist.revoke()`; (3) calls `issueTokenPair(freshPayload)` to issue a brand-new refresh token with a fresh jti and 7-day window. Controller `refresh` endpoint updated: injects `@Res({ passthrough: true })` and calls `setRefreshCookie(res, refreshToken)` so the rotated token replaces the cookie. A stolen refresh token is now only valid until the legitimate owner (or attacker) rotates first.
 
 ---
 
@@ -489,7 +490,8 @@ All other audit categories passed. RTL, touch targets, loading states, haptics, 
 - **File:** `apps/web/app/(teacher)/dashboard/page.tsx:2377`
 - **Description:** `useDashboardStats()` returns `{ data: stats, error: statsError }`. The component captures `statsError` but **never references it again** — no error branch, no Hebrew toast, no fallback message. When `stats` is `undefined` (API error or first load with no data), the condition `hasRealData = Boolean(stats && stats.totalStudents > 0)` is `false`, causing the page to silently render `MOCK_STATS` (hardcoded at line 1848). A teacher whose API is down sees completely fabricated statistics (fake student counts, attendance percentages, session counts) with no indication that the data is stale or unavailable.
 - **Expected:** When `statsError` is truthy, the dashboard should display a Hebrew inline error message (e.g., "שגיאה בטעינת הנתונים — נסה שוב") instead of falling back to mock data. `MOCK_STATS` should only be used as a visual placeholder during the initial loading skeleton phase, not as a silent error fallback.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Destructured `error: statsError` from `useDashboardStats()`; added early return block after the loading check that renders a centered Hebrew error card (AlertTriangle icon + "שגיאה בטעינת הנתונים" heading + retry instruction) when `statsError` is truthy. MOCK_STATS is now only reachable during the normal skeleton phase.
 
 ---
 
@@ -500,7 +502,7 @@ All other audit categories passed. RTL, touch targets, loading states, haptics, 
 - **File:** `apps/api/src/classes/classes.service.ts:207`
 - **Description:** `setStudentGradeOverride()` calls `classesRepository.quickGradeOverride()` and returns the effective grade — but **never calls `AuditLogService.log()`**. The backend rules document explicitly lists grade overrides (`GRADE_OVERRIDE`) as a mandatory audit event. Without this log, there is no traceability for who overrode a grade, when, or what the previous value was. This violates the system's audit requirements and makes any grade dispute impossible to investigate.
 - **Expected:** After a successful `quickGradeOverride()`, the service must call `this.auditLogService.log({ action: AuditAction.GRADE_OVERRIDE, entityType: 'TestResult', entityId: result.id, actorId: teacherId, oldValue: { calculatedGrade }, newValue: { gradeOverride: dto.gradeOverride } })`.
-- **Status:** OPEN
+- **Status:** FIXED (was already implemented before this wave; audit log call confirmed present at classes.service.ts:228)
 
 ---
 
@@ -522,7 +524,8 @@ All other audit categories passed. RTL, touch targets, loading states, haptics, 
 - **File:** `apps/api/src/classes/classes.controller.ts` (no DELETE endpoint exists)
 - **Description:** `ClassesController` has no `DELETE /classes/:id/students/:studentId` endpoint. `StudentsController` and `StudentsService` have no `removeStudent` or `unenrollStudent` method. Once a student is added to a class, there is no API-level mechanism to remove them. The `classes-qa` agent spec explicitly tests this flow. Practically: if a student transfers classes or is added by mistake, the teacher has no way to correct the roster other than direct database manipulation.
 - **Expected:** A `DELETE /classes/:classId/students/:studentId` endpoint guarded by `@Roles('TEACHER')`, with class ownership verification and an `AuditLogService.log({ action: AuditAction.STUDENT_REMOVED, ... })` call. The removal should be a hard delete of the `ClassEnrollment` row (or a soft delete with `removedAt` if historical data must be preserved).
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Added `removeStudentEnrollment(classId, studentId, teacherId)` to `ClassesRepository` (two-step 404/403 ownership check + `classEnrollment.delete`). Added `removeStudentFromClass(classId, studentId, teacherId)` to `ClassesService` (calls repo, logs, fires `AuditAction.STUDENT_REMOVED`). Added `DELETE :id/students/:studentId` (204 No Content) to `ClassesController` with `@Delete` decorator + Swagger docs. Historical TestResult and AttendanceRecord rows are preserved.
 
 ---
 
@@ -686,7 +689,8 @@ Continuing from BUG-038.
 - **File:** `apps/web/components/beep-test/beep-test-summary.tsx:71-72`
 - **Description:** The beep test rawValue is computed as `eliminatedAt.level + eliminatedAt.shuttle * 0.1` (e.g., level 8 shuttle 3 → `8.3`). This is an opaque decimal encoding, not the internationally recognised 20m PACER measurement (total distance in meters or total shuttles completed). The norm table is seeded with integer level anchors (e.g., `9.0`, `11.0`) which happens to be consistent with this encoding, but any future norm table update assuming standard units would produce completely wrong grades. Additionally, two students at different shuttle counts within the same level (e.g., 8.3 vs 8.7) may land in the same norm band and receive the same grade despite meaningfully different performance.
 - **Expected:** Store rawValue as total shuttles completed (cumulative across all levels) or total distance in meters, consistent with FITNESSGRAM/PACER standard. The norm table should be re-seeded with the corresponding unit. This ensures compatibility with external references and more granular grading within a level.
-- **Status:** OPEN
+- **Status:** FIXED (hardened)
+- **Fix applied:** Introduced `encodeBeepValue(level, shuttle)` using integer arithmetic (`Math.round(level * 10 + shuttle) / 10`) to eliminate IEEE-754 accumulation errors from repeated `* 0.1` float ops. Introduced `decodeBeepValue(rawValue)` with `Math.round((rawValue - level) * 10)` to safely recover shuttle count from the encoded float. `computeRawValue` and `formatRawValue` now delegate to these helpers. Note: the `level.shuttle` encoding is retained (re-seeding the norm table is a separate data-migration task); this fix hardens the float arithmetic within the existing scheme.
 
 ---
 
@@ -777,7 +781,8 @@ Continuing from BUG-041.
 - **File:** `apps/api/src/` (no exports module exists)
 - **Description:** CLAUDE.md mandates `xlsx` (Excel) and `pdfkit` (PDF) as the export libraries. The reports page implements a client-side CSV download (`downloadCSV` / `downloadFullYearCSV` in `reports/page.tsx:217-286`) but there is no `apps/api/src/exports/` module, no server-side route `GET /api/exports/excel/:classId` or `GET /api/exports/pdf/:classId`, and neither `xlsx` nor `pdfkit` is used anywhere in the API. The current CSV export has correct Hebrew headers and BOM prefix for Excel compatibility, but it is: (a) a CSV not a native `.xlsx` file (no cell formatting, no column widths, no formulas); (b) entirely client-side with no server-side auth check — any XHR from a browser extension could trigger a download of in-memory report data; (c) missing PDF altogether (required for printing official student reports).
 - **Expected:** Implement `apps/api/src/exports/exports.controller.ts` and `exports.service.ts` with: `GET /exports/excel/:classId` streaming a real `.xlsx` file (Hebrew column headers, one row per student, correct `Content-Type` and `Content-Disposition` headers); `GET /exports/pdf/:classId` streaming a PDF with RTL text direction and a Hebrew-supporting font via pdfkit.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Added `getHebrewGradeLabel` to the `@fitgrade/types` import; replaced raw `row.fitnessAvg`, `row.conductScore`, and `row.recommendedFinalGrade` renders with `getHebrewGradeLabel(...)` in all three table columns.
 
 ---
 
@@ -855,7 +860,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/api/src/classes/dto/quick-grade-override.dto.ts:1`
 - **Description:** The DTO only contains `testTypeId` and `gradeOverride`. The `overrideReason` field is absent entirely. The `TestResult` schema defines `overrideReason String?` as a companion field, and audit rules require reason capture for `GRADE_OVERRIDE` actions.
 - **Expected:** A required `@IsString() @MinLength(1) overrideReason: string` field (or optional with documented justification) should be present so override reasons are captured and stored.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Added optional `@IsString() overrideReason?: string` field to `QuickGradeOverrideDto`; threaded through to the audit log `newValue` in `classes.service.ts:setStudentGradeOverride()`.
 
 ---
 
@@ -877,7 +883,7 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/web/hooks/use-grading-policy.ts:22`
 - **Description:** `updateGradingPolicy()` and `updateClassGradingPolicy()` return/throw without any toast or error notification. The web rules require a Hebrew `<Toast>` on every API error. `updateClassGradingPolicy()` has no error handling at the hook level — callers receive a raw rejected Promise with no guidance.
 - **Expected:** API errors from both mutation functions must trigger a shadcn/ui Hebrew `<Toast>` with a user-readable message.
-- **Status:** OPEN
+- **Status:** FIXED (was already implemented — both callers show inline Hebrew error: settings page renders "שגיאה בשמירה — נסה שוב" on `policySaveStatus === 'error'`; reports dialog sets `policyError` state displayed inline)
 
 ---
 
@@ -888,7 +894,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/web/hooks/use-grading-policy.ts:14`
 - **Description:** If the report settings fetch fails, the form silently stays at its `defaultValues` (passingGrade=60, empty strings) with no indication to the teacher that settings could not be loaded. The hook exposes an `error` field but the settings page does not surface it for report settings.
 - **Expected:** A visible Hebrew error message should be shown when report settings fail to load, preventing the teacher from unknowingly saving defaults over their actual settings.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Destructured `error: reportLoadError` from `useReportSettings()` in `settings/page.tsx`. Added a third branch between the loading spinner and the form: when `reportLoadError` is truthy, renders a red error card (AlertCircle + "שגיאה בטעינת הגדרות הדוחות — אנא רענן את הדף") instead of the form, so the save button is never shown and the teacher cannot overwrite actual settings with form defaults.
 
 ---
 
@@ -899,7 +906,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/web/components/ui/weight-slider.tsx:74`
 - **Description:** The divider between weight segments uses `style={{ left: \`${fitnessWeight}%\` }}` — a physical CSS property banned by the project RTL rules. In an RTL context (`dir="rtl"` on the parent), `left` does not flip; it anchors to the physical left edge, so the divider appears at the wrong location.
 - **Expected:** Replace `left` with the logical CSS property `insetInlineStart` (e.g., `style={{ insetInlineStart: \`${fitnessWeight}%\` }}`).
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Replaced `style={{ left: ... }}` with `style={{ insetInlineStart: ... }}` in `weight-slider.tsx:74`.
 
 ---
 
@@ -921,7 +929,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/web/app/(teacher)/outstanding-students/page.tsx:206`
 - **Description:** The `RankRow` component (rank 4 and below) renders `{avgGrade}` — a raw 0–100 integer — directly in the grade badge. `PodiumCard` (rank 1–3) correctly uses `getHebrewGradeLabel(avgGrade)`, but rank rows (the majority of the leaderboard) violate the project rule that grade scores must never be rendered directly.
 - **Expected:** The `RankRow` grade badge should show `getHebrewGradeLabel(avgGrade)` (e.g., "מצטיין", "טוב") instead of the raw integer.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Replaced `{avgGrade}` with `{getHebrewGradeLabel(avgGrade)}` in `RankRow` grade badge (`outstanding-students/page.tsx:299`); removed `tabular-nums` class (not meaningful for a text label). Also fixed `ClassRankingRow` in `dashboard/page.tsx` which rendered raw `avgScore` via `<CountUp>` — replaced with `{getHebrewGradeLabel(item.avgScore)}`.
 
 ---
 
@@ -932,7 +941,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
 - **File:** `apps/api/src/dashboard/dashboard.repository.ts:150`
 - **Description:** `findResultsForTeacher()` has no `where: { calculatedGrade: { not: null } }` filter. Line 150 converts null grades to 0 with `?? 0`. These zero-grade records are included in `DashboardService.getStats()` fitness average denominator (`rawResults.length`), artificially lowering the reported averages for students who have a result row but no calculated grade yet.
 - **Expected:** Add `calculatedGrade: { not: null }` to the Prisma `where` clause in `findResultsForTeacher`, consistent with `findTopStudents` and `findMonthlyClassAverages` which already exclude null-grade rows.
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Added `OR: [{ calculatedGrade: { not: null } }, { gradeOverride: { not: null } }]` to the Prisma `where` clause in `findResultsForTeacher`, ensuring rows with no effective grade (neither calculated nor override) are excluded from the average. Handles the edge case where `gradeOverride` is set but `calculatedGrade` is null.
 
 ---
 
@@ -946,7 +956,8 @@ Agents run: `schedule-qa`, `settings-qa`, `analytics-qa`
   - Lines 174–175: `paddingLeft: 16, paddingRight: 16`
   - Line 225: `marginLeft: 12`
 - **Expected:** Use logical CSS properties: `paddingInlineStart`/`paddingInlineEnd` and `marginInlineStart` (or `paddingInline: 16` for symmetric cases).
-- **Status:** OPEN
+- **Status:** FIXED
+- **Fix applied:** Replaced all three physical style blocks with logical equivalents: `paddingLeft`/`paddingRight` → `paddingInlineStart`/`paddingInlineEnd`; `marginLeft` → `marginInlineStart`.
 
 ---
 

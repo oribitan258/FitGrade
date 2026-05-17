@@ -312,9 +312,9 @@ function ClassRankingRow({
         </div>
       </div>
 
-      {/* Score — dir=ltr, maximised size */}
-      <div dir="ltr" className="shrink-0 font-black tabular-nums" style={{ fontSize: '1.0rem', color: '#4c1d95', minWidth: 28, textAlign: 'center', letterSpacing: '-0.02em' }}>
-        <CountUp end={item.avgScore} duration={1.2} useEasing delay={delay} />
+      {/* Score — Hebrew grade label */}
+      <div className="shrink-0 font-black" style={{ fontSize: '0.85rem', color: '#4c1d95', minWidth: 40, textAlign: 'center' }}>
+        {getHebrewGradeLabel(item.avgScore)}
       </div>
     </motion.div>
   );
@@ -2377,7 +2377,7 @@ export default function DashboardPage(): React.JSX.Element {
   // by a semester change, so the sidebar toggle feels instant while the mass
   // SWR refetch is scheduled as low-priority work — eliminating the freeze.
   const deferredSemester = useDeferredValue(activeSemester);
-  const { data: stats,        isLoading: statsLoading   } = useDashboardStats(deferredSemester);
+  const { data: stats, isLoading: statsLoading, error: statsError } = useDashboardStats(deferredSemester);
   const { data: upcomingEvent, isLoading: eventLoading } = useUpcomingEvent();
 
   useSignalPageReady('dashboard', stats !== undefined);
@@ -2403,6 +2403,16 @@ export default function DashboardPage(): React.JSX.Element {
     : 'אין נתונים עדיין';
 
   if (isLoading) return <DashboardSkeleton />;
+
+  if (statsError) {
+    return (
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-2xl border border-red-100 bg-red-50 p-8 text-center">
+        <AlertTriangle className="h-8 w-8 text-red-400" aria-hidden="true" />
+        <p className="text-base font-semibold text-red-700">שגיאה בטעינת הנתונים</p>
+        <p className="text-sm text-red-500">לא ניתן לטעון את נתוני לוח הבקרה — נסה לרענן את הדף</p>
+      </div>
+    );
+  }
 
   return (
     <>

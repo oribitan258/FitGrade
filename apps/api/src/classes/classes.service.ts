@@ -230,9 +230,30 @@ export class ClassesService {
       entityType: 'TestResult',
       entityId: `${classId}/${studentId}`,
       actorId: teacherId,
-      newValue: { gradeOverride: dto.gradeOverride, testTypeId: dto.testTypeId },
+      newValue: { gradeOverride: dto.gradeOverride, testTypeId: dto.testTypeId, overrideReason: dto.overrideReason ?? null },
     });
     return result;
+  }
+
+  /**
+   * Removes a student from a class roster.
+   * Verifies teacher ownership, then hard-deletes the ClassEnrollment row.
+   * Historical results and attendance records are preserved.
+   */
+  async removeStudentFromClass(
+    classId: string,
+    studentId: string,
+    teacherId: string,
+  ): Promise<void> {
+    await this.classesRepository.removeStudentEnrollment(classId, studentId, teacherId);
+    this.logger.log(`Student removed from class: student=${studentId} class=${classId} teacher=${teacherId}`);
+    void this.auditLogService.log({
+      action: AuditAction.STUDENT_REMOVED,
+      entityType: 'ClassEnrollment',
+      entityId: `${classId}/${studentId}`,
+      actorId: teacherId,
+      newValue: { classId, studentId },
+    });
   }
 
   /**

@@ -144,7 +144,7 @@ export default function SettingsPage(): React.JSX.Element {
     (fitnessWeight !== policy.fitnessWeight || conductWeight !== policy.conductWeight);
 
   // ── Report settings ────────────────────────────────────────────────────────
-  const { data: reportSettings, isLoading: reportLoading } = useReportSettings();
+  const { data: reportSettings, isLoading: reportLoading, error: reportLoadError } = useReportSettings();
   const [reportSaveStatus, setReportSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [reportIsSaving, setReportIsSaving] = useState(false);
 
@@ -342,6 +342,13 @@ export default function SettingsPage(): React.JSX.Element {
         {reportLoading ? (
           <div className="flex h-48 items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+          </div>
+        ) : reportLoadError ? (
+          <div className="flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-5 py-4">
+            <AlertCircle className="h-5 w-5 shrink-0 text-red-400" aria-hidden="true" />
+            <p className="text-sm font-semibold text-red-700">
+              שגיאה בטעינת הגדרות הדוחות — אנא רענן את הדף
+            </p>
           </div>
         ) : (
           <form data-tour="settings-form" onSubmit={(e) => { void handleSubmit(onReportSubmit)(e); }} noValidate>

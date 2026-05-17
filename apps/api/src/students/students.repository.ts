@@ -602,66 +602,102 @@ export class StudentsRepository {
 
   /**
    * Bulk-imports students from a parsed roster into the given class.
-   * For each row:
-   *   1. Finds an existing Student by nationalId, or creates one.
-   *   2. Skips the row if the student is already enrolled in this class.
-   *   3. Creates a ClassEnrollment for new enrollments.
-   * Runs all writes inside a single $transaction for atomicity.
+   *
+   * Replaces the previous per-row serial loop (N×4 queries inside one long
+   * transaction) with 5 fixed queries regardless of roster size. (STAB-004)
+   *
+   * Query plan:
+   *   1. findMany — existing students by nationalId (pre-fetch)
+   *   2. findMany — existing enrollments for this class (pre-fetch)
+   *   3. createMany — new students (skipDuplicates for concurrent-import safety)
+   *   4. findMany  — re-fetch newly created students to get their IDs
+   *   5. createMany — new enrollments for all unenrolled students
+   *
+   * All 5 queries run inside a single $transaction for atomicity.
+   * The transaction is short-lived (no awaits inside a loop) so it never
+   * holds the connection long enough to exhaust the pool.
    */
   async importStudents(
     classId: string,
     rows: Array<{ nationalId: string; firstName: string; lastName: string; gender: 'MALE' | 'FEMALE' | null }>,
   ): Promise<{ added: number; existing: number; reEnrolled: number }> {
-    let added = 0;
-    let existing = 0;
-    let reEnrolled = 0;
+    if (rows.length === 0) return { added: 0, existing: 0, reEnrolled: 0 };
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const row of rows) {
-        // Find or create student by nationalId
-        let student = await tx.student.findUnique({
-          where: { nationalId: row.nationalId },
-          select: { id: true },
-        });
+    const nationalIds = rows.map((r) => r.nationalId);
 
-        const isNewStudent = student === null;
+    return this.prisma.$transaction(async (tx) => {
+      // ── 1. Pre-fetch: which students already exist in the DB? ──────────────
+      const existingStudents = await tx.student.findMany({
+        where: { nationalId: { in: nationalIds } },
+        select: { id: true, nationalId: true },
+      });
+      const existingByNationalId = new Map(existingStudents.map((s) => [s.nationalId, s.id]));
 
-        if (student === null) {
-          student = await tx.student.create({
-            data: {
-              firstName: row.firstName,
-              lastName: row.lastName,
-              gender: (row.gender ?? 'MALE') as Gender,
-              nationalId: row.nationalId,
-              studentCode: row.nationalId.slice(-4),
+      // ── 2. Pre-fetch: which of those students are already enrolled here? ──
+      const existingEnrollments = existingStudents.length > 0
+        ? await tx.classEnrollment.findMany({
+            where: {
+              classId,
+              studentId: { in: existingStudents.map((s) => s.id) },
             },
-            select: { id: true },
-          });
-        }
+            select: { studentId: true },
+          })
+        : [];
+      const enrolledStudentIds = new Set(existingEnrollments.map((e) => e.studentId));
 
-        // Check if already enrolled in this class
-        const enrollmentExists = await tx.classEnrollment.findUnique({
-          where: { classId_studentId: { classId, studentId: student.id } },
-          select: { id: true },
+      // ── 3. Create all brand-new students in one batch ─────────────────────
+      const newStudentRows = rows.filter((r) => !existingByNationalId.has(r.nationalId));
+      if (newStudentRows.length > 0) {
+        await tx.student.createMany({
+          data: newStudentRows.map((r) => ({
+            firstName:   r.firstName,
+            lastName:    r.lastName,
+            gender:      (r.gender ?? 'MALE') as Gender,
+            nationalId:  r.nationalId,
+            studentCode: r.nationalId.slice(-4),
+          })),
+          skipDuplicates: true,
         });
-
-        if (enrollmentExists !== null) {
-          existing++;
-          continue;
-        }
-
-        await tx.classEnrollment.create({
-          data: { classId, studentId: student.id, studentCode: row.nationalId.slice(-4) },
-        });
-
-        if (isNewStudent) {
-          added++;
-        } else {
-          reEnrolled++;
-        }
       }
-    });
 
-    return { added, existing, reEnrolled };
+      // ── 4. Re-fetch IDs for the batch we just created ─────────────────────
+      const createdStudents = newStudentRows.length > 0
+        ? await tx.student.findMany({
+            where: { nationalId: { in: newStudentRows.map((r) => r.nationalId) } },
+            select: { id: true, nationalId: true },
+          })
+        : [];
+
+      // Build a complete nationalId → studentId map covering all rows
+      const allById = new Map([
+        ...existingByNationalId,
+        ...createdStudents.map((s) => [s.nationalId, s.id] as [string, string]),
+      ]);
+
+      // ── 5. Create all missing enrollments in one batch ────────────────────
+      const toEnroll = rows.filter((r) => {
+        const sid = allById.get(r.nationalId);
+        return sid !== undefined && !enrolledStudentIds.has(sid);
+      });
+
+      if (toEnroll.length > 0) {
+        await tx.classEnrollment.createMany({
+          data: toEnroll.map((r) => ({
+            classId,
+            // sid is guaranteed non-null: toEnroll filter confirmed allById.get() !== undefined
+            studentId:   allById.get(r.nationalId)!,
+            studentCode: r.nationalId.slice(-4),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // ── Compute counters ──────────────────────────────────────────────────
+      const added      = toEnroll.filter((r) => !existingByNationalId.has(r.nationalId)).length;
+      const reEnrolled = toEnroll.filter((r) =>  existingByNationalId.has(r.nationalId)).length;
+      const existing   = rows.length - added - reEnrolled;
+
+      return { added, existing, reEnrolled };
+    });
   }
 }

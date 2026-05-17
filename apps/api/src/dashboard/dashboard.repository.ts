@@ -138,6 +138,10 @@ export class DashboardRepository {
           classId: { in: classIds },
           ...(semester !== undefined ? { semester } : {}),
         },
+        // Exclude results where neither a calculated grade nor an override exists.
+        // Including null-grade rows as 0 would pull the fitness average toward zero
+        // and inflate the below-norm count. (BUG-055)
+        OR: [{ calculatedGrade: { not: null } }, { gradeOverride: { not: null } }],
       },
       select: {
         calculatedGrade: true,

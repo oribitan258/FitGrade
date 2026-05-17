@@ -61,6 +61,15 @@ export interface BeepTestSummaryProps {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Encodes (level, shuttle) into the rawValue float used for norm table lookup.
+ * Uses integer arithmetic to avoid floating-point representation errors
+ * (e.g., 5 + 3×0.1 = 5.300000000000001 in IEEE-754).
+ */
+function encodeBeepValue(level: number, shuttle: number): number {
+  return Math.round(level * 10 + shuttle) / 10;
+}
+
 /** Computes the rawValue for a student. */
 function computeRawValue(
   student: BeepStudentState,
@@ -68,18 +77,25 @@ function computeRawValue(
   finalShuttle: number,
 ): number {
   if (student.eliminatedAt !== null) {
-    return parseFloat(
-      (student.eliminatedAt.level + student.eliminatedAt.shuttle * 0.1).toFixed(1),
-    );
+    return encodeBeepValue(student.eliminatedAt.level, student.eliminatedAt.shuttle);
   }
   // Still active or warning at test end — use the engine's final position.
-  return parseFloat((finalLevel + finalShuttle * 0.1).toFixed(1));
+  return encodeBeepValue(finalLevel, finalShuttle);
 }
 
-/** Formats a rawValue for display: "8.3" → "רמה 8, מעבר 3". */
-function formatRawValue(rawValue: number): string {
-  const level = Math.floor(rawValue);
+/**
+ * Decodes a rawValue back to level and shuttle counts.
+ * Uses Math.round to guard against accumulated float imprecision.
+ */
+function decodeBeepValue(rawValue: number): { level: number; shuttle: number } {
+  const level   = Math.floor(rawValue);
   const shuttle = Math.round((rawValue - level) * 10);
+  return { level, shuttle };
+}
+
+/** Formats a rawValue for display: "8.3" → "8.3". */
+function formatRawValue(rawValue: number): string {
+  const { level, shuttle } = decodeBeepValue(rawValue);
   return `${level}.${shuttle}`;
 }
 

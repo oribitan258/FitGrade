@@ -256,6 +256,7 @@ model NormTable {
   testTypeId String
   testType   FitnessTestType @relation(fields: [testTypeId], references: [id], onDelete: Cascade)
 
+  @@unique([testTypeId, gender, gradeLevel, minValue])
   @@index([testTypeId, gender, gradeLevel])
   @@map("norm_tables")
 }

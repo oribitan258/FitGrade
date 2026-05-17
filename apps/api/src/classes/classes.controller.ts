@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -118,6 +119,25 @@ export class ClassesController {
     @CurrentUser() user: JwtPayload,
   ): Promise<QuickGradeResponseDto> {
     return this.classesService.setStudentGradeOverride(classId, studentId, dto, user.sub);
+  }
+
+  /**
+   * Removes a student from a class roster.
+   * Hard-deletes the ClassEnrollment row; historical results/attendance preserved.
+   * Verifies the class belongs to the teacher before deletion.
+   */
+  @Delete(':id/students/:studentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a student from a class roster' })
+  @ApiResponse({ status: 204, description: 'Student removed' })
+  @ApiResponse({ status: 403, description: 'Class belongs to a different teacher' })
+  @ApiResponse({ status: 404, description: 'Class or enrollment not found' })
+  async removeStudent(
+    @Param('id') classId: string,
+    @Param('studentId') studentId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    await this.classesService.removeStudentFromClass(classId, studentId, user.sub);
   }
 
   /**

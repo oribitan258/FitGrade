@@ -245,14 +245,21 @@ export class AuthService {
   }
 
   /**
-   * Verifies a refresh token and issues a new access token.
-   * Checks the blacklist first — a revoked token (jti present) is rejected
-   * even if its cryptographic signature is still valid.
+   * Verifies a refresh token, rotates it, and issues a fresh token pair.
+   *
+   * Rotation protocol (BUG-030):
+   *   1. Verify the incoming refresh token's signature + expiry.
+   *   2. Check the blacklist — a revoked jti means the token was already used
+   *      or the session was logged out; log a security warning (possible reuse).
+   *   3. Immediately revoke the incoming jti so it can never be used again.
+   *   4. Issue a brand-new token pair (fresh jti, fresh 7-day refresh window).
+   *
+   * This means a stolen refresh token is only useful for one rotation window:
+   * as soon as the legitimate owner (or the attacker) rotates, the other party's
+   * copy is blacklisted and rejected on the next use.
    */
-  async refreshAccessToken(refreshToken: string): Promise<string> {
+  async refreshAccessToken(refreshToken: string): Promise<TokenPair> {
     const refreshSecret = this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
-    const accessSecret  = this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
-    const accessExpiry  = this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
 
     let payload: JwtPayload & { jti?: string; exp?: number };
     try {
@@ -264,19 +271,22 @@ export class AuthService {
       throw new UnauthorizedException('טוקן רענון לא תקף או פג תוקפו');
     }
 
-    // Reject tokens whose jti has been blacklisted (logged-out sessions).
-    if (payload.jti !== undefined && await this.blacklist.isRevoked(payload.jti)) {
-      throw new UnauthorizedException('טוקן רענון בוטל — נא להתחבר מחדש');
+    if (payload.jti !== undefined) {
+      if (await this.blacklist.isRevoked(payload.jti)) {
+        // The jti is already blacklisted — either a logout or a rotation already
+        // happened. This indicates potential token theft / reuse attack.
+        this.logger.warn(
+          `Refresh token reuse detected: jti=${payload.jti} sub=${payload.sub}`,
+        );
+        throw new UnauthorizedException('טוקן רענון בוטל — נא להתחבר מחדש');
+      }
+      // Revoke the incoming jti immediately so this exact token cannot be used again.
+      await this.blacklist.revoke(payload.jti, (payload.exp ?? 0) * 1000);
     }
 
-    // Strip JWT meta-fields before re-signing — signAsync adds fresh iat/exp/jti
+    // Strip JWT meta-fields; issueTokenPair adds fresh iat/exp/jti.
     const { iat: _iat, exp: _exp, jti: _jti, ...freshPayload } = payload;
-
-    return this.jwtService.signAsync(freshPayload, {
-      secret: accessSecret,
-      expiresIn: accessExpiry,
-      algorithm: 'HS256',
-    });
+    return this.issueTokenPair(freshPayload);
   }
 
   /**
