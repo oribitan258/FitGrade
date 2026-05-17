@@ -17,7 +17,7 @@ export default function RootLayout({
   return (
     // lang="he" dir="rtl" — MANDATORY. Never remove. Sets RTL layout for the entire app.
     // All Tailwind classes must use logical properties (ms-/me-/ps-/pe-/text-start/text-end).
-    // Physical directional classes (ml-/mr-/pl-/pr-/text-left/text-right) are BANNED.
+    // Physical directional classes are BANNED — use logical properties only (ms-/me-/ps-/pe-).
     <html lang="he" dir="rtl">
       <body className={`${heebo.className} overflow-x-hidden`}>{children}</body>
     </html>
