@@ -253,20 +253,27 @@ export class AuthController {
 
   /**
    * Issues a teacher JWT for the seeded dummy teacher without Google OAuth.
-   * Blocked in production — safe to leave in code.
+   *
+   * Opt-in guard (SEC-010): requires ENABLE_DEV_LOGIN=true to be explicitly
+   * set in the environment. Fails closed by default — an unset or misspelled
+   * variable blocks the endpoint even on non-production deployments (staging,
+   * review apps) where NODE_ENV might not be 'production'.
    */
   @Public()
   @Post('dev-login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '[DEV ONLY] Bypass Google OAuth — logs in as dummy teacher' })
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: '[DEV ONLY] Bypass Google OAuth — requires ENABLE_DEV_LOGIN=true' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
-  @ApiResponse({ status: 403, description: 'Not available in production' })
+  @ApiResponse({ status: 403, description: 'ENABLE_DEV_LOGIN not set or NODE_ENV is production' })
   async devLogin(
     @Body() dto: DevLoginDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    if (process.env['NODE_ENV'] === 'production') {
-      throw new ForbiddenException('Dev login is not available in production');
+    const isExplicitlyEnabled = process.env['ENABLE_DEV_LOGIN'] === 'true';
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    if (!isExplicitlyEnabled || isProduction) {
+      throw new ForbiddenException('Dev login is not available in this environment');
     }
     const { accessToken, refreshToken } = await this.authService.devLogin(dto.simulateFirstLogin ?? false);
     this.setRefreshCookie(res, refreshToken);

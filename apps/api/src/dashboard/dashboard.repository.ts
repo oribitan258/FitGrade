@@ -114,7 +114,7 @@ export class DashboardRepository {
    */
   async findTeacherClassMeta(teacherId: string): Promise<ClassMeta[]> {
     const classes = await this.prisma.class.findMany({
-      where: { teacherId },
+      where: { teacherId, deletedAt: null },
       select: {
         id: true,
         _count: { select: { enrollments: true } },

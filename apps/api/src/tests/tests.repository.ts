@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
@@ -73,6 +73,24 @@ export class TestsRepository {
   }
 
   /**
+   * Verifies the student is actively enrolled in the given class.
+   * Throws BadRequestException if no enrollment record exists. (LOGIC-003)
+   *
+   * Prevents a teacher from submitting a result for a student who belongs to
+   * a different class — even if the teacher owns the session and the student
+   * exists in the system.
+   */
+  async verifyStudentEnrolled(studentId: string, classId: string): Promise<void> {
+    const enrollment = await this.prisma.classEnrollment.findFirst({
+      where: { studentId, classId },
+      select: { id: true },
+    });
+    if (enrollment === null) {
+      throw new BadRequestException('התלמיד אינו רשום לכיתה זו');
+    }
+  }
+
+  /**
    * Verifies the test type exists.
    * Throws NotFoundException if not found.
    */
@@ -111,33 +129,69 @@ export class TestsRepository {
   /**
    * Finds a session and verifies it belongs to the teacher's class.
    * Returns the testTypeId needed for grade calculation.
-   * Throws NotFoundException if the session doesn't exist or isn't accessible by this teacher.
+   *
+   * Distinguishes:
+   *   - NotFoundException — session id does not exist at all
+   *   - ForbiddenException — session exists but is owned by a different teacher
+   *
+   * Two-step lookup avoids the information-disclosure gap where a combined
+   * `findFirst({ where: { id, class: { teacherId } } })` returns null for both
+   * cases, masking cross-teacher access as a generic 404. (SEC-003)
    */
   async findSessionWithOwnership(
     sessionId: string,
     teacherId: string,
-  ): Promise<{ testTypeId: string; conductedAt: Date; inputType: import('@prisma/client').FitnessInputType; testNameHe: string; classId: string }> {
-    const session = await this.prisma.testSession.findFirst({
-      where: { id: sessionId, class: { teacherId } },
-      select: { classId: true, testTypeId: true, conductedAt: true, testType: { select: { inputType: true, nameHe: true } } },
+  ): Promise<{
+    testTypeId: string;
+    conductedAt: Date;
+    inputType: import('@prisma/client').FitnessInputType;
+    testNameHe: string;
+    classId: string;
+    isStopwatch: boolean;
+    startedAt: Date | null;
+  }> {
+    const session = await this.prisma.testSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        classId: true,
+        testTypeId: true,
+        conductedAt: true,
+        isStopwatch: true,
+        startedAt: true,
+        class: { select: { teacherId: true } },
+        testType: { select: { inputType: true, nameHe: true } },
+      },
     });
     if (session === null) {
       throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
     }
-    return { classId: session.classId, testTypeId: session.testTypeId, conductedAt: session.conductedAt, inputType: session.testType.inputType, testNameHe: session.testType.nameHe };
+    if (session.class.teacherId !== teacherId) {
+      throw new ForbiddenException();
+    }
+    return {
+      classId: session.classId,
+      testTypeId: session.testTypeId,
+      conductedAt: session.conductedAt,
+      inputType: session.testType.inputType,
+      testNameHe: session.testType.nameHe,
+      isStopwatch: session.isStopwatch,
+      startedAt: session.startedAt,
+    };
   }
 
   /**
    * Returns full session details — including test-type metadata, enrolled students,
    * and all results recorded so far — for the live-session UI.
-   * Throws NotFoundException if session doesn't exist or isn't accessible by this teacher.
+   *
+   * Distinguishes 404 (session does not exist) from 403 (session belongs to
+   * a different teacher). See findSessionWithOwnership for the same pattern. (SEC-003)
    */
   async findSessionWithStudents(
     sessionId: string,
     teacherId: string,
   ): Promise<SessionDetailResponseDto> {
-    const session = await this.prisma.testSession.findFirst({
-      where: { id: sessionId, class: { teacherId } },
+    const session = await this.prisma.testSession.findUnique({
+      where: { id: sessionId },
       select: {
         id: true,
         classId: true,
@@ -152,6 +206,7 @@ export class TestsRepository {
         },
         class: {
           select: {
+            teacherId: true,
             enrollments: {
               select: {
                 student: {
@@ -184,6 +239,9 @@ export class TestsRepository {
 
     if (session === null) {
       throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
+    }
+    if (session.class.teacherId !== teacherId) {
+      throw new ForbiddenException();
     }
 
     return {
@@ -309,37 +367,48 @@ export class TestsRepository {
 
   /**
    * Updates gradeOverride and overrideReason on an existing TestResult.
-   * Throws NotFoundException if the result doesn't exist.
+   *
+   * SECURITY: the (resultId, sessionId) pair is enforced atomically via
+   * `updateMany`. Without this, a teacher who owns Session A could pass the
+   * resultId of a record belonging to Session B (a different teacher's session)
+   * and overwrite it — the session-level ownership check upstream would have
+   * passed because it only validated Session A. (SEC-001)
+   *
+   * `updateMany` returns `count: 0` when no row matches the combined filter,
+   * which we translate to NotFoundException (we never reveal that the
+   * resultId exists elsewhere — that would be an information disclosure).
+   *
+   * The trailing `findUniqueOrThrow` is a primary-key lookup and runs only
+   * when the update succeeded, so it cannot throw under normal operation.
    */
   async overrideResultGrade(
     resultId: string,
+    sessionId: string,
     gradeOverride: number,
     overrideReason: string,
   ): Promise<ResultResponseDto> {
-    try {
-      const result = await this.prisma.testResult.update({
-        where: { id: resultId },
-        data: { gradeOverride, overrideReason },
-        select: RESULT_SELECT,
-      });
-      return {
-        id: result.id,
-        sessionId: result.sessionId,
-        studentId: result.studentId,
-        rawValue: Number(result.rawValue ?? 0),
-        calculatedGrade: result.calculatedGrade ?? 0,
-        gradeOverride: result.gradeOverride,
-        recordedAt: result.recordedAt,
-      };
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2025'
-      ) {
-        throw new NotFoundException(`תוצאה ${resultId} לא נמצאה`);
-      }
-      throw e;
+    const updated = await this.prisma.testResult.updateMany({
+      where: { id: resultId, sessionId },
+      data: { gradeOverride, overrideReason },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException(
+        `תוצאה ${resultId} לא נמצאה בסשן ${sessionId}`,
+      );
     }
+    const result = await this.prisma.testResult.findUniqueOrThrow({
+      where: { id: resultId },
+      select: RESULT_SELECT,
+    });
+    return {
+      id: result.id,
+      sessionId: result.sessionId,
+      studentId: result.studentId,
+      rawValue: Number(result.rawValue ?? 0),
+      calculatedGrade: result.calculatedGrade ?? 0,
+      gradeOverride: result.gradeOverride,
+      recordedAt: result.recordedAt,
+    };
   }
 
   /**

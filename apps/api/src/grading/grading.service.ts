@@ -63,11 +63,13 @@ export class GradingService {
     );
 
     if (normRow === null) {
+      // null only when zero norm bands are seeded for this combination —
+      // the repository clamps out-of-range values to the nearest boundary.
       this.logger.warn(
-        `No norm row found for testTypeId=${testTypeId}, gender=${student.gender}, gradeLevel=${gradeLevel}, rawValue=${rawValue}`,
+        `Norm table not configured: testTypeId=${testTypeId} gender=${student.gender} gradeLevel=${gradeLevel}`,
       );
       throw new BadRequestException(
-        'אין נתוני נורמה תואמים למבחן זה עבור שכבת גיל ומגדר אלו.',
+        'טבלת הנורמות למבחן זה עבור שכבת גיל ומגדר אלו אינה מוגדרת. פנה למנהל המערכת.',
       );
     }
 

@@ -17,7 +17,7 @@ export class SettingsService {
     teacherId: string,
     dto: UpdateGradingPolicyDto,
   ): Promise<GradingPolicyResponseDto> {
-    if (Math.abs((dto.fitnessWeight + dto.conductWeight) - 100) > 0.5) {
+    if (dto.fitnessWeight + dto.conductWeight !== 100) {
       throw new BadRequestException('משקל הכושר ומשקל התלמידות חייבים לסכום ל-100');
     }
     const result = await this.settingsRepository.updateGradingPolicy(

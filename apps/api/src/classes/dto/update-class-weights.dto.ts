@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { WeightsSumTo100 } from '../../common/validators/weights-sum.validator';
 
 /**
  * Request body for PATCH /classes/:id/grading-policy.
@@ -16,6 +17,7 @@ export class UpdateClassWeightsDto {
   @IsInt()
   @Min(0)
   @Max(100)
+  @WeightsSumTo100('talmidautWeight')
   testWeight!: number | null;
 
   @ApiPropertyOptional({

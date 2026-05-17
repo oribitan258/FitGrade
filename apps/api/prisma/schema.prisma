@@ -489,6 +489,20 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// ─── Auth: revoked refresh tokens ────────────────────────────────────────────
+// Persists the jti (JWT ID) of every refresh token that was explicitly revoked
+// via logout. Replaces the previous in-memory Map so revocations survive
+// API restarts and work correctly across multiple instances. (SEC-002)
+model RevokedToken {
+  jti       String   @id             // unique by definition — JWT ID
+  expiresAt DateTime                  // mirrors the token's exp claim
+  revokedAt DateTime @default(now())
+
+  // For the hourly cleanup sweep: delete all rows where expiresAt < now()
+  @@index([expiresAt])
+  @@map("revoked_tokens")
+}
+
 // ─── RUM (Real User Monitoring) ──────────────────────────────────────────────
 // Stores web-vitals observations beaconed from the production web app.
 // No foreign keys — rows are append-only, no auth context required.

@@ -5,6 +5,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -53,5 +54,6 @@ export class UpdateReportSettingsDto {
   @ApiPropertyOptional({ example: 'data:image/png;base64,...' })
   @IsOptional()
   @IsString()
+  @MaxLength(524_288) // 512 KB encoded ≈ ~384 KB PNG — rejects runaway base64 blobs
   teacherSignature?: string | null;
 }

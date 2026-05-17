@@ -197,7 +197,7 @@ export class ClassesService {
       );
     }
     if (testWeight !== null && talmidautWeight !== null) {
-      if (Math.abs((testWeight + talmidautWeight) - 100) > 0.5) {
+      if (testWeight + talmidautWeight !== 100) {
         throw new BadRequestException('משקל הכושר ומשקל התלמידות חייבים לסכום ל-100');
       }
     }

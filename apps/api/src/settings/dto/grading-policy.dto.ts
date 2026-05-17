@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, Max, Min } from 'class-validator';
+import { WeightsSumTo100 } from '../../common/validators/weights-sum.validator';
 
 /** Response shape for GET /settings/grading-policy. */
 export class GradingPolicyResponseDto {
@@ -16,6 +17,7 @@ export class UpdateGradingPolicyDto {
   @IsInt()
   @Min(0)
   @Max(100)
+  @WeightsSumTo100('conductWeight')
   fitnessWeight!: number;
 
   @ApiProperty({ example: 40 })

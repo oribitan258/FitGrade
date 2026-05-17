@@ -116,8 +116,12 @@ export class TestsService {
   ): Promise<ResultResponseDto> {
     await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
 
+    // sessionId is forwarded to the repository so the UPDATE is gated on
+    // (resultId, sessionId) together — prevents cross-session override
+    // even if the session ownership check above passes. (SEC-001)
     const result = await this.testsRepository.overrideResultGrade(
       resultId,
+      sessionId,
       dto.gradeOverride,
       dto.overrideReason,
     );
@@ -145,6 +149,13 @@ export class TestsService {
 
   /** Minimum rawValue (seconds) accepted for TIME-type tests. Prevents 0-second or absurd entries. */
   private static readonly MIN_TIME_SECONDS = 30;
+
+  /**
+   * Maximum duration a stopwatch session may run before new taps are rejected. (LOGIC-007)
+   * 2 hours covers the longest realistic PE field session with generous margin.
+   * Non-stopwatch (manual entry) sessions have no timer so this limit does not apply.
+   */
+  private static readonly MAX_STOPWATCH_DURATION_MS = 2 * 60 * 60 * 1000;
 
   /**
    * Distance-run gender restrictions per Ministry of Education curriculum.
@@ -198,8 +209,24 @@ export class TestsService {
     dto: SubmitResultDto,
     teacherId: string,
   ): Promise<ResultResponseDto> {
-    const { testTypeId, conductedAt, inputType, testNameHe, classId } =
+    const { testTypeId, conductedAt, inputType, testNameHe, classId, isStopwatch, startedAt } =
       await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+
+    // Verify the student is enrolled in the session's class before grading.
+    // Prevents results being written for students from other classes. (LOGIC-003)
+    await this.testsRepository.verifyStudentEnrolled(dto.studentId, classId);
+
+    // Reject stopwatch taps for sessions that have been running too long. (LOGIC-007)
+    // Manual-entry sessions have no server-side timer so this guard is skipped for them.
+    if (
+      isStopwatch &&
+      startedAt !== null &&
+      Date.now() - startedAt.getTime() > TestsService.MAX_STOPWATCH_DURATION_MS
+    ) {
+      throw new BadRequestException(
+        'המפגש פתוח יותר מדי זמן — יש לסיים אותו וליצור מפגש חדש',
+      );
+    }
 
     if (inputType === FitnessInputType.TIME && Number(dto.rawValue) < TestsService.MIN_TIME_SECONDS) {
       throw new BadRequestException(`ערך זמן מינימלי הוא ${TestsService.MIN_TIME_SECONDS} שניות`);

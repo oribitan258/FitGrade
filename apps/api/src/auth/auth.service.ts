@@ -265,7 +265,7 @@ export class AuthService {
     }
 
     // Reject tokens whose jti has been blacklisted (logged-out sessions).
-    if (payload.jti !== undefined && this.blacklist.isRevoked(payload.jti)) {
+    if (payload.jti !== undefined && await this.blacklist.isRevoked(payload.jti)) {
       throw new UnauthorizedException('טוקן רענון בוטל — נא להתחבר מחדש');
     }
 
@@ -292,7 +292,7 @@ export class AuthService {
         { secret: refreshSecret, algorithms: ['HS256'] },
       );
       if (payload.jti && payload.exp) {
-        this.blacklist.revoke(payload.jti, payload.exp * 1000);
+        await this.blacklist.revoke(payload.jti, payload.exp * 1000);
       }
     } catch {
       // Invalid or expired token — nothing to revoke.

@@ -6,6 +6,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -27,6 +28,7 @@ export class RumMetricEntryDto {
   declare navigationType: string;
 
   @IsString()
+  @MaxLength(2048)
   @IsUrl({ require_tld: false })
   declare pageUrl: string;
 }

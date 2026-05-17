@@ -1,38 +1,39 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * In-memory blacklist for revoked refresh-token JTI claims.
+ * Database-backed blacklist for revoked refresh-token JTI claims. (SEC-002)
  *
- * When a teacher logs out, their refresh token's `jti` (JWT ID) is added here
- * so the `/auth/refresh` endpoint will reject it even before the token's natural
- * 7-day expiry.  This closes the gap where a stolen refresh token remains valid
- * after logout.
+ * Replaces the previous in-memory Map so revocations survive API restarts
+ * and are visible across all instances in a multi-replica deployment.
  *
  * Architecture:
- *   • Each entry has an `expiresAt` timestamp matching the token's `exp` claim.
- *   • A periodic sweep (`cleanExpired`) removes entries whose tokens would have
- *     expired naturally — keeping memory bounded without a Redis dependency.
- *   • Sweep runs every hour inside `onModuleInit`; also called inline to
- *     piggyback cleanup onto every revoke() call.
+ *   • Each row stores the JWT's jti (primary key) + expiresAt (mirrors exp).
+ *   • An hourly sweep deletes rows whose tokens have already expired naturally,
+ *     keeping the table small (bounded by how many sessions log out per 7-day
+ *     window rather than growing indefinitely).
+ *   • All methods are async — the caller in AuthService already awaits them.
  *
- * Limitations:
- *   • In-memory only — does NOT survive process restarts or horizontal scale-out.
- *   • For multi-instance deployments, replace with a Redis SET (same interface).
+ * Failure behaviour:
+ *   • revoke() — if the DB write fails, the error propagates; the controller
+ *     catches it and returns 500. The logout cookie is still cleared, so the
+ *     browser session ends. The token MAY be reusable until natural expiry in
+ *     this rare case — acceptable vs. silently losing the revocation.
+ *   • isRevoked() — if the DB read fails, the error propagates as 500. This
+ *     is intentionally fail-safe: it is better to surface an error than to
+ *     silently pass through a potentially revoked token.
  */
 @Injectable()
 export class RefreshTokenBlacklistService {
   private readonly logger = new Logger(RefreshTokenBlacklistService.name);
 
-  /** jti → expiry timestamp (ms since epoch) */
-  private readonly blacklist = new Map<string, number>();
-
-  /** Sweep interval handle — cleaned up on module destroy. */
   private sweepHandle: ReturnType<typeof setInterval> | null = null;
 
+  constructor(private readonly prisma: PrismaService) {}
+
   onModuleInit(): void {
-    // Sweep every hour to remove naturally-expired entries.
     this.sweepHandle = setInterval(() => {
-      this.cleanExpired();
+      void this.cleanExpired();
     }, 60 * 60 * 1000);
   }
 
@@ -43,35 +44,43 @@ export class RefreshTokenBlacklistService {
   }
 
   /**
-   * Adds a refresh token's `jti` to the blacklist.
+   * Persists a revoked JTI to the database.
+   * Uses upsert so calling revoke() twice on the same jti is idempotent.
+   *
    * @param jti   — The `jti` claim from the refresh token payload.
    * @param expMs — Token expiry as milliseconds-since-epoch (payload.exp * 1000).
    */
-  revoke(jti: string, expMs: number): void {
-    this.blacklist.set(jti, expMs);
-    this.cleanExpired();
+  async revoke(jti: string, expMs: number): Promise<void> {
+    await this.prisma.revokedToken.upsert({
+      where: { jti },
+      create: { jti, expiresAt: new Date(expMs) },
+      update: { expiresAt: new Date(expMs) },
+    });
     this.logger.log(`Refresh token revoked: jti=${jti}`);
   }
 
   /**
-   * Returns true if the `jti` is in the blacklist AND the token has not yet
-   * expired naturally (expired tokens are harmless — no need to keep them).
+   * Returns true if the jti is in the revoked_tokens table and the token
+   * has not yet expired naturally (expired tokens are harmless but kept until
+   * the sweep runs).
    */
-  isRevoked(jti: string): boolean {
-    const expMs = this.blacklist.get(jti);
-    if (expMs === undefined) return false;
-    if (Date.now() > expMs) {
-      // Natural expiry — remove and report as not revoked (token is already dead)
-      this.blacklist.delete(jti);
-      return false;
-    }
-    return true;
+  async isRevoked(jti: string): Promise<boolean> {
+    const row = await this.prisma.revokedToken.findUnique({
+      where: { jti },
+      select: { expiresAt: true },
+    });
+    if (row === null) return false;
+    // If the token has already expired naturally, it's dead regardless.
+    return row.expiresAt > new Date();
   }
 
-  private cleanExpired(): void {
-    const now = Date.now();
-    for (const [jti, expMs] of this.blacklist) {
-      if (now > expMs) this.blacklist.delete(jti);
+  /** Deletes all rows whose tokens have already passed their natural expiry. */
+  private async cleanExpired(): Promise<void> {
+    const { count } = await this.prisma.revokedToken.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    if (count > 0) {
+      this.logger.log(`Revoked token sweep: removed ${count} expired entries`);
     }
   }
 }

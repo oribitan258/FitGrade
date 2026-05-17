@@ -45,13 +45,27 @@ export class GradingRepository {
   }
 
   /**
-   * Finds the NormTable row whose band contains the given rawValue for the
-   * student's gradeLevel/gender, returning the score (0–100).
+   * Finds the NormTable score for a given rawValue using a three-step lookup
+   * with boundary clamping so out-of-range performers always receive a grade.
+   * (LOGIC-001)
    *
-   * Returns null when no norm row is configured for this combination — the
-   * service treats this as a BadRequestException.
+   * Band semantics: minValue ≤ rawValue < maxValue (minValue inclusive, maxValue exclusive)
    *
-   * Band semantics:  minValue ≤ rawValue < maxValue  (minValue inclusive, maxValue exclusive)
+   * Step 1 — Exact match: rawValue falls within a configured band. Fast path.
+   *
+   * Step 2 — Above all bands: rawValue ≥ maxValue of the top band (e.g., a
+   *   sprinter who beats the fastest time in the norm table). We pick the band
+   *   with the highest minValue that is still ≤ rawValue. For TIME tests this
+   *   is the fastest band (highest score); for REPS tests this is the most-reps
+   *   band (highest score). Both cases correctly award the best grade.
+   *
+   * Step 3 — Below all bands: rawValue < minValue of every band (e.g., a student
+   *   who is slower than any seeded norm row). We pick the band with the lowest
+   *   minValue, which is the "weakest performer" band for both test types.
+   *
+   * Returns null ONLY when no bands are seeded for this (testTypeId, gender,
+   * gradeLevel) combination — a genuine configuration gap. The service then
+   * throws BadRequestException so the teacher knows the norm table is missing.
    */
   async findNormRow(
     testTypeId: string,
@@ -59,14 +73,28 @@ export class GradingRepository {
     gradeLevel: number,
     rawValue: Prisma.Decimal,
   ): Promise<{ score: number } | null> {
+    const base = { testTypeId, gender, gradeLevel } as const;
+
+    // Step 1: exact band [minValue, maxValue)
+    const exact = await this.prisma.normTable.findFirst({
+      where: { ...base, minValue: { lte: rawValue }, maxValue: { gt: rawValue } },
+      select: { score: true },
+    });
+    if (exact !== null) return exact;
+
+    // Step 2: rawValue ≥ maxValue of the top band — clamp to the band whose
+    // minValue is the highest value still ≤ rawValue.
+    const clampHigh = await this.prisma.normTable.findFirst({
+      where: { ...base, minValue: { lte: rawValue } },
+      orderBy: { minValue: 'desc' },
+      select: { score: true },
+    });
+    if (clampHigh !== null) return clampHigh;
+
+    // Step 3: rawValue < minValue of every band — clamp to the lowest-boundary band.
     return this.prisma.normTable.findFirst({
-      where: {
-        testTypeId,
-        gender,
-        gradeLevel,
-        minValue: { lte: rawValue },
-        maxValue: { gt: rawValue },
-      },
+      where: base,
+      orderBy: { minValue: 'asc' },
       select: { score: true },
     });
   }
