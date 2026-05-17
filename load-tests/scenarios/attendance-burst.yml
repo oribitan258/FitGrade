@@ -1,0 +1,96 @@
+# Attendance burst: morning bell — 100 teachers marking attendance in 5 minutes.
+#
+# Every Israeli school starts the day with teachers simultaneously opening
+# the lesson page and marking absent/present for their class. This creates
+# a spike of ~100 concurrent POST /attendance requests in the first 5 minutes
+# of the school day (08:00–08:05 Asia/Jerusalem).
+#
+# SLA: p95 ≤ 800 ms (existing global gate), p99 ≤ 1200 ms
+#
+# Required env:
+#   LOAD_TEST_TEACHER_TOKEN  — valid JWT for a seeded teacher
+#   LOAD_TEST_CLASS_ID       — class with ≥ 20 seeded students
+
+config:
+  target: "{{ $processEnvironment.API_URL || 'http://localhost:3001/api' }}"
+  phases:
+    # First bell: 100 teachers arrive in first minute (ramp from 0 → 100/min = ~1.7/s)
+    - duration: 60
+      arrivalRate: 2
+      rampTo: 10
+      name: First bell ramp (0–1 min)
+    # Peak: sustained burst — all classes being marked simultaneously
+    - duration: 120
+      arrivalRate: 10
+      name: Attendance peak (1–3 min)
+    # Tail: late arrivals, corrections, exempt markings
+    - duration: 120
+      arrivalRate: 3
+      name: Tail traffic (3–5 min)
+  defaults:
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+  ensure:
+    p95: 800
+    p99: 1200
+    maxErrorRate: 0
+
+variables:
+  teacherToken:
+    - "{{ $env.LOAD_TEST_TEACHER_TOKEN }}"
+  classId:
+    - "{{ $env.LOAD_TEST_CLASS_ID }}"
+
+scenarios:
+  # ── Mark student present (most common — rollback from absent) ────────────────
+  - name: Mark present
+    weight: 50
+    flow:
+      - post:
+          url: "/classes/{{ classId }}/attendance"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            # Virtual user picks a student slot 1–25
+            studentIndex: "{{ $randomNumber(1, 25) }}"
+            status: "PRESENT"
+            date: "{{ $processEnvironment.LOAD_TEST_DATE || '2026-05-17' }}"
+          expect:
+            - statusCode:
+                - 200
+                - 201
+
+  # ── Mark student absent ───────────────────────────────────────────────────────
+  - name: Mark absent
+    weight: 35
+    flow:
+      - post:
+          url: "/classes/{{ classId }}/attendance"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            studentIndex: "{{ $randomNumber(1, 25) }}"
+            status: "ABSENT"
+            date: "{{ $processEnvironment.LOAD_TEST_DATE || '2026-05-17' }}"
+          expect:
+            - statusCode:
+                - 200
+                - 201
+
+  # ── Mark student excused (injury / exempt) ───────────────────────────────────
+  - name: Mark excused
+    weight: 15
+    flow:
+      - post:
+          url: "/classes/{{ classId }}/attendance"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            studentIndex: "{{ $randomNumber(1, 25) }}"
+            status: "EXCUSED"
+            date: "{{ $processEnvironment.LOAD_TEST_DATE || '2026-05-17' }}"
+          expect:
+            - statusCode:
+                - 200
+                - 201

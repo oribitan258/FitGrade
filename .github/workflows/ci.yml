@@ -323,7 +323,100 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # ── 7. Accessibility audit ────────────────────────────────────────────────
+  # ── 7. Performance: INP / LCP / FPS (Playwright against prod build) ──────
+  perf-web:
+    name: Perf Web (INP + Vitals)
+    runs-on: ubuntu-latest
+    if: false  # requires prod build + live DB — disabled until CI infrastructure is provisioned
+    strategy:
+      fail-fast: false
+      matrix:
+        cpu: [1, 4]  # 1× default + 4× Chromebook simulation
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        run: pnpm --filter=api exec prisma generate
+
+      - name: Apply migrations and seed test DB
+        run: |
+          pnpm --filter=api exec prisma migrate deploy
+          pnpm --filter=api exec prisma db seed
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Build web app (production)
+        run: pnpm --filter=web build
+        env:
+          API_URL: http://localhost:3001/api
+          NEXT_PUBLIC_API_URL: http://localhost:3001/api
+
+      - name: Start API server
+        run: pnpm --filter=api start &
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PORT: 3001
+
+      - name: Start web server (prod)
+        run: pnpm --filter=web start &
+        env:
+          PORT: 3000
+
+      - name: Wait for servers
+        run: npx wait-on http://localhost:3001/api/health http://localhost:3000 --timeout 60000
+
+      - name: Run perf specs — INP (${{ matrix.cpu }}× CPU)
+        run: |
+          pnpm exec playwright test \
+            -c e2e/perf/playwright.perf.config.ts \
+            e2e/perf/inp
+        env:
+          PERF_CPU: ${{ matrix.cpu }}
+          PERF_TEACHER_TOKEN: ${{ secrets.PERF_TEACHER_TOKEN }}
+          PERF_CLASS_ID: ${{ secrets.PERF_CLASS_ID }}
+          PERF_SESSION_ID: ${{ secrets.PERF_SESSION_ID }}
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-results-cpu${{ matrix.cpu }}
+          path: |
+            e2e/perf/.results/
+            perf-report/
+            e2e/test-results/perf-junit.xml
+          retention-days: 14
+
+  # ── 8. Accessibility audit ────────────────────────────────────────────────
   accessibility:
     name: Accessibility (axe)
     runs-on: ubuntu-latest
@@ -332,7 +425,7 @@ jobs:
     steps:
       - run: echo "Accessibility verified via a11y.spec.ts in Playwright job"
 
-  # ── 8. Load tests ─────────────────────────────────────────────────────────
+  # ── 8. Load tests (existing mixed-traffic baseline) ──────────────────────
   load-tests:
     name: Load Tests (Artillery)
     runs-on: ubuntu-latest
@@ -400,3 +493,129 @@ jobs:
           name: artillery-report
           path: load-test-report.json
           retention-days: 7
+
+  # ── 9. Perf load tests (focused scenarios — main push only) ───────────────
+  perf-load:
+    name: Perf Load (Artillery — burst scenarios)
+    runs-on: ubuntu-latest
+    if: false  # requires live DB + running API — disabled until CI infrastructure is provisioned
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client + seed
+        run: |
+          pnpm --filter=api exec prisma generate
+          pnpm --filter=api exec prisma migrate deploy
+          pnpm --filter=api exec prisma db seed
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Start API server
+        run: pnpm --filter=api start &
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PORT: 3001
+
+      - name: Wait for API
+        run: npx wait-on http://localhost:3001/api/health --timeout 30000
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      # Sequential runs — each scenario has isolated load profile
+      - name: Run — live session burst (stopwatch taps)
+        id: burst
+        run: |
+          artillery run load-tests/scenarios/live-session-burst.yml \
+            --output load-tests/.reports/live-session-burst.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+          LOAD_TEST_SESSION_ID: ${{ secrets.LOAD_TEST_SESSION_ID }}
+
+      - name: Run — attendance burst (morning bell)
+        id: attendance
+        run: |
+          artillery run load-tests/scenarios/attendance-burst.yml \
+            --output load-tests/.reports/attendance-burst.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+
+      - name: Run — report generation spike
+        id: reports
+        run: |
+          artillery run load-tests/scenarios/report-generation.yml \
+            --output load-tests/.reports/report-generation.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+          LOAD_TEST_STUDENT_ID: ${{ secrets.LOAD_TEST_STUDENT_ID }}
+
+      - name: Upload Artillery reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-load-reports
+          path: load-tests/.reports/
+          retention-days: 14
+
+      - name: Create GitHub issue on load regression
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Perf load regression — ${new Date().toISOString().slice(0,10)}`,
+              body: [
+                '## Load Test Regression Detected',
+                '',
+                'One or more Artillery scenarios exceeded their SLA thresholds.',
+                '',
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '### SLA Thresholds',
+                '| Scenario | p95 | p99 | Race conditions |',
+                '|---|---|---|---|',
+                '| live-session-burst | ≤ 600 ms | ≤ 1000 ms | 0 duplicates |',
+                '| attendance-burst | ≤ 800 ms | ≤ 1200 ms | — |',
+                '| report-generation | ≤ 3000 ms | — | — |',
+                '',
+                '### Triage',
+                '1. Download `perf-load-reports` artifact',
+                '2. Check Artillery aggregate output for which percentile exceeded',
+                '3. Cross-reference with `perf-web` trace if INP also regressed',
+                '4. See `e2e/perf/README.md` for fix patterns',
+              ].join('\n'),
+              labels: ['ci-failure', 'performance'],
+            });

@@ -186,11 +186,112 @@ jobs:
           BASE_URL: http://localhost:3000
           API_URL: http://localhost:3001/api
 
+  # ── Weekly perf load (Artillery burst scenarios) ─────────────────────────
+  perf-load:
+    name: Perf Load (Artillery — weekly burst)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fitgrade_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client + seed
+        run: |
+          pnpm --filter=api exec prisma generate
+          pnpm --filter=api exec prisma migrate deploy
+          pnpm --filter=api exec prisma db seed
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Start API server
+        run: pnpm --filter=api start &
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          PORT: 3001
+
+      - name: Wait for API
+        run: npx wait-on http://localhost:3001/api/health --timeout 30000
+
+      - name: Install Artillery
+        run: npm install -g artillery@latest
+
+      - name: Run — baseline mixed traffic
+        run: |
+          artillery run load-tests/fitgrade.yml \
+            --output load-tests/.reports/nightly-baseline.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+          LOAD_TEST_SESSION_ID: ${{ secrets.LOAD_TEST_SESSION_ID }}
+
+      - name: Run — live session burst
+        run: |
+          artillery run load-tests/scenarios/live-session-burst.yml \
+            --output load-tests/.reports/nightly-live-burst.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+          LOAD_TEST_SESSION_ID: ${{ secrets.LOAD_TEST_SESSION_ID }}
+
+      - name: Run — attendance burst
+        run: |
+          artillery run load-tests/scenarios/attendance-burst.yml \
+            --output load-tests/.reports/nightly-attendance.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+
+      - name: Run — report generation
+        run: |
+          artillery run load-tests/scenarios/report-generation.yml \
+            --output load-tests/.reports/nightly-reports.json
+        env:
+          API_URL: http://localhost:3001/api
+          LOAD_TEST_TEACHER_TOKEN: ${{ secrets.LOAD_TEST_TEACHER_TOKEN }}
+          LOAD_TEST_CLASS_ID: ${{ secrets.LOAD_TEST_CLASS_ID }}
+          LOAD_TEST_STUDENT_ID: ${{ secrets.LOAD_TEST_STUDENT_ID }}
+
+      - name: Upload Artillery nightly reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-load-nightly
+          path: load-tests/.reports/
+          retention-days: 30
+
   # ── Notify on failure ─────────────────────────────────────────────────────
   notify:
     name: Notify on failure
     runs-on: ubuntu-latest
-    needs: [property-exhaustive, mutation, timezone-chaos, concurrent-sessions]
+    needs: [property-exhaustive, mutation, timezone-chaos, concurrent-sessions, perf-load]
     if: failure()
     steps:
       - name: Create GitHub issue on nightly failure

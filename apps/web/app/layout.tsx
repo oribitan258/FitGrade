@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Heebo } from 'next/font/google';
+import { RumInit } from '@/components/rum-init';
 import './globals.css';
 
 const heebo = Heebo({ subsets: ['hebrew', 'latin'], display: 'swap' });
@@ -19,7 +20,10 @@ export default function RootLayout({
     // All Tailwind classes must use logical properties (ms-/me-/ps-/pe-/text-start/text-end).
     // Physical directional classes are BANNED — use logical properties only (ms-/me-/ps-/pe-).
     <html lang="he" dir="rtl">
-      <body className={`${heebo.className} overflow-x-hidden`}>{children}</body>
+      <body className={`${heebo.className} overflow-x-hidden`}>
+        <RumInit />
+        {children}
+      </body>
     </html>
   );
 }

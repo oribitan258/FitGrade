@@ -1,0 +1,101 @@
+# Report generation load: extends the existing 20% report scenario.
+#
+# Reports aggregate grades across all students in a class and are the heaviest
+# single API response (~40 students × all test types × grade calculations).
+# This scenario targets the report endpoints exclusively to find their
+# independent p95 ceiling, separate from the mixed-traffic fitgrade.yml.
+#
+# Endpoints tested:
+#   GET /reports/class/:classId           — full class report (JSON)
+#   GET /reports/class/:classId/excel     — Excel export (streaming)
+#   GET /reports/class/:classId/pdf       — PDF export (streaming, RTL Hebrew)
+#   GET /reports/student/:studentId       — individual student report
+#
+# SLA: p95 ≤ 800 ms (JSON reports); exports allowed p95 ≤ 3000 ms
+#
+# Required env:
+#   LOAD_TEST_TEACHER_TOKEN  — valid JWT
+#   LOAD_TEST_CLASS_ID       — class with ≥ 20 students and test results
+#   LOAD_TEST_STUDENT_ID     — a student ID in that class
+
+config:
+  target: "{{ $processEnvironment.API_URL || 'http://localhost:3001/api' }}"
+  phases:
+    # Warm-up: cache priming
+    - duration: 20
+      arrivalRate: 2
+      name: Warm-up
+    # Sustained: concurrent report generation — realistic peak during grade review week
+    - duration: 120
+      arrivalRate: 8
+      name: Sustained report load
+    # Spike: all teachers export at end-of-semester simultaneously
+    - duration: 30
+      arrivalRate: 20
+      name: Export spike
+  defaults:
+    headers:
+      Accept: application/json
+  ensure:
+    p95: 3000
+    maxErrorRate: 0
+
+variables:
+  teacherToken:
+    - "{{ $env.LOAD_TEST_TEACHER_TOKEN }}"
+  classId:
+    - "{{ $env.LOAD_TEST_CLASS_ID }}"
+  studentId:
+    - "{{ $env.LOAD_TEST_STUDENT_ID || $env.LOAD_TEST_CLASS_ID }}"
+
+scenarios:
+  # ── Full class report (JSON) ─────────────────────────────────────────────────
+  - name: Class report JSON
+    weight: 50
+    flow:
+      - get:
+          url: "/reports/class/{{ classId }}"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode: 200
+          capture:
+            - json: "$.length"
+              as: rowCount
+
+  # ── Individual student report ────────────────────────────────────────────────
+  - name: Student report JSON
+    weight: 30
+    flow:
+      - get:
+          url: "/reports/student/{{ studentId }}"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          expect:
+            - statusCode:
+                - 200
+                - 404  # student may not exist in every seed — ok
+
+  # ── Excel export ─────────────────────────────────────────────────────────────
+  - name: Excel export
+    weight: 10
+    flow:
+      - get:
+          url: "/reports/class/{{ classId }}/excel"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+            Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          expect:
+            - statusCode: 200
+
+  # ── PDF export (RTL Hebrew) ───────────────────────────────────────────────────
+  - name: PDF export
+    weight: 10
+    flow:
+      - get:
+          url: "/reports/class/{{ classId }}/pdf"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+            Accept: "application/pdf"
+          expect:
+            - statusCode: 200

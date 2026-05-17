@@ -18,6 +18,7 @@ import { ScheduleModule } from './schedule/schedule.module';
 import { ComparisonModule } from './comparison/comparison.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { RumModule } from './rum/rum.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -53,6 +54,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     ComparisonModule,
     SettingsModule,
     AuditLogModule,
+    RumModule,
   ],
   controllers: [AppController],
   providers: [

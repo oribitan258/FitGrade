@@ -488,3 +488,20 @@ model AuditLog {
   @@index([actorId])
   @@map("audit_logs")
 }
+
+// ─── RUM (Real User Monitoring) ──────────────────────────────────────────────
+// Stores web-vitals observations beaconed from the production web app.
+// No foreign keys — rows are append-only, no auth context required.
+model RumMetric {
+  id             String   @id @default(cuid())
+  metricName     String   // INP | LCP | CLS | FCP | TTFB
+  value          Float
+  rating         String   // good | needs-improvement | poor
+  navigationType String   // navigate | reload | back-forward | back-forward-cache | prerender
+  pageUrl        String
+  recordedAt     DateTime @default(now())
+
+  @@index([metricName, recordedAt])
+  @@index([recordedAt])
+  @@map("rum_metrics")
+}

@@ -1,0 +1,87 @@
+# Live session burst: 30 stopwatch taps/second across 10 concurrent sessions.
+#
+# This replicates "morning whistle" — a teacher blows the whistle and 30 students
+# sprint past the finish line in rapid succession. Each click fires
+# POST /results/stopwatch/tap. The API must deduplicate (409 on re-tap) and
+# persist without dropped writes.
+#
+# SLA: p99 result POST < 600 ms warn / 1000 ms fail
+# Race validation: race-assertion.js verifies no duplicate rows escape the DB
+#
+# Required env:
+#   LOAD_TEST_TEACHER_TOKEN  — valid JWT for a seeded teacher
+#   LOAD_TEST_CLASS_ID       — class with ≥ 30 seeded students
+#   LOAD_TEST_SESSION_ID     — active stopwatch session for that class
+
+config:
+  target: "{{ $processEnvironment.API_URL || 'http://localhost:3001/api' }}"
+  processor: "../processors/race-assertion.js"
+  phases:
+    # Warm-up: start timers for all sessions
+    - duration: 10
+      arrivalRate: 2
+      name: Warm-up (start sessions)
+    # Burst: 30 taps/sec for 60 seconds — simulates 30-student sprint
+    - duration: 60
+      arrivalRate: 30
+      name: Tap burst
+    # Cool-down: residual traffic (late finishers, retries)
+    - duration: 20
+      arrivalRate: 5
+      name: Cool-down
+  defaults:
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+  ensure:
+    p99: 1000
+    p95: 600
+    maxErrorRate: 0
+
+variables:
+  teacherToken:
+    - "{{ $env.LOAD_TEST_TEACHER_TOKEN }}"
+  sessionId:
+    - "{{ $env.LOAD_TEST_SESSION_ID }}"
+
+scenarios:
+  # ── Start timer (warm-up phase only) ─────────────────────────────────────────
+  - name: Start stopwatch session
+    weight: 5
+    flow:
+      - post:
+          url: "/results/stopwatch/start"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            sessionId: "{{ sessionId }}"
+          expect:
+            - statusCode:
+                - 200
+                - 201
+                - 409  # session already started — idempotent
+
+  # ── Tap burst ─────────────────────────────────────────────────────────────────
+  # 95% of traffic is taps — one tap per student
+  - name: Stopwatch tap
+    weight: 95
+    flow:
+      - post:
+          url: "/results/stopwatch/tap"
+          headers:
+            Authorization: "Bearer {{ teacherToken }}"
+          json:
+            sessionId: "{{ sessionId }}"
+            # Virtual users each pick a unique student offset (1–30).
+            # Duplicate taps are expected and validated by race-assertion.js.
+            studentIndex: "{{ $randomNumber(1, 30) }}"
+          capture:
+            - json: "$.id"
+              as: resultId
+            - json: "$.elapsedMs"
+              as: elapsedMs
+          afterResponse: "assertNoDuplicateResult"
+          expect:
+            - statusCode:
+                - 201  # new result recorded
+                - 409  # duplicate tap — correct dedup behaviour
