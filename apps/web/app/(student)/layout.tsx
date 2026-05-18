@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GraduationCap, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getToken, logout } from '@/lib/api-client';
+import { getToken, logout, silentRefresh } from '@/lib/api-client';
 import { SplashScreen } from '@/components/ui/splash-screen';
 
 /**
@@ -25,12 +25,18 @@ export default function StudentLayout({
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace('/student-login');
-    } else {
+    if (getToken()) {
       setReady(true);
+      return;
     }
-  }, [router]);
+    void silentRefresh().then((ok) => {
+      if (!ok) {
+        router.replace('/student-login');
+      } else {
+        setReady(true);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogout = async (): Promise<void> => {
     await logout();

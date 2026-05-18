@@ -10,9 +10,9 @@ export class AppController {
 
   @Public()
   @Get('health')
-  @ApiOperation({ summary: 'Health check' })
+  @ApiOperation({ summary: 'Health check — verifies API and DB connectivity' })
   @ApiResponse({ status: 200, description: 'API is running' })
-  getHealth(): { status: string; timestamp: string } {
+  async getHealth(): Promise<{ status: string; timestamp: string; db: string }> {
     return this.appService.getHealth();
   }
 }

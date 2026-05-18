@@ -9,10 +9,13 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -23,6 +26,7 @@ import { QuickGradeOverrideDto, QuickGradeResponseDto } from './dto/quick-grade-
 import { SemesterQueryDto } from './dto/semester-query.dto';
 import { ClassResponseDto } from './dto/class-response.dto';
 import { ClassDetailsResponseDto } from './dto/class-details-response.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
@@ -35,18 +39,23 @@ export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
   /**
-   * Returns all classes belonging to the authenticated teacher.
-   * Classes are year-round entities — no semester filtering.
-   * Ordered newest-first.
+   * Returns a paginated list of classes belonging to the authenticated teacher.
+   * Ordered newest-first. Total item count is in the X-Total-Count response header.
    */
   @Get()
-  @ApiOperation({ summary: 'List all classes for the authenticated teacher' })
+  @ApiOperation({ summary: 'List classes for the authenticated teacher (paginated)' })
+  @ApiQuery({ name: 'take', required: false, description: 'Items per page (max 100)' })
+  @ApiQuery({ name: 'skip', required: false, description: 'Offset' })
   @ApiResponse({ status: 200, type: [ClassResponseDto] })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   async getMyClasses(
+    @Query() pagination: PaginationQueryDto,
     @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<ClassResponseDto[]> {
-    return this.classesService.getMyClasses(user.sub);
+    const [data, total] = await this.classesService.getMyClasses(user.sub, pagination.take, pagination.skip);
+    res.setHeader('X-Total-Count', total);
+    return data;
   }
 
   /**

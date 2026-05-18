@@ -24,9 +24,10 @@ export class QuickGradeOverrideDto {
   gradeOverride!: number | null;
 
   @ApiPropertyOptional({ description: 'Reason for the grade override (required when gradeOverride is non-null)' })
-  @IsOptional()
+  @ValidateIf((o: QuickGradeOverrideDto) => o.gradeOverride !== null && o.gradeOverride !== undefined)
   @IsString()
-  overrideReason?: string;
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  overrideReason!: string;
 }
 
 export class QuickGradeResponseDto {

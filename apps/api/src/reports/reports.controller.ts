@@ -16,6 +16,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { ReportsService } from './reports.service';
 import { SaveReportGradesDto } from './dto/save-report-grades.dto';
 import { ReportRowDto } from './dto/report-row.dto';
@@ -71,6 +72,7 @@ export class ReportsController {
    * Columns: שם פרטי, שם משפחה, קוד תלמיד, ממוצע כושר, ניהול, ציון מומלץ, ציון מורה, הערה.
    */
   @Get('class/:classId/export/csv')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Download class final-grades as CSV' })
   @ApiResponse({ status: 200, description: 'CSV file download' })
   @ApiResponse({ status: 403, description: 'Not a teacher or class not owned' })

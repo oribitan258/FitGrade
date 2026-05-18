@@ -2,9 +2,26 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
+import * as compression from 'compression';
 import helmet from 'helmet';
+import { randomUUID } from 'crypto';
+import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+
+// ─── Process-level error handlers ────────────────────────────────────────────
+// Must be registered before bootstrap() so errors during startup are also caught.
+const _bootstrapLogger = new Logger('Process');
+
+process.on('uncaughtException', (err: Error) => {
+  _bootstrapLogger.error(`Uncaught Exception: ${err.message}`, err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  _bootstrapLogger.error('Unhandled Rejection', reason);
+  process.exit(1);
+});
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -63,12 +80,42 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // ─── Compression (gzip/deflate) ──────────────────────────
+  app.use(compression());
+
+  // ─── Correlation ID ───────────────────────────────────────
+  // Attaches X-Request-ID to every request/response for end-to-end tracing.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const id = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
+    req.headers['x-request-id'] = id;
+    res.setHeader('X-Request-ID', id);
+    next();
+  });
+
   // ─── Cookie parser ────────────────────────────────────────
   app.use(cookieParser());
 
   // ─── CORS ─────────────────────────────────────────────────
+  // CORS_ORIGINS is a comma-separated list of allowed origins.
+  // Falls back to WEB_URL (legacy single-origin) then localhost for dev.
+  // In production CORS_ORIGINS (or WEB_URL) MUST be set explicitly.
+  const rawOrigins = process.env['CORS_ORIGINS'] ?? process.env['WEB_URL'] ?? '';
+  const allowedOrigins = rawOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+  if (allowedOrigins.length === 0) {
+    if (process.env['NODE_ENV'] === 'production') {
+      throw new Error('CORS_ORIGINS or WEB_URL must be set in production');
+    }
+    allowedOrigins.push('http://localhost:3000');
+  }
   app.enableCors({
-    origin: process.env['WEB_URL'] ?? 'http://localhost:3000',
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow server-to-server calls (no Origin header) and whitelisted origins.
+      if (origin === undefined || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -92,7 +139,9 @@ async function bootstrap(): Promise<void> {
   );
 
   // ─── Swagger ──────────────────────────────────────────────
-  if (process.env['NODE_ENV'] !== 'production') {
+  // Gated behind ENABLE_SWAGGER=true AND non-production so staging/review apps
+  // don't expose endpoint schemas publicly without an explicit opt-in.
+  if (process.env['NODE_ENV'] !== 'production' && process.env['ENABLE_SWAGGER'] === 'true') {
     const config = new DocumentBuilder()
       .setTitle('FitGrade API')
       .setDescription('REST API for the FitGrade PE grading system')

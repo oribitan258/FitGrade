@@ -59,22 +59,20 @@ describe('ClassesService', () => {
 
   describe('getMyClasses', () => {
     it('returns the list from the repository', async () => {
-      mockClassesRepository.findAllByTeacher.mockResolvedValue([mockClass]);
+      mockClassesRepository.findAllByTeacher.mockResolvedValue([[mockClass], 1]);
 
-      const result = await service.getMyClasses(TEACHER_ID);
+      const result = await service.getMyClasses(TEACHER_ID, 50, 0);
 
-      expect(result).toEqual([mockClass]);
-      expect(mockClassesRepository.findAllByTeacher).toHaveBeenCalledWith(
-        TEACHER_ID,
-      );
+      expect(result).toEqual([[mockClass], 1]);
+      expect(mockClassesRepository.findAllByTeacher).toHaveBeenCalledWith(TEACHER_ID, 50, 0);
     });
 
     it('returns an empty array when the teacher has no classes', async () => {
-      mockClassesRepository.findAllByTeacher.mockResolvedValue([]);
+      mockClassesRepository.findAllByTeacher.mockResolvedValue([[], 0]);
 
-      const result = await service.getMyClasses(TEACHER_ID);
+      const result = await service.getMyClasses(TEACHER_ID, 50, 0);
 
-      expect(result).toEqual([]);
+      expect(result).toEqual([[], 0]);
     });
   });
 

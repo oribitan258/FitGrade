@@ -48,7 +48,7 @@ export class UpdateReportSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://example.com/logo.png' })
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   schoolLogoUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'data:image/png;base64,...' })

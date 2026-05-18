@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { useClasses } from '@/hooks/use-classes';
 import { useSemester } from '@/contexts/semester-context';
+import { getToken } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -23,7 +24,7 @@ export default function ExportsPage(): React.JSX.Element {
     try {
       const semesterParam = activeSemester ? `?semester=${activeSemester}` : '';
       // apiRequest returns parsed JSON — for file downloads we fetch directly
-      const token = typeof window !== 'undefined' ? localStorage.getItem('fitgrade_token') : null;
+      const token = getToken();
       const API_BASE = process.env['API_URL'] ?? 'http://localhost:3001/api';
       const res = await fetch(
         `${API_BASE}/reports/class/${selectedClassId}/export/csv${semesterParam}`,

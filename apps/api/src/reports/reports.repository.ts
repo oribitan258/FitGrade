@@ -86,7 +86,7 @@ export class ReportsRepository {
    */
   async findStudentsInClass(classId: string): Promise<RawReportStudent[]> {
     const enrollments = await this.prisma.classEnrollment.findMany({
-      where: { classId },
+      where: { classId, student: { deletedAt: null } },
       select: {
         student: {
           select: {
@@ -272,7 +272,7 @@ export class ReportsRepository {
     exemptionReason: string | null;
   }>> {
     const records = await this.prisma.attendanceRecord.findMany({
-      where: { classId },
+      where: { classId, student: { deletedAt: null } },
       select: {
         studentId: true,
         date: true,

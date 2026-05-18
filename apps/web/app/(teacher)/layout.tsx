@@ -11,7 +11,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
-import { getToken, logout } from '@/lib/api-client';
+import Image from 'next/image';
+import { getToken, logout, silentRefresh } from '@/lib/api-client';
 import { SplashScreen } from '@/components/ui/splash-screen';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
@@ -632,10 +633,11 @@ const BackgroundCanvas = memo(function BackgroundCanvas({
           ))}
 
           {/* Ghost athlete watermark */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             src="/models_photo/hero-female-2.png"
             alt=""
+            width={320}
+            height={560}
             className="pointer-events-none select-none absolute bottom-0 end-16 hidden lg:block"
             style={{
               height: 560,
@@ -647,6 +649,7 @@ const BackgroundCanvas = memo(function BackgroundCanvas({
               zIndex: 1,
             }}
             aria-hidden="true"
+            priority={false}
           />
         </>
       )}
@@ -664,23 +667,36 @@ function TeacherShell({
   const router   = useRouter();
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  // True once we have a valid in-memory access token (either already present
+  // or restored via a silent refresh from the httpOnly refresh-token cookie).
+  const [tokenReady, setTokenReady] = useState(() => getToken() !== null);
   const { isTestActive } = useBeepTestContext();
   const { activeSemester } = useSemester();
 
-  // Fetch profile to surface isOnboardingComplete for routing guard.
-  // Only fires when a token is present — apiRequest clears the token on 401.
-  const { teacher, isLoading: profileLoading } = useCurrentTeacher();
+  // Fetch profile only after the access token is confirmed — prevents a
+  // spurious 401 on page load when the token isn't in memory yet.
+  const { teacher, isLoading: profileLoading } = useCurrentTeacher(tokenReady);
   const { isTourActive } = useTour();
 
   // /settings is also exempted — tour lands there and the page handles completion
   const isOnboarding = pathname.startsWith('/onboarding') || pathname.startsWith('/settings');
 
+  // On mount: if no in-memory token, attempt a silent refresh from the
+  // httpOnly refresh cookie. Redirect to login only if that also fails.
   useEffect(() => {
-    // 1. No token → login page
-    if (!getToken()) {
-      router.replace('/login');
-      return;
-    }
+    if (tokenReady) return;
+    void silentRefresh().then((ok) => {
+      if (!ok) {
+        router.replace('/login');
+      } else {
+        setTokenReady(true);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // 1. Token not yet confirmed
+    if (!tokenReady) return;
     // 2. Still waiting for profile fetch
     if (profileLoading) return;
     // 3. Profile fetch failed / null → stay in loading state
@@ -694,7 +710,7 @@ function TeacherShell({
     }
 
     setReady(true);
-  }, [router, pathname, teacher, profileLoading, isOnboarding, isTourActive]);
+  }, [tokenReady, router, pathname, teacher, profileLoading, isOnboarding, isTourActive]);
 
   return (
     <>

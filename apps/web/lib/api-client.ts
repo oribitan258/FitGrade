@@ -2,7 +2,10 @@
  * Typed API client for the FitGrade NestJS backend.
  *
  * Token lifecycle:
- *  - Access token (15 min): stored in localStorage, attached as Bearer header.
+ *  - Access token (15 min): stored in an in-memory module variable only.
+ *    Never written to localStorage/sessionStorage — XSS cannot steal it.
+ *    Lost on page refresh; silentRefresh() restores it from the httpOnly
+ *    refresh-token cookie without user interaction.
  *  - Refresh token (7 days): lives in an httpOnly cookie set by the backend.
  *    The browser sends it automatically when credentials:'include' is set.
  */
@@ -12,21 +15,41 @@ import { tryMockResponse } from './tour-fetcher';
 // process.env['API_URL'] is injected by next.config.ts and available in
 // both server and client bundles.
 const API_BASE: string = process.env['API_URL'] ?? 'http://localhost:3001/api';
-const TOKEN_KEY = 'fitgrade_token';
 
-// ─── Token management ──────────────────────────────────────────────────────
+// ─── Token management (in-memory — never touches localStorage) ────────────
+
+let _token: string | null = null;
 
 export function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return _token;
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  _token = token;
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  _token = null;
+}
+
+/**
+ * Attempts a silent token refresh using the httpOnly refresh-token cookie.
+ * Returns true and stores the new access token on success; returns false
+ * if no valid refresh cookie exists (user must log in again).
+ */
+export async function silentRefresh(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { accessToken: string };
+    setToken(data.accessToken);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Typed fetch wrapper ───────────────────────────────────────────────────

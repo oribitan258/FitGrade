@@ -8,20 +8,25 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { StudentsService } from './students.service';
 import type { ImportResultDto } from './dto/import-students.dto';
 import { SemesterQueryDto } from '../classes/dto/semester-query.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { CreateTalmidautDto } from './dto/create-talmidaut.dto';
 import { StudentResponseDto } from './dto/student-response.dto';
@@ -40,20 +45,26 @@ export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
 
   /**
-   * Returns all students enrolled in the given class.
-   * Only accessible by the teacher who owns the class.
+   * Returns a paginated list of students enrolled in the given class.
+   * Total item count is in the X-Total-Count response header.
    */
   @Get()
-  @ApiOperation({ summary: 'List students enrolled in a class' })
+  @ApiOperation({ summary: 'List students enrolled in a class (paginated)' })
   @ApiParam({ name: 'classId', description: 'Class ID' })
+  @ApiQuery({ name: 'take', required: false, description: 'Items per page (max 100)' })
+  @ApiQuery({ name: 'skip', required: false, description: 'Offset' })
   @ApiResponse({ status: 200, type: [StudentResponseDto] })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
   @ApiResponse({ status: 404, description: 'Class not found' })
   async getStudentsByClass(
     @Param('classId') classId: string,
+    @Query() pagination: PaginationQueryDto,
     @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<StudentResponseDto[]> {
-    return this.studentsService.getStudentsByClass(classId, user.sub);
+    const [data, total] = await this.studentsService.getStudentsByClass(classId, user.sub, pagination.take, pagination.skip);
+    res.setHeader('X-Total-Count', total);
+    return data;
   }
 
   /**
@@ -136,6 +147,7 @@ export class StudentsController {
    * File limit: 5 MB.
    */
   @Post('import')
+  @Throttle({ default: { ttl: 60_000, limit: 2 } })
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   @ApiOperation({ summary: 'ייבוא רשימת תלמידים מקובץ Excel/CSV' })

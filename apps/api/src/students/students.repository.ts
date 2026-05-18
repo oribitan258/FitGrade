@@ -173,15 +173,26 @@ export class StudentsRepository {
   }
 
   /**
-   * Returns all active (non-deleted) students enrolled in a class, ordered alphabetically by last name.
+   * Returns a paginated slice of active students in a class, ordered by last name.
+   * Returns [data, total] so the controller can emit X-Total-Count.
    */
-  async findByClassId(classId: string): Promise<StudentResponseDto[]> {
-    const enrollments = await this.prisma.classEnrollment.findMany({
-      where: { classId, student: { deletedAt: null } },
-      select: { student: { select: STUDENT_SELECT } },
-      orderBy: { student: { lastName: 'asc' } },
-    });
-    return enrollments.map((e) => e.student);
+  async findByClassId(
+    classId: string,
+    take: number,
+    skip: number,
+  ): Promise<[StudentResponseDto[], number]> {
+    const where = { classId, student: { deletedAt: null } } as const;
+    const [enrollments, total] = await this.prisma.$transaction([
+      this.prisma.classEnrollment.findMany({
+        where,
+        select: { student: { select: STUDENT_SELECT } },
+        orderBy: { student: { lastName: 'asc' } },
+        take,
+        skip,
+      }),
+      this.prisma.classEnrollment.count({ where }),
+    ]);
+    return [enrollments.map((e) => e.student), total];
   }
 
   /**

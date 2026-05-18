@@ -35,7 +35,7 @@ import {
 import { getHebrewGradeLabel } from '@fitgrade/types';
 import type { StudentProfile, StudentTestHistory } from '@fitgrade/types';
 import { useStudentProfile } from '@/hooks/use-student-profile';
-import { DEV_BYPASS_TOKEN } from '@/lib/api-client';
+import { DEV_BYPASS_TOKEN, getToken } from '@/lib/api-client';
 import { cn, formatRawValue } from '@/lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1288,7 +1288,7 @@ export default function StudentDashboardPage(): React.JSX.Element {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const token = localStorage.getItem('fitgrade_token');
+    const token = getToken();
     if (!token) return;
     if (token === DEV_BYPASS_TOKEN) {
       setDevMode(true);

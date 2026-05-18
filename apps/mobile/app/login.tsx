@@ -47,7 +47,8 @@ export default function LoginScreen(): React.JSX.Element {
       if (result.type === 'success') {
         const parsed = Linking.parse(result.url);
         const code = parsed.queryParams?.['code'];
-        if (typeof code === 'string' && code !== '') {
+        // Validate code format: must be a 64-char hex string (server-issued single-use code)
+        if (typeof code === 'string' && /^[a-f0-9]{64}$/.test(code)) {
           // Exchange the one-time code for the actual JWT via a server-side call.
           // The code is single-use and expires after 2 minutes.
           const { accessToken } = await api.post<{ accessToken: string }>(

@@ -5,6 +5,17 @@
  * - Throws an ApiError (Error subclass) on non-2xx responses so React Query
  *   and error boundaries receive a proper Error instance with a stack trace.
  * - On 401: clears the stored token (auth module handles redirect to /login).
+ *
+ * SECURITY NOTE — Certificate pinning (P1):
+ * This client uses the OS default TLS validation. Certificate pinning should be
+ * added before production release to prevent MITM attacks on school WiFi networks.
+ * Implementation steps:
+ *   1. Install: pnpm --filter=mobile add react-native-ssl-pinning
+ *   2. Replace fetch() below with fetch from react-native-ssl-pinning
+ *   3. Supply the SHA-256 fingerprint(s) of the production API certificate:
+ *      sslPinning: { certs: ['<SHA256_FINGERPRINT_WITHOUT_COLONS>'] }
+ *   4. Add the same fingerprint to ios/App/Resources/Info.plist (NSPinnedDomains)
+ *      and android/app/src/main/res/xml/network_security_config.xml
  */
 
 import { ApiError } from '@fitgrade/types';
@@ -36,6 +47,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     if (response.status === 401) {
       clearAccessToken();
+    }
+    if (response.status === 410) {
+      // Server signals this app version is no longer supported.
+      // Throw a typed error so callers can show an "update required" prompt.
+      throw new ApiError(410, 'גרסת האפליקציה אינה נתמכת עוד — יש לעדכן מ-App Store', 'App Version Deprecated');
     }
     const body = (await response.json().catch(() => ({}))) as RawErrorBody;
     throw new ApiError(

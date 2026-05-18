@@ -20,13 +20,13 @@ function fetcher(path: string): Promise<TeacherProfile> {
   return apiRequest<TeacherProfile>(path);
 }
 
-export function useCurrentTeacher(): {
+export function useCurrentTeacher(enabled = true): {
   teacher: TeacherProfile | undefined;
   isLoading: boolean;
   error: unknown;
 } {
   const { data, isLoading, error } = useSWR<TeacherProfile>(
-    '/auth/me',
+    enabled ? '/auth/me' : null,
     fetcher,
     { revalidateOnFocus: false },
   );

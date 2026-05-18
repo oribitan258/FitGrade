@@ -139,7 +139,7 @@ model Class {
   talmidautWeight   Int? // null = use teacher's global default
 
   teacherId String
-  teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher   User   @relation(fields: [teacherId], references: [id], onDelete: Restrict)
 
   enrollments       ClassEnrollment[]
   testSessions      TestSession[]
@@ -148,6 +148,7 @@ model Class {
   finalGrades       StudentFinalGrade[]
   scheduleEntries   ScheduleEntry[]
 
+  @@unique([teacherId, name, genderType])
   @@index([teacherId])
   @@map("classes")
 }
@@ -193,7 +194,7 @@ model ClassEnrollment {
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   // Back-reference: cascade-deletes StudentFinalGrade when this enrollment is removed.
   finalGrade StudentFinalGrade?
@@ -306,9 +307,10 @@ model TestResult {
   session   TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([sessionId, studentId])
+  @@index([sessionId])
   @@index([studentId])
   @@map("test_results")
 }
@@ -332,7 +334,7 @@ model AttendanceRecord {
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   sessionId String?      // Optional: link to the test session this attendance was taken for
   session   TestSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
@@ -373,7 +375,7 @@ model TalmidautRecord {
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([classId, studentId, lessonDate])
   @@index([classId, studentId])
@@ -409,7 +411,7 @@ model StudentFinalGrade {
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   // Compound FK to ClassEnrollment: cascade-deletes this grade when a student is removed from the class.
   // Resolves the gap where StudentFinalGrade persisted after ClassEnrollment deletion.

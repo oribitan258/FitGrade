@@ -22,11 +22,29 @@ import { RumModule } from './rum/rum.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
+/** Fail fast at startup if any required environment variable is absent. */
+function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
+  const required = [
+    'DATABASE_URL',
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'GOOGLE_CALLBACK_URL',
+  ];
+  const missing = required.filter((key) => !config[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+  return config;
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateEnv,
     }),
     /**
      * Global rate-limiting via @nestjs/throttler.

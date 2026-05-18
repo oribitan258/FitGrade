@@ -46,9 +46,11 @@ export class StudentsService {
   async getStudentsByClass(
     classId: string,
     teacherId: string,
-  ): Promise<StudentResponseDto[]> {
+    take: number,
+    skip: number,
+  ): Promise<[StudentResponseDto[], number]> {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
-    return this.studentsRepository.findByClassId(classId);
+    return this.studentsRepository.findByClassId(classId, take, skip);
   }
 
   /**

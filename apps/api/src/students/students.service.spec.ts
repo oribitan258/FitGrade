@@ -118,13 +118,13 @@ describe('StudentsService', () => {
 
   describe('getStudentsByClass', () => {
     it('verifies class ownership then returns the student list', async () => {
-      mockStudentsRepository.findByClassId.mockResolvedValue([mockStudentResponse]);
+      mockStudentsRepository.findByClassId.mockResolvedValue([[mockStudentResponse], 1]);
 
-      const result = await service.getStudentsByClass(CLASS_ID, TEACHER_ID);
+      const result = await service.getStudentsByClass(CLASS_ID, TEACHER_ID, 50, 0);
 
-      expect(result).toEqual([mockStudentResponse]);
+      expect(result).toEqual([[mockStudentResponse], 1]);
       expect(mockStudentsRepository.verifyClassOwnership).toHaveBeenCalledWith(CLASS_ID, TEACHER_ID);
-      expect(mockStudentsRepository.findByClassId).toHaveBeenCalledWith(CLASS_ID);
+      expect(mockStudentsRepository.findByClassId).toHaveBeenCalledWith(CLASS_ID, 50, 0);
     });
 
     it('throws NotFoundException when teacher does not own the class', async () => {
@@ -132,16 +132,16 @@ describe('StudentsService', () => {
         new NotFoundException('כיתה לא נמצאה'),
       );
 
-      await expect(service.getStudentsByClass(CLASS_ID, 'wrong-teacher')).rejects.toThrow(
+      await expect(service.getStudentsByClass(CLASS_ID, 'wrong-teacher', 50, 0)).rejects.toThrow(
         NotFoundException,
       );
       expect(mockStudentsRepository.findByClassId).not.toHaveBeenCalled();
     });
 
     it('returns empty array for a class with no students', async () => {
-      mockStudentsRepository.findByClassId.mockResolvedValue([]);
+      mockStudentsRepository.findByClassId.mockResolvedValue([[], 0]);
 
-      expect(await service.getStudentsByClass(CLASS_ID, TEACHER_ID)).toEqual([]);
+      expect(await service.getStudentsByClass(CLASS_ID, TEACHER_ID, 50, 0)).toEqual([[], 0]);
     });
   });
 

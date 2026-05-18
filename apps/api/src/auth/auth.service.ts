@@ -14,6 +14,11 @@ import type {
 } from './auth.types';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
+// Constant-time dummy used when a student record is not found.
+// Ensures bcrypt.compare() always runs so response timing cannot reveal
+// whether the national ID exists in the database (timing oracle fix).
+const DUMMY_HASH = '$2b$12$notavalidhashXXXXXXXXXXuDummyPaddingForConstantTimeCmp';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -69,19 +74,16 @@ export class AuthService {
     }
 
     const record = await this.authRepository.findStudentForNationalIdLogin(nationalId);
-    if (record === null) {
-      this.logger.warn('Failed student login — student not found');
-      throw new NotFoundException('STUDENT_NOT_FOUND');
-    }
 
-    // Verify password when one is stored; fall back to nationalId for legacy students.
-    if (record.passwordHash !== null) {
-      const candidate = rawPassword?.trim() || rawNationalId;
-      const valid = await bcrypt.compare(candidate, record.passwordHash);
-      if (!valid) {
-        this.logger.warn('Failed student login — wrong password');
-        throw new UnauthorizedException('סיסמה שגויה');
-      }
+    // Always run bcrypt.compare — even when the record is missing — so response
+    // timing is constant regardless of whether the national ID exists (anti-enum).
+    const hashToCheck = record?.passwordHash ?? DUMMY_HASH;
+    const candidate = rawPassword?.trim() || rawNationalId;
+    const passwordValid = await bcrypt.compare(candidate, hashToCheck);
+
+    if (record === null || (record.passwordHash !== null && !passwordValid)) {
+      this.logger.warn('Failed student login — invalid credentials');
+      throw new UnauthorizedException('פרטי הכניסה שגויים');
     }
 
     return record;

@@ -48,10 +48,14 @@ export class ClassesService {
   ) {}
 
   /**
-   * Returns all classes for the authenticated teacher (year-round, no semester filter).
+   * Returns a paginated slice of classes for the authenticated teacher.
    */
-  async getMyClasses(teacherId: string): Promise<ClassResponseDto[]> {
-    return this.classesRepository.findAllByTeacher(teacherId);
+  async getMyClasses(
+    teacherId: string,
+    take: number,
+    skip: number,
+  ): Promise<[ClassResponseDto[], number]> {
+    return this.classesRepository.findAllByTeacher(teacherId, take, skip);
   }
 
   /**

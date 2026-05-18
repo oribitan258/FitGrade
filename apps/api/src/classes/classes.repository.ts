@@ -77,17 +77,20 @@ export class ClassesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns all classes owned by a teacher, ordered by newest first.
-   * Classes are year-round entities — no semester filtering applied here.
-   * Semester filtering is applied at the TestSession level in dashboard queries.
+   * Returns a paginated slice of classes owned by a teacher, ordered newest-first.
+   * Returns [data, total] so the controller can emit X-Total-Count.
    */
-  async findAllByTeacher(teacherId: string): Promise<ClassResponseDto[]> {
-    const rows = await this.prisma.class.findMany({
-      where: { teacherId, deletedAt: null },
-      select: CLASS_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-    return rows.map(toClassResponse);
+  async findAllByTeacher(
+    teacherId: string,
+    take: number,
+    skip: number,
+  ): Promise<[ClassResponseDto[], number]> {
+    const where = { teacherId, deletedAt: null } as const;
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.class.findMany({ where, select: CLASS_SELECT, orderBy: { createdAt: 'desc' }, take, skip }),
+      this.prisma.class.count({ where }),
+    ]);
+    return [rows.map(toClassResponse), total];
   }
 
   async existsByNameAndGender(

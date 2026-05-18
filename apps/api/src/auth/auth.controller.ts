@@ -335,6 +335,18 @@ export class AuthController {
     @Req() req: Request & { cookies: Record<string, string> },
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
+    // CSRF defence-in-depth: verify the request originates from an allowed origin.
+    // SameSite=Strict on the cookie is the primary guard; this origin check adds
+    // a second layer in case SameSite is ever relaxed for a legitimate use case.
+    const origin: string | undefined =
+      (req.headers as Record<string, string | undefined>)['origin'] ??
+      (req.headers as Record<string, string | undefined>)['referer'];
+    const rawOrigins = process.env['CORS_ORIGINS'] ?? process.env['WEB_URL'] ?? 'http://localhost:3000';
+    const allowed = rawOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+    if (origin !== undefined && !allowed.some((a) => origin.startsWith(a))) {
+      throw new ForbiddenException('CSRF: origin mismatch');
+    }
+
     const token = req.cookies[REFRESH_COOKIE_NAME];
     if (token === undefined || token === '') {
       throw new UnauthorizedException('טוקן רענון חסר');
@@ -367,7 +379,12 @@ export class AuthController {
       // even if the attacker obtained a copy before the cookie was cleared.
       await this.authService.revokeRefreshToken(token);
     }
-    res.clearCookie(REFRESH_COOKIE_NAME);
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env['NODE_ENV'] === 'production',
+      path: '/',
+    });
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────

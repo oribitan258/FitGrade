@@ -80,6 +80,11 @@ export class AttendanceService {
     if (isNaN(date.getTime())) {
       throw new BadRequestException('פורמט תאריך לא תקין — נדרש YYYY-MM-DD');
     }
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // allow same-day entries
+    if (date > today) {
+      throw new BadRequestException('לא ניתן לרשום נוכחות לתאריך עתידי');
+    }
     return date;
   }
 }
