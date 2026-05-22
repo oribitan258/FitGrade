@@ -802,7 +802,7 @@ function FinalGradeBreakdown({ profile }: { profile: StudentProfile }): React.JS
             </p>
           </div>
           <span className={cn('text-5xl font-black tabular-nums', gradeColor(finalGrade.recommendedGrade))}>
-            {finalGrade.recommendedGrade}
+            {getHebrewGradeLabel(finalGrade.recommendedGrade)}
           </span>
         </div>
       </div>
@@ -811,7 +811,7 @@ function FinalGradeBreakdown({ profile }: { profile: StudentProfile }): React.JS
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-700">
-              כושר גופני ({finalGrade.testWeight}%) · ממוצע {finalGrade.fitnessAvg}
+              כושר גופני ({finalGrade.testWeight}%) · ממוצע {getHebrewGradeLabel(finalGrade.fitnessAvg)}
             </span>
             <span className="font-bold text-blue-700">+{fitnessContrib} נק&apos;</span>
           </div>
@@ -828,7 +828,7 @@ function FinalGradeBreakdown({ profile }: { profile: StudentProfile }): React.JS
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-700">
-              תלמידות ({finalGrade.talmidautWeight}%) · ממוצע {finalGrade.talmidautAvg}
+              תלמידות ({finalGrade.talmidautWeight}%) · ממוצע {getHebrewGradeLabel(finalGrade.talmidautAvg)}
             </span>
             <span className="font-bold text-violet-700">+{talmidautContrib} נק&apos;</span>
           </div>
@@ -847,7 +847,7 @@ function FinalGradeBreakdown({ profile }: { profile: StudentProfile }): React.JS
             {fitnessContrib} + {talmidautContrib} = סה&quot;כ
           </span>
           <span className={cn('text-lg font-extrabold tabular-nums', gradeColor(finalGrade.recommendedGrade))}>
-            {finalGrade.recommendedGrade}
+            {getHebrewGradeLabel(finalGrade.recommendedGrade)}
           </span>
         </div>
       </div>

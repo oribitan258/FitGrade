@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -142,6 +143,28 @@ export class StudentsController {
   }
 
   /**
+   * Soft-deletes a student from the class (PPA right to deletion).
+   * Sets Student.deletedAt — the student is excluded from all future queries
+   * but historical records (test results, audit logs) are preserved.
+   */
+  @Delete(':studentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove (soft-delete) a student from a class' })
+  @ApiParam({ name: 'classId',   description: 'Class ID' })
+  @ApiParam({ name: 'studentId', description: 'Student ID' })
+  @ApiResponse({ status: 204, description: 'Student removed' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Class does not belong to this teacher' })
+  @ApiResponse({ status: 404, description: 'Class or student not found' })
+  async removeStudentFromClass(
+    @Param('classId')   classId:   string,
+    @Param('studentId') studentId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    await this.studentsService.removeStudentFromClass(studentId, classId, user.sub);
+  }
+
+  /**
    * Bulk-imports students from an uploaded Excel (.xlsx) or CSV file.
    * Parses Hebrew headers from Mashov/Smart School exports.
    * File limit: 5 MB.
@@ -149,7 +172,17 @@ export class StudentsController {
   @Post('import')
   @Throttle({ default: { ttl: 60_000, limit: 2 } })
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const allowed = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'application/csv',
+      ];
+      cb(null, allowed.includes(file.mimetype));
+    },
+  }))
   @ApiOperation({ summary: 'ייבוא רשימת תלמידים מקובץ Excel/CSV' })
   @ApiParam({ name: 'classId', description: 'Class ID' })
   @ApiResponse({ status: 200, type: Object, description: 'סיכום ייבוא' })

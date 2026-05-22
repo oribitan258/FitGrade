@@ -1,0 +1,6 @@
+# Belt-and-suspenders: root .gitignore already covers these,
+# but this file ensures they are never committed even if the
+# root .gitignore is restructured or removed.
+.env
+.env.local
+.env.*.local

@@ -73,8 +73,10 @@ async function bootstrap(): Promise<void> {
       dnsPrefetchControl: { allow: false },
       // Remove X-Powered-By: Express — obscures backend stack
       hidePoweredBy: true,
-      // Cross-Origin-Resource-Policy: same-origin
-      crossOriginResourcePolicy: { policy: 'same-origin' },
+      // Cross-Origin-Resource-Policy: cross-origin — this is a REST API explicitly
+      // consumed cross-origin by the web frontend. CORS already controls which
+      // origins may read responses; CORP same-origin would block those reads.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
       // Permissions-Policy — disable camera/mic/geolocation (not needed)
       permittedCrossDomainPolicies: { permittedPolicies: 'none' },
     }),
@@ -119,6 +121,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['X-Total-Count', 'X-Request-ID'],
   });
 
   // ─── Global exception filter ──────────────────────────────────────────────

@@ -1,8 +1,9 @@
+import { Readable } from 'stream';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AuditAction } from '@prisma/client';
 import type { Semester } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import * as xlsx from 'xlsx';
+import { Workbook, type CellValue } from 'exceljs';
 import { StudentsRepository } from './students.repository';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import type { CreateStudentDto } from './dto/create-student.dto';
@@ -21,6 +22,23 @@ import type {
 } from './dto/student-report-response.dto';
 import type { FinalGradeResult, RawGradeComponents } from './students.repository';
 import type { ImportResultDto, ParsedStudentRow } from './dto/import-students.dto';
+
+/** Converts an ExcelJS CellValue to a plain string suitable for CSV/header matching. */
+function cellToString(v: CellValue | undefined): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v instanceof Date) return v.toISOString();
+  // CellRichTextValue: { richText: Array<{ text: string }> }
+  if (typeof v === 'object' && 'richText' in v) {
+    return (v as { richText: { text: string }[] }).richText.map((r) => r.text).join('');
+  }
+  // CellHyperlinkValue: { text: string, hyperlink: string }
+  if (typeof v === 'object' && 'text' in v) {
+    return String((v as { text: string }).text);
+  }
+  return '';
+}
 
 /** Hebrew month labels for building per-student history points. */
 const HEBREW_MONTH_LABELS: Record<number, string> = {
@@ -506,6 +524,34 @@ export class StudentsService {
     return result;
   }
 
+  /**
+   * Soft-deletes a student from a class, fulfilling the PPA right to deletion.
+   * Sets Student.deletedAt so the record is excluded from all future queries
+   * while historical audit logs and test results are preserved for school records.
+   *
+   * - Verifies the class belongs to the teacher.
+   * - Verifies the student is enrolled in that class.
+   * - Delegates the actual soft-delete to the repository.
+   */
+  async removeStudentFromClass(
+    studentId: string,
+    classId: string,
+    teacherId: string,
+  ): Promise<void> {
+    await this.studentsRepository.verifyClassOwnership(classId, teacherId);
+    await this.studentsRepository.softDeleteStudent(studentId, classId);
+
+    this.logger.log(`Student removed: id=${studentId} class=${classId}`);
+
+    void this.auditLogService.log({
+      action: AuditAction.STUDENT_REMOVED,
+      entityType: 'Student',
+      entityId: studentId,
+      actorId: teacherId,
+      newValue: { classId, deletedAt: new Date().toISOString() },
+    });
+  }
+
   // ─── Excel / CSV roster import ─────────────────────────────────────────────
 
   /** Header aliases accepted from Mashov / Smart School exports (trimmed, lowercased for matching). */
@@ -528,20 +574,37 @@ export class StudentsService {
     await this.studentsRepository.verifyClassOwnership(classId, teacherId);
 
     // Parse workbook
-    const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
+    const workbook = new Workbook();
+    const isCSV = mimetype === 'text/csv' || mimetype === 'application/csv';
+    if (isCSV) {
+      const stream = Readable.from(fileBuffer);
+      await workbook.csv.read(stream as import('stream').Stream);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await workbook.xlsx.load(fileBuffer as any);
+    }
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
       throw new BadRequestException('קובץ ריק — לא נמצאו גיליונות');
     }
-    const sheet = workbook.Sheets[sheetName];
-    const rows = xlsx.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+
+    // Collect all rows as string[][]; ExcelJS row.values is 1-indexed (slot 0 is null).
+    // includeEmpty: true ensures blank data rows are not skipped (they must still be validated).
+    const rows: string[][] = [];
+    worksheet.eachRow({ includeEmpty: true }, (row) => {
+      const cells = (row.values as (CellValue | undefined)[])
+        .slice(1)
+        .map((v) => cellToString(v));
+      rows.push(cells);
+    });
 
     if (rows.length < 2) {
       throw new BadRequestException('הקובץ חייב להכיל שורת כותרות ולפחות שורת נתונים אחת');
     }
 
     // Detect column indices from header row
-    const headers = (rows[0] as string[]).map((h) => String(h).trim());
+    const headers = rows[0].map((h) => h.trim());
     const colIdx = (aliases: string[]): number =>
       headers.findIndex((h) => aliases.some((a) => h === a));
 

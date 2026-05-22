@@ -9,7 +9,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -29,6 +31,9 @@ import { ResultResponseDto } from './dto/result-response.dto';
 import { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { EditResultRawValueDto } from './dto/edit-result-raw-value.dto';
+import { SessionHistoryRowDto } from './dto/session-history-row.dto';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 
 /**
@@ -215,5 +220,105 @@ export class TestsController {
     @CurrentUser() user: JwtPayload,
   ): Promise<void> {
     return this.testsService.deleteResult(sessionId, studentId, user.sub);
+  }
+
+  // ─── History endpoints ────────────────────────────────────────────────────
+
+  /**
+   * Returns paginated session history for a class.
+   * Total count is emitted as X-Total-Count response header for the client
+   * to implement "load more" or pagination UI without a separate count request.
+   */
+  @Get('classes/:classId/sessions')
+  @ApiTags('sessions')
+  @ApiOperation({ summary: 'List past sessions for a class (paginated history)' })
+  @ApiParam({ name: 'classId', description: 'Class ID' })
+  @ApiResponse({
+    status: 200,
+    type: [SessionHistoryRowDto],
+    headers: {
+      'X-Total-Count': {
+        description: 'Total number of sessions for this class',
+        schema: { type: 'integer' },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Class belongs to another teacher' })
+  @ApiResponse({ status: 404, description: 'Class not found' })
+  async getSessionHistory(
+    @Param('classId') classId: string,
+    @Query() pagination: PaginationQueryDto,
+    @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<SessionHistoryRowDto[]> {
+    const { rows, total } = await this.testsService.getSessionsByClass(classId, user.sub, pagination);
+    res.setHeader('X-Total-Count', String(total));
+    return rows;
+  }
+
+  /**
+   * Edits the raw measurement value of a result in history and recalculates the grade.
+   * Applies the same validations as initial result submission (time minimums, gender restrictions).
+   */
+  @Patch('sessions/:sessionId/results/:resultId/raw-value')
+  @HttpCode(HttpStatus.OK)
+  @ApiTags('results')
+  @ApiOperation({ summary: 'Edit raw value of a history result (recalculates grade)' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'resultId', description: 'TestResult ID' })
+  @ApiResponse({ status: 200, type: ResultResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid input or validation failure' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session or result not found' })
+  async editResultRawValue(
+    @Param('sessionId') sessionId: string,
+    @Param('resultId') resultId: string,
+    @Body() dto: EditResultRawValueDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<ResultResponseDto> {
+    return this.testsService.editResultRawValue(resultId, sessionId, dto.rawValue, user.sub);
+  }
+
+  /**
+   * Deletes a single result from history — no undo window.
+   * The confirmation dialog in the UI is the only safety gate.
+   */
+  @Delete('sessions/:sessionId/results/:resultId/history')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiTags('results')
+  @ApiOperation({ summary: 'Delete a result from history (no undo window)' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'resultId', description: 'TestResult ID' })
+  @ApiResponse({ status: 204, description: 'Result deleted' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 404, description: 'Session or result not found' })
+  async deleteResultInHistory(
+    @Param('sessionId') sessionId: string,
+    @Param('resultId') resultId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    return this.testsService.deleteResultInHistory(resultId, sessionId, user.sub);
+  }
+
+  /**
+   * Deletes an entire session.
+   * TestResults cascade-delete; AttendanceRecord.sessionId is nulled.
+   * Irreversible — requires confirmation dialog on the client.
+   */
+  @Delete('sessions/:sessionId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiTags('sessions')
+  @ApiOperation({ summary: 'Delete an entire session and all its results' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiResponse({ status: 204, description: 'Session deleted' })
+  @ApiResponse({ status: 401, description: 'Not authenticated' })
+  @ApiResponse({ status: 403, description: 'Session belongs to another teacher' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async deleteSession(
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    return this.testsService.deleteSession(sessionId, user.sub);
   }
 }

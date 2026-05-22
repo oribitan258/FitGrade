@@ -370,14 +370,9 @@ export function BeepTestSummary({
                       aria-label="מחשב ציון..."
                     />
                   ) : row.calculatedGrade !== null ? (
-                    <>
-                      <span className="text-base font-black tabular-nums text-white">
-                        {row.calculatedGrade}
-                      </span>
-                      <span className="text-[10px] font-semibold text-white/40">
-                        {getHebrewGradeLabel(row.calculatedGrade)}
-                      </span>
-                    </>
+                    <span className="text-base font-black text-white">
+                      {getHebrewGradeLabel(row.calculatedGrade)}
+                    </span>
                   ) : (
                     <span className="text-xs text-white/25">—</span>
                   )}

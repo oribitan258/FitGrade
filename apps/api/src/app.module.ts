@@ -19,6 +19,7 @@ import { ComparisonModule } from './comparison/comparison.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { RumModule } from './rum/rum.module';
+import { ExportsModule } from './exports/exports.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -73,6 +74,7 @@ function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
     SettingsModule,
     AuditLogModule,
     RumModule,
+    ExportsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -148,6 +148,18 @@ const STUDENT_SELECT = {
   createdAt: true,
 } as const;
 
+/**
+ * Masks a national ID (ת"ז) before returning it in API responses.
+ * Shows only the last 4 digits to support identification while protecting
+ * the full 9-digit ID. Raw value is kept in the DB for auth and deduplication.
+ * Example: '012345678' → '*****5678', null → null
+ */
+function maskNationalId(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const padded = id.padStart(9, '0');
+  return `*****${padded.slice(-4)}`;
+}
+
 @Injectable()
 export class StudentsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -192,7 +204,13 @@ export class StudentsRepository {
       }),
       this.prisma.classEnrollment.count({ where }),
     ]);
-    return [enrollments.map((e) => e.student), total];
+    return [
+      enrollments.map((e) => ({
+        ...e.student,
+        nationalId: maskNationalId(e.student.nationalId),
+      })),
+      total,
+    ];
   }
 
   /**

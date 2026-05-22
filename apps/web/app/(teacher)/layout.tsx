@@ -675,7 +675,7 @@ function TeacherShell({
 
   // Fetch profile only after the access token is confirmed — prevents a
   // spurious 401 on page load when the token isn't in memory yet.
-  const { teacher, isLoading: profileLoading } = useCurrentTeacher(tokenReady);
+  const { teacher, isLoading: profileLoading, error: profileError } = useCurrentTeacher(tokenReady);
   const { isTourActive } = useTour();
 
   // /settings is also exempted — tour lands there and the page handles completion
@@ -695,12 +695,15 @@ function TeacherShell({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    // 1. Token not yet confirmed
+    // 1. Token not yet confirmed — wait for silent refresh
     if (!tokenReady) return;
     // 2. Still waiting for profile fetch
     if (profileLoading) return;
-    // 3. Profile fetch failed / null → stay in loading state
-    if (!teacher) return;
+    // 3. Profile fetch failed — bad/expired token, force re-login
+    if (profileError || !teacher) {
+      router.replace('/login');
+      return;
+    }
 
     // 4. First-time teacher: lock into onboarding — but NOT while the tour is
     //    actively running (it navigates to /dashboard etc. before setup completes).
@@ -710,7 +713,7 @@ function TeacherShell({
     }
 
     setReady(true);
-  }, [tokenReady, router, pathname, teacher, profileLoading, isOnboarding, isTourActive]);
+  }, [tokenReady, router, pathname, teacher, profileLoading, profileError, isOnboarding, isTourActive]);
 
   return (
     <>

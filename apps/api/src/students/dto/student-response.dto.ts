@@ -18,7 +18,7 @@ export class StudentResponseDto {
   @ApiProperty({ example: '301' })
   studentCode!: string;
 
-  @ApiProperty({ example: '123456789', nullable: true })
+  @ApiProperty({ example: '*****6789', nullable: true, description: 'Masked national ID — last 4 digits only (PII protection)' })
   nationalId!: string | null;
 
   @ApiProperty({ enum: Gender })

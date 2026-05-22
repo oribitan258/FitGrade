@@ -53,6 +53,7 @@ export interface StudentData {
   firstName: string;
   lastName: string;
   studentCode: string;
+  /** Masked: last 4 digits only, e.g. '*****6789'. Never the full 9-digit ת"ז. */
   nationalId: string | null;
   gender: Gender;
   dateOfBirth: string | null;
@@ -226,6 +227,8 @@ export interface LiveStudentResult {
   gradeOverride: number | null;
   /** ISO 8601 date string. */
   recordedAt: string;
+  /** Edit history for this result, oldest first. Empty array if never edited. */
+  auditTrail: AuditTrailEntry[];
 }
 
 /** Minimal student shape returned inside SessionDetail (no PII beyond name). */
@@ -234,7 +237,43 @@ export interface SessionStudent {
   firstName: string;
   lastName: string;
   studentCode: string;
-  nationalId: string | null;
+}
+
+/** One entry in a result's edit history — returned inside LiveStudentResult.auditTrail. */
+export interface AuditTrailEntry {
+  /** 'RESULT_EDIT' | 'GRADE_OVERRIDE' */
+  action: string;
+  /** ISO 8601 timestamp when the change was recorded. */
+  changedAt: string;
+  oldValue: Record<string, unknown> | null;
+  newValue: Record<string, unknown> | null;
+}
+
+/** One row returned by GET /classes/:classId/sessions (paginated history list). */
+export interface SessionHistoryRow {
+  id: string;
+  testTypeId: string;
+  /** Hebrew name of the test type. */
+  testNameHe: string;
+  /** ISO 8601 date string. */
+  conductedAt: string;
+  semester: Semester;
+  isStopwatch: boolean;
+  completedAt: string | null;
+  /** Number of results recorded in this session. */
+  resultCount: number;
+}
+
+/** Response shape for test result mutation endpoints (submit / raw-value edit / override). */
+export interface ResultResponse {
+  id: string;
+  sessionId: string;
+  studentId: string;
+  rawValue: number;
+  calculatedGrade: number;
+  gradeOverride: number | null;
+  /** ISO 8601 timestamp. */
+  recordedAt: string;
 }
 
 /** Full response of GET /sessions/:sessionId — powers the live-session page. */

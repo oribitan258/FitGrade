@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   Dumbbell,
+  History,
   LayoutGrid,
   LayoutList,
   Loader2,
@@ -73,7 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { cn, formatRawValue } from '@/lib/utils';
+import { cn, computeGeneralGradesMap, formatRawValue } from '@/lib/utils';
 import { formatClassWithGender } from '@/lib/class-utils';
 import { AddStudentDialog } from '@/components/students/add-student-dialog';
 import { SemesterEmptyBanner } from '@/components/layout/semester-empty-banner';
@@ -947,8 +948,10 @@ function CreateSessionModal({ classId, open, onOpenChange, gradeLevel }: CreateS
 interface TestTypeDropdownProps {
   testSummaries: TestSummary[];
   selectedTestId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }
+
+const GENERAL_SENTINEL = '__general__';
 
 function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeDropdownProps): React.JSX.Element {
   const { data: allTypes, isLoading } = useTestTypes();
@@ -959,8 +962,9 @@ function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeD
     return { ...t, hasSessions: !!summary, sessionCount: summary?.studentGrades.length ?? 0 };
   });
 
-  const selectedOpt = options.find((o) => o.id === selectedTestId);
-  const TypeIcon = selectedOpt ? (INPUT_TYPE_ICONS[selectedOpt.inputType] ?? Target) : Dumbbell;
+  const isGeneral = selectedTestId === null;
+  const selectedOpt = isGeneral ? null : options.find((o) => o.id === selectedTestId);
+  const TypeIcon = isGeneral ? BarChart2 : (selectedOpt ? (INPUT_TYPE_ICONS[selectedOpt.inputType] ?? Target) : Dumbbell);
 
   if (isLoading) {
     return <div className="h-14 animate-pulse rounded-2xl bg-white/60 shadow-[0_2px_16px_rgba(15,23,42,0.06)]" />;
@@ -993,7 +997,7 @@ function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeD
                 transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.28 }}
                 className="text-sm font-extrabold text-slate-900"
               >
-                {selectedOpt ? `${selectedOpt.nameHe}${selectedOpt.unit ? ` (${selectedOpt.unit})` : ''}` : 'בחר מבחן'}
+                {isGeneral ? 'ציון כללי מומלץ' : (selectedOpt ? `${selectedOpt.nameHe}${selectedOpt.unit ? ` (${selectedOpt.unit})` : ''}` : 'בחר מבחן')}
               </motion.p>
             </AnimatePresence>
           </div>
@@ -1004,11 +1008,8 @@ function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeD
 
         {/* shadcn Select */}
         <Select
-          value={selectedTestId ?? ''}
-          onValueChange={(v) => {
-            const opt = options.find((o) => o.id === v);
-            if (opt) onSelect(opt.id);
-          }}
+          value={selectedTestId ?? GENERAL_SENTINEL}
+          onValueChange={(v) => onSelect(v === GENERAL_SENTINEL ? null : v)}
           dir="rtl"
         >
           <SelectTrigger
@@ -1021,6 +1022,21 @@ function TestTypeDropdown({ testSummaries, selectedTestId, onSelect }: TestTypeD
             className="rounded-xl border-white/80 bg-white/95 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl"
             dir="rtl"
           >
+            {/* General grade — always first */}
+            <SelectItem
+              value={GENERAL_SENTINEL}
+              className="flex cursor-pointer items-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-violet-800 focus:bg-violet-50 focus:text-violet-900"
+            >
+              <span className="flex items-center gap-2">
+                <BarChart2 className="h-3.5 w-3.5 text-violet-500" aria-hidden="true" />
+                ציון כללי מומלץ
+                <span className="ms-1 rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-bold text-violet-700">
+                  ברירת מחדל
+                </span>
+              </span>
+            </SelectItem>
+            <div className="my-1 h-px bg-slate-100" />
+
             {/* Tests with recorded sessions first */}
             {options.some((o) => o.hasSessions) && (
               <>
@@ -2761,7 +2777,7 @@ export default function ClassDetailPage(): React.JSX.Element {
   const { data: testTypes } = useTestTypes();
 
   // Fetch today's attendance to drive absent/exempt button states
-  const { data: todayAttendance, mutate: mutateAttendance } = useSWR<AttendanceRecord[]>(
+  const { data: todayAttendance, mutate: mutateAttendance, error: _attendanceError } = useSWR<AttendanceRecord[]>(
     `/classes/${classId}/attendance?date=${today}`,
     apiFetcher,
     { revalidateOnFocus: false },
@@ -2778,12 +2794,11 @@ export default function ClassDetailPage(): React.JSX.Element {
     [details],
   );
 
-  // Initialise selectedTestId to the first test type once details load
-  useEffect(() => {
-    if (selectedTestId === null && testSummaries[0]) {
-      setSelectedTestId(testSummaries[0].testTypeId);
-    }
-  }, [testSummaries, selectedTestId]);
+  // Average effectiveGrade across all test types per student — powers the General view.
+  const generalGradesMap = useMemo<Map<string, number>>(
+    () => computeGeneralGradesMap(testSummaries),
+    [testSummaries],
+  );
 
   const selectedSummary = useMemo(
     () => testSummaries.find((s) => s.testTypeId === selectedTestId),
@@ -2802,6 +2817,9 @@ export default function ClassDetailPage(): React.JSX.Element {
     [selectedSummary],
   );
 
+  // Routes score lookups: General mode → average across all tests; else → selected test.
+  const activeGradesMap = selectedTestId === null ? generalGradesMap : studentGradesMap;
+
   const studentRawMap = useMemo(
     () => new Map<string, number | null>(
       (selectedSummary?.studentGrades ?? []).map((sg) => [sg.studentId, sg.rawValue]),
@@ -2813,10 +2831,10 @@ export default function ClassDetailPage(): React.JSX.Element {
     () => (students ?? [])
       .map((s) => ({
         student:   s,
-        score:     studentGradesMap.get(s.id) ?? 0,
-        rawValue:  studentRawMap.get(s.id) ?? null,
-        unit:      selectedSummary?.unit ?? null,
-        inputType: selectedInputType,
+        score:     activeGradesMap.get(s.id) ?? 0,
+        rawValue:  selectedTestId === null ? null : (studentRawMap.get(s.id) ?? null),
+        unit:      selectedTestId === null ? null : (selectedSummary?.unit ?? null),
+        inputType: selectedTestId === null ? 'GENERAL' : selectedInputType,
       }))
       .filter(({ score }) => score > 0)
       .sort((a, b) => {
@@ -2831,7 +2849,7 @@ export default function ClassDetailPage(): React.JSX.Element {
       })
       .slice(0, 3)
       .map((entry, pos) => ({ ...entry, rank: (pos + 1) as 1 | 2 | 3 })),
-    [students, studentGradesMap, studentRawMap, selectedSummary?.unit, selectedInputType],
+    [students, activeGradesMap, studentRawMap, selectedSummary?.unit, selectedInputType, selectedTestId],
   );
 
   const chartData = useMemo(
@@ -2864,10 +2882,10 @@ export default function ClassDetailPage(): React.JSX.Element {
   /** All students whose cross-test score is below the norm threshold. */
   const failingStudents = useMemo(
     () => (students ?? []).filter((s) => {
-      const score = studentGradesMap.get(s.id) ?? 0;
+      const score = activeGradesMap.get(s.id) ?? 0;
       return score > 0 && score < 70;
     }),
-    [students, studentGradesMap],
+    [students, activeGradesMap],
   );
 
   /**
@@ -2940,7 +2958,7 @@ export default function ClassDetailPage(): React.JSX.Element {
 
   if (classLoading || detailsLoading) return <ClassDetailSkeleton />;
 
-  if (classError || !cls) {
+  if (classError || studentsError || !cls) {
     return (
       <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700 max-w-lg">
         לא ניתן לטעון את פרטי הכיתה — נסה לרענן את הדף.
@@ -3067,7 +3085,24 @@ export default function ClassDetailPage(): React.JSX.Element {
         </motion.div>
 
         {/* ── Tools Grid ──────────────────────────────────────────────── */}
-        <motion.div variants={ITEM} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <motion.div variants={ITEM} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+
+          {/* Tool 0 — Test History */}
+          <Link href={`/classes/${classId}/history`} className="no-underline">
+            <div className="group h-full cursor-pointer rounded-2xl border border-white/70 bg-white/55 p-5 shadow-[0_2px_18px_rgba(139,92,246,0.09)] backdrop-blur-xl transition-all hover:bg-white/75 hover:shadow-[0_6px_26px_rgba(139,92,246,0.16)]">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 ring-1 ring-violet-200">
+                    <History className="h-5 w-5 text-violet-600" aria-hidden="true" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">היסטוריית מבחנים</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">עריכה · מחיקה · תיקון ציונים</p>
+                </div>
+              </div>
+            </div>
+          </Link>
 
           {/* Tool 1 — Team Builder */}
           <Link href={`/classes/${classId}/team-builder`} className="no-underline">
@@ -3196,6 +3231,41 @@ export default function ClassDetailPage(): React.JSX.Element {
             </div>
           </SemesterPanel>
           </motion.div>
+        )}
+
+        {selectedTestId === null && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key="general"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ ease: [0.22, 1, 0.36, 1], duration: 0.45 }}
+              className="space-y-5"
+            >
+              <motion.div
+                className="rounded-2xl bg-amber-50/75 backdrop-blur-3xl border border-white/75 ring-1 ring-white/20 p-6 shadow-[0_8px_28px_rgba(15,23,42,0.10)]"
+                whileHover={{ y: -6, scale: 1.015, boxShadow: '0 20px 52px rgba(245,158,11,0.22)', transition: { type: 'spring', stiffness: 350, damping: 20 } }}
+              >
+                <div className="flex items-center gap-2.5 mb-5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50">
+                    <span className="text-base">🏆</span>
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">מובילי הכיתה</h2>
+                    <p className="text-xs text-slate-500">לפי ציון כללי משוקלל</p>
+                  </div>
+                </div>
+                {!studentsLoading && ranked.length >= 2 ? (
+                  <Podium entries={ranked} />
+                ) : (
+                  <p className="py-8 text-center text-sm text-slate-400">
+                    {studentsLoading ? 'טוען...' : 'נדרשים לפחות 2 תלמידים עם ציונים'}
+                  </p>
+                )}
+              </motion.div>
+            </motion.div>
+          </AnimatePresence>
         )}
 
         {selectedSummary && (
@@ -3447,7 +3517,7 @@ export default function ClassDetailPage(): React.JSX.Element {
               <div className="border-b border-slate-100 bg-slate-50/80 px-5 py-3 grid grid-cols-[2fr_1fr_1fr_1.5fr_auto_0.5fr] gap-4">
                 {[
                   'שם תלמיד',
-                  selectedSummary ? `ציון — ${selectedSummary.nameHe}` : 'ציון',
+                  selectedTestId === null ? 'ציון כללי' : (selectedSummary ? `ציון — ${selectedSummary.nameHe}` : 'ציון'),
                   'מגדר',
                   'רמת כושר',
                   'נוכחות',
@@ -3459,7 +3529,7 @@ export default function ClassDetailPage(): React.JSX.Element {
               <motion.ul variants={ROW_STAGGER} initial="hidden" animate="show">
                 <AnimatePresence mode="popLayout">
                 {filteredStudents.map((student, index) => {
-                  const score    = studentGradesMap.get(student.id) ?? 0;
+                  const score    = activeGradesMap.get(student.id) ?? 0;
                   const level    = score > 0 ? gradeLevel(score) : 'fail';
                   const ls       = LEVEL_STYLE[level];
                   const tint     = AVATAR_TINTS[index % AVATAR_TINTS.length]!;
@@ -3568,7 +3638,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         eligibleStudents={eligibleStudents}
         lockedStudents={lockedStudents}
         activePlanMap={activePlanMap}
-        studentGradesMap={studentGradesMap}
+        studentGradesMap={activeGradesMap}
       />
       <AiControlCenterModal
         open={isAiControlCenterOpen}
@@ -3577,7 +3647,7 @@ export default function ClassDetailPage(): React.JSX.Element {
         activePlanDetailsMap={activePlanDetailsMap}
         lockedStudents={lockedStudents}
         eligibleStudents={eligibleStudents}
-        studentGradesMap={studentGradesMap}
+        studentGradesMap={activeGradesMap}
       />
       <CreateSessionModal
         classId={classId}

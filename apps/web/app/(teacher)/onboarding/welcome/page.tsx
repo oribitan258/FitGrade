@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, BookOpen, Dumbbell, Users } from 'lucide-react';
 import { useTour } from '@/components/tour/TourProvider';
@@ -31,6 +32,7 @@ const ITEM = {
 
 export default function OnboardingWelcomePage(): React.JSX.Element {
   const { startTour } = useTour();
+  const [consented, setConsented] = useState(false);
 
   return (
     <div className="h-screen w-full overflow-hidden flex items-start justify-center pt-8 p-4">
@@ -141,6 +143,87 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
             aria-hidden="true"
           />
 
+          {/* ── Consent checkbox (Clickwrap agreement) ───────────────── */}
+          <label
+            className="mb-5 flex cursor-pointer items-start gap-3"
+            dir="rtl"
+          >
+            <span className="relative mt-0.5 flex shrink-0">
+              <input
+                type="checkbox"
+                checked={consented}
+                onChange={(e) => { setConsented(e.target.checked); }}
+                className="peer sr-only"
+                aria-required="true"
+                aria-label="אישור תנאי שימוש ומדיניות פרטיות"
+              />
+              {/* Custom checkbox track */}
+              <span
+                className="flex h-5 w-5 items-center justify-center rounded-md border transition-all duration-150
+                  peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500 peer-focus-visible:ring-offset-1
+                  peer-focus-visible:ring-offset-transparent"
+                style={{
+                  background: consented
+                    ? 'linear-gradient(135deg, #6366f1, #a855f7)'
+                    : 'rgba(255,255,255,0.06)',
+                  borderColor: consented
+                    ? 'transparent'
+                    : 'rgba(167,139,250,0.35)',
+                  boxShadow: consented
+                    ? '0 0 12px rgba(99,102,241,0.50)'
+                    : 'none',
+                }}
+                aria-hidden="true"
+              >
+                {consented && (
+                  <svg
+                    viewBox="0 0 12 10"
+                    fill="none"
+                    className="h-3 w-3"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M1.5 5L4.5 8L10.5 1.5"
+                      stroke="white"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </span>
+            </span>
+            <span className="text-[12px] leading-[1.6]" style={{ color: 'rgba(196,181,253,0.72)' }}>
+              קראתי ואני מסכים/ה ל
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => { e.stopPropagation(); }}
+                className="font-semibold underline underline-offset-2 transition-colors"
+                style={{ color: 'rgba(167,139,250,0.95)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = '#c4b5fd'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(167,139,250,0.95)'; }}
+              >
+                תנאי השימוש
+              </a>
+              {' '}ול
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => { e.stopPropagation(); }}
+                className="font-semibold underline underline-offset-2 transition-colors"
+                style={{ color: 'rgba(167,139,250,0.95)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = '#c4b5fd'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(167,139,250,0.95)'; }}
+              >
+                מדיניות הפרטיות
+              </a>
+              {' '}של FitGrade. אני מצהיר/ה כי יש לי את ההרשאות הנדרשות ממוסד החינוך להזנת נתוני תלמידים.
+            </span>
+          </label>
+
           {/* ── CTA hint ─────────────────────────────────────────────── */}
           <p
             className="mb-4 text-center text-[12px]"
@@ -149,27 +232,32 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
             סיור קצר של 15 צעדים — כל הכלים העיקריים
           </p>
 
-          {/* ── CTA button ───────────────────────────────────────────── */}
+          {/* ── CTA button — disabled until consent is given ─────────── */}
           <motion.button
             type="button"
             onClick={startTour}
-            whileHover={{
+            disabled={!consented}
+            whileHover={consented ? {
               scale: 1.03,
               y: -2,
               boxShadow:
                 '0 20px 60px rgba(99,102,241,0.72), 0 0 0 1px rgba(167,139,250,0.38)',
-            }}
-            whileTap={{ scale: 0.97 }}
+            } : {}}
+            whileTap={consented ? { scale: 0.97 } : {}}
             transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-            className="relative w-full overflow-hidden rounded-2xl text-[15px] font-bold text-white"
+            className="relative w-full overflow-hidden rounded-2xl text-[15px] font-bold text-white transition-opacity duration-200"
             style={{
               background:
                 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 40%, #a855f7 72%, #ec4899 100%)',
-              boxShadow:
-                '0 6px 32px rgba(99,102,241,0.58), inset 0 1px 0 rgba(255,255,255,0.16)',
+              boxShadow: consented
+                ? '0 6px 32px rgba(99,102,241,0.58), inset 0 1px 0 rgba(255,255,255,0.16)'
+                : 'none',
               height: '52px',
+              opacity: consented ? 1 : 0.38,
+              cursor: consented ? 'pointer' : 'not-allowed',
             }}
             aria-label="התחל סיור מודרך"
+            aria-disabled={!consented}
           >
             <span
               aria-hidden="true"

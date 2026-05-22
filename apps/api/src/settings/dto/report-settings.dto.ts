@@ -3,7 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -48,7 +48,10 @@ export class UpdateReportSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://example.com/logo.png' })
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @IsString()
+  @Matches(/^(https?:\/\/.+|data:image\/.+;base64,.+)$/, {
+    message: 'schoolLogoUrl must be a valid https URL or a data:image base64 URI',
+  })
   schoolLogoUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'data:image/png;base64,...' })

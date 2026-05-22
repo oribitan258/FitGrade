@@ -1,6 +1,30 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+export interface TestSummaryForGrade {
+  studentGrades: Array<{ studentId: string; effectiveGrade: number }>;
+}
+
+/** Averages effectiveGrade across all test types per student. Grades of 0 are excluded. */
+export function computeGeneralGradesMap(testSummaries: TestSummaryForGrade[]): Map<string, number> {
+  const totals = new Map<string, { sum: number; count: number }>();
+  for (const ts of testSummaries) {
+    for (const sg of ts.studentGrades) {
+      if (sg.effectiveGrade > 0) {
+        const acc = totals.get(sg.studentId) ?? { sum: 0, count: 0 };
+        acc.sum += sg.effectiveGrade;
+        acc.count += 1;
+        totals.set(sg.studentId, acc);
+      }
+    }
+  }
+  const map = new Map<string, number>();
+  for (const [sid, { sum, count }] of totals) {
+    map.set(sid, Math.round(sum / count));
+  }
+  return map;
+}
+
 /**
  * Merges Tailwind CSS class names, resolving conflicts correctly.
  * Required by shadcn/ui components (added in a later phase).

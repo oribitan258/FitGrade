@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "israeli-appsec-scanner": {
+      "source": "skills-il/security-compliance",
+      "sourceType": "github",
+      "computedHash": "fc6bf61ff25741d010788b9a060546917b7cd71599552dce1de992de5836b518"
+    }
+  }
+}

@@ -1,6 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FitnessInputType } from '@prisma/client';
 
+export class AuditTrailEntryDto {
+  @ApiProperty({ description: 'RESULT_EDIT | GRADE_OVERRIDE' })
+  action!: string;
+
+  @ApiProperty({ description: 'When this change was recorded' })
+  changedAt!: Date;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Snapshot before the change' })
+  oldValue!: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Snapshot after the change' })
+  newValue!: Record<string, unknown> | null;
+}
+
 export class LiveStudentResultDto {
   @ApiProperty({ description: 'TestResult row ID' })
   resultId!: string;
@@ -19,6 +33,9 @@ export class LiveStudentResultDto {
 
   @ApiProperty()
   recordedAt!: Date;
+
+  @ApiProperty({ type: [AuditTrailEntryDto], description: 'Edit history for this result (oldest first)' })
+  auditTrail!: AuditTrailEntryDto[];
 }
 
 export class SessionStudentDto {
@@ -33,9 +50,6 @@ export class SessionStudentDto {
 
   @ApiProperty()
   studentCode!: string;
-
-  @ApiProperty({ nullable: true })
-  nationalId!: string | null;
 }
 
 export class SessionDetailResponseDto {

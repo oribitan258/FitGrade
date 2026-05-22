@@ -284,4 +284,10 @@ export class ReportsService {
   getCommentsBank(): string[] {
     return MINISTRY_COMMENTS_BANK;
   }
+
+  /** Returns the display name of a class, verifying ownership in the process. */
+  async getClassName(classId: string, teacherId: string): Promise<string> {
+    const { name } = await this.reportsRepository.verifyClassOwnership(classId, teacherId);
+    return name;
+  }
 }

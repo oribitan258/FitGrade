@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes, randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { AuditAction } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type {
   GoogleTeacherProfile,
   TeacherProfileRecord,
@@ -13,6 +15,11 @@ import type {
   TokenPair,
 } from './auth.types';
 import type { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+
+/** SHA-256 truncated to 16 hex chars — pseudonymous correlator for audit logs. Never store raw national IDs in logs. */
+function hashIdForAudit(nationalId: string): string {
+  return createHash('sha256').update(nationalId).digest('hex').slice(0, 16);
+}
 
 // Constant-time dummy used when a student record is not found.
 // Ensures bcrypt.compare() always runs so response timing cannot reveal
@@ -32,6 +39,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly blacklist: RefreshTokenBlacklistService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // ─── Teacher (Google OAuth) ────────────────────────────────────────────────
@@ -70,6 +78,13 @@ export class AuthService {
 
     if (!AuthService.isValidIsraeliId(nationalId)) {
       this.logger.warn('Failed student login — invalid Israeli ID format');
+      void this.auditLogService.log({
+        action: AuditAction.AUTH_FAILURE,
+        entityType: 'Student',
+        entityId: hashIdForAudit(nationalId),
+        actorId: 'anonymous',
+        newValue: { reason: 'invalid_id_format' },
+      });
       throw new UnauthorizedException('תעודת זהות לא תקינה');
     }
 
@@ -83,6 +98,13 @@ export class AuthService {
 
     if (record === null || (record.passwordHash !== null && !passwordValid)) {
       this.logger.warn('Failed student login — invalid credentials');
+      void this.auditLogService.log({
+        action: AuditAction.AUTH_FAILURE,
+        entityType: 'Student',
+        entityId: hashIdForAudit(nationalId),
+        actorId: 'anonymous',
+        newValue: { reason: record === null ? 'student_not_found' : 'wrong_password' },
+      });
       throw new UnauthorizedException('פרטי הכניסה שגויים');
     }
 

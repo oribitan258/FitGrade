@@ -1507,13 +1507,15 @@ function HeroBanner(): React.JSX.Element {
           animate={{ x: [0, 80, 20, 0], y: [0, 40, -10, 0], scale: [1, 1.14, 1.05, 1] }}
           transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
         />
-        {/* Wave orb 2 — soft coral/peach drift (bottom-end) */}
+        {/* Wave orb 2 — ambient drift (bottom-end), semester-aware */}
         <motion.div
           className="absolute rounded-full pointer-events-none"
           style={{
             width: 700, height: 700,
             bottom: '-40%', insetInlineEnd: '5%',
-            background: 'radial-gradient(circle, rgba(251,113,133,0.16) 0%, rgba(249,168,212,0.10) 45%, transparent 70%)',
+            background: activeSemester === 'A'
+              ? 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, rgba(139,92,246,0.07) 45%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(20,184,166,0.12) 0%, rgba(52,211,153,0.07) 45%, transparent 70%)',
             filter: 'blur(38px)',
           }}
           animate={{ x: [0, -60, -20, 0], y: [0, -30, 10, 0], scale: [1, 1.12, 1.04, 1] }}
@@ -1902,7 +1904,7 @@ function apiFetcher<T>(path: string): Promise<T> {
 
 function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
   const { activeSemester } = useSemester();
-  const { data, isLoading } = useSWR<MissingResultItem[]>(
+  const { data, isLoading, error } = useSWR<MissingResultItem[]>(
     open ? `/dashboard/missing-results?semester=${activeSemester}` : null,
     apiFetcher,
     { revalidateOnFocus: false },
@@ -1934,6 +1936,9 @@ function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => 
                 <div key={n} className="h-14 animate-pulse rounded-2xl bg-amber-50" />
               ))}
             </div>
+          )}
+          {error && (
+            <p className="py-6 text-center text-sm text-red-500">שגיאה בטעינת הנתונים. נסה שוב.</p>
           )}
           {!isLoading && data?.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
@@ -1982,7 +1987,7 @@ function MissingResultsModal({ open, onClose }: { open: boolean; onClose: () => 
 
 function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
   const { activeSemester } = useSemester();
-  const { data, isLoading } = useSWR<BelowNormItem[]>(
+  const { data, isLoading, error } = useSWR<BelowNormItem[]>(
     open ? `/dashboard/below-norm-details?semester=${activeSemester}` : null,
     apiFetcher,
     { revalidateOnFocus: false },
@@ -2014,6 +2019,9 @@ function BelowNormModal({ open, onClose }: { open: boolean; onClose: () => void 
                 <div key={n} className="h-14 animate-pulse rounded-2xl bg-red-50" />
               ))}
             </div>
+          )}
+          {error && (
+            <p className="py-6 text-center text-sm text-red-500">שגיאה בטעינת הנתונים. נסה שוב.</p>
           )}
           {!isLoading && data?.length === 0 && (
             <div className="flex flex-col items-center gap-2 py-10 text-center">

@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
 import type { SessionDetailResponseDto } from './dto/session-detail-response.dto';
 import type { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
+import type { SessionHistoryRowDto } from './dto/session-history-row.dto';
 
 const TEST_TYPE_SELECT = {
   id: true,
@@ -181,90 +182,131 @@ export class TestsRepository {
 
   /**
    * Returns full session details — including test-type metadata, enrolled students,
-   * and all results recorded so far — for the live-session UI.
+   * results, and audit trail per result — for the history detail page.
    *
    * Distinguishes 404 (session does not exist) from 403 (session belongs to
    * a different teacher). See findSessionWithOwnership for the same pattern. (SEC-003)
+   *
+   * Audit trail strategy: two queries inside one read transaction (no N+1).
+   *   1. testSession.findUnique — session + results
+   *   2. auditLog.findMany({ entityId: { in: resultIds } }) — all audit entries at once
+   * Application-side grouping by entityId attaches the trail to each result row.
    */
   async findSessionWithStudents(
     sessionId: string,
     teacherId: string,
   ): Promise<SessionDetailResponseDto> {
-    const session = await this.prisma.testSession.findUnique({
-      where: { id: sessionId },
-      select: {
-        id: true,
-        classId: true,
-        testTypeId: true,
-        conductedAt: true,
-        notes: true,
-        isStopwatch: true,
-        startedAt: true,
-        completedAt: true,
-        testType: {
-          select: { nameHe: true, unit: true, inputType: true },
-        },
-        class: {
-          select: {
-            teacherId: true,
-            enrollments: {
-              select: {
-                student: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    studentCode: true,
-                    nationalId: true,
+    return this.prisma.$transaction(async (tx) => {
+      const session = await tx.testSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          id: true,
+          classId: true,
+          testTypeId: true,
+          conductedAt: true,
+          notes: true,
+          isStopwatch: true,
+          startedAt: true,
+          completedAt: true,
+          testType: {
+            select: { nameHe: true, unit: true, inputType: true },
+          },
+          class: {
+            select: {
+              teacherId: true,
+              enrollments: {
+                select: {
+                  student: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      studentCode: true,
+                    },
                   },
                 },
+                orderBy: { student: { lastName: 'asc' } },
               },
-              orderBy: { student: { lastName: 'asc' } },
             },
           },
-        },
-        results: {
-          select: {
-            id: true,
-            studentId: true,
-            rawValue: true,
-            calculatedGrade: true,
-            gradeOverride: true,
-            recordedAt: true,
+          results: {
+            select: {
+              id: true,
+              studentId: true,
+              rawValue: true,
+              calculatedGrade: true,
+              gradeOverride: true,
+              recordedAt: true,
+            },
+            orderBy: { recordedAt: 'asc' },
           },
-          orderBy: { recordedAt: 'asc' },
         },
-      },
+      });
+
+      if (session === null) {
+        throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
+      }
+      if (session.class.teacherId !== teacherId) {
+        throw new ForbiddenException();
+      }
+
+      // Batch-fetch audit logs for all results in one query.
+      const resultIds = session.results.map((r) => r.id);
+      const rawAuditLogs = resultIds.length > 0
+        ? await tx.auditLog.findMany({
+            where: {
+              entityType: 'TestResult',
+              entityId: { in: resultIds },
+              action: { in: [AuditAction.RESULT_EDIT, AuditAction.GRADE_OVERRIDE] },
+            },
+            select: { entityId: true, action: true, oldValue: true, newValue: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : [];
+
+      // Exclude tombstone entries (RESULT_EDIT rows that record a deletion).
+      const auditLogs = rawAuditLogs.filter((log) => {
+        if (log.action !== AuditAction.RESULT_EDIT) return true;
+        const nv = log.newValue as Record<string, unknown> | null;
+        return nv === null || nv['deleted'] !== true;
+      });
+
+      // Group by entityId for O(1) per-result lookup.
+      const trailByResultId = new Map<string, typeof auditLogs>();
+      for (const log of auditLogs) {
+        const bucket = trailByResultId.get(log.entityId) ?? [];
+        bucket.push(log);
+        trailByResultId.set(log.entityId, bucket);
+      }
+
+      return {
+        id: session.id,
+        classId: session.classId,
+        testTypeId: session.testTypeId,
+        testNameHe: session.testType.nameHe,
+        testUnit: session.testType.unit,
+        testInputType: session.testType.inputType,
+        conductedAt: session.conductedAt,
+        isStopwatch: session.isStopwatch,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        students: session.class.enrollments.map((e) => e.student),
+        results: session.results.map((r) => ({
+          resultId: r.id,
+          studentId: r.studentId,
+          rawValue: Number(r.rawValue ?? 0),
+          calculatedGrade: r.calculatedGrade ?? 0,
+          gradeOverride: r.gradeOverride,
+          recordedAt: r.recordedAt,
+          auditTrail: (trailByResultId.get(r.id) ?? []).map((log) => ({
+            action: log.action,
+            changedAt: log.createdAt,
+            oldValue: log.oldValue as Record<string, unknown> | null,
+            newValue: log.newValue as Record<string, unknown> | null,
+          })),
+        })),
+      };
     });
-
-    if (session === null) {
-      throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
-    }
-    if (session.class.teacherId !== teacherId) {
-      throw new ForbiddenException();
-    }
-
-    return {
-      id: session.id,
-      classId: session.classId,
-      testTypeId: session.testTypeId,
-      testNameHe: session.testType.nameHe,
-      testUnit: session.testType.unit,
-      testInputType: session.testType.inputType,
-      conductedAt: session.conductedAt,
-      isStopwatch: session.isStopwatch,
-      startedAt: session.startedAt,
-      completedAt: session.completedAt,
-      students: session.class.enrollments.map((e) => e.student),
-      results: session.results.map((r) => ({
-        resultId: r.id,
-        studentId: r.studentId,
-        rawValue: Number(r.rawValue ?? 0),
-        calculatedGrade: r.calculatedGrade ?? 0,
-        gradeOverride: r.gradeOverride,
-        recordedAt: r.recordedAt,
-      })),
-    };
   }
 
   /**
@@ -385,11 +427,11 @@ export class TestsRepository {
     resultId: string,
     sessionId: string,
     gradeOverride: number,
-    overrideReason: string,
+    overrideReason: string | undefined,
   ): Promise<ResultResponseDto> {
     const updated = await this.prisma.testResult.updateMany({
       where: { id: resultId, sessionId },
-      data: { gradeOverride, overrideReason },
+      data: { gradeOverride, overrideReason: overrideReason ?? null },
     });
     if (updated.count === 0) {
       throw new NotFoundException(
@@ -409,6 +451,162 @@ export class TestsRepository {
       gradeOverride: result.gradeOverride,
       recordedAt: result.recordedAt,
     };
+  }
+
+  /**
+   * Returns paginated session history for a class, ordered by conductedAt DESC.
+   * Caller must verify class ownership before invoking.
+   */
+  async findSessionsByClass(
+    classId: string,
+    take: number,
+    skip: number,
+  ): Promise<[SessionHistoryRowDto[], number]> {
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.testSession.findMany({
+        where: { classId },
+        select: {
+          id: true,
+          testTypeId: true,
+          testType: { select: { nameHe: true } },
+          conductedAt: true,
+          semester: true,
+          isStopwatch: true,
+          completedAt: true,
+          _count: { select: { results: true } },
+        },
+        orderBy: { conductedAt: 'desc' },
+        take,
+        skip,
+      }),
+      this.prisma.testSession.count({ where: { classId } }),
+    ]);
+
+    return [
+      rows.map((r) => ({
+        id: r.id,
+        testTypeId: r.testTypeId,
+        testNameHe: r.testType.nameHe,
+        conductedAt: r.conductedAt,
+        semester: r.semester,
+        isStopwatch: r.isStopwatch,
+        completedAt: r.completedAt,
+        resultCount: r._count.results,
+      })),
+      total,
+    ];
+  }
+
+  /**
+   * Fetches a single result by (resultId, sessionId).
+   * Throws NotFoundException if no row matches the compound key (SEC-001: prevents
+   * a teacher from reading a result that belongs to a different session).
+   */
+  async findResultInSession(
+    resultId: string,
+    sessionId: string,
+  ): Promise<{ id: string; studentId: string; rawValue: number; calculatedGrade: number }> {
+    const result = await this.prisma.testResult.findFirst({
+      where: { id: resultId, sessionId },
+      select: { id: true, studentId: true, rawValue: true, calculatedGrade: true },
+    });
+    if (result === null) {
+      throw new NotFoundException(`תוצאה ${resultId} לא נמצאה בסשן ${sessionId}`);
+    }
+    return {
+      id: result.id,
+      studentId: result.studentId,
+      rawValue: Number(result.rawValue ?? 0),
+      calculatedGrade: result.calculatedGrade ?? 0,
+    };
+  }
+
+  /**
+   * Updates rawValue and calculatedGrade on an existing TestResult.
+   *
+   * SECURITY: (resultId, sessionId) pair enforced via `updateMany` — same
+   * SEC-001 pattern as overrideResultGrade prevents cross-session injection.
+   */
+  async updateResultRawValue(
+    resultId: string,
+    sessionId: string,
+    rawValue: number,
+    calculatedGrade: number,
+  ): Promise<ResultResponseDto> {
+    const updated = await this.prisma.testResult.updateMany({
+      where: { id: resultId, sessionId },
+      data: {
+        rawValue: new Prisma.Decimal(rawValue),
+        calculatedGrade,
+      },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException(`תוצאה ${resultId} לא נמצאה בסשן ${sessionId}`);
+    }
+    const result = await this.prisma.testResult.findUniqueOrThrow({
+      where: { id: resultId },
+      select: RESULT_SELECT,
+    });
+    return {
+      id: result.id,
+      sessionId: result.sessionId,
+      studentId: result.studentId,
+      rawValue: Number(result.rawValue ?? 0),
+      calculatedGrade: result.calculatedGrade ?? 0,
+      gradeOverride: result.gradeOverride,
+      recordedAt: result.recordedAt,
+    };
+  }
+
+  /**
+   * Deletes a result from history — no undo-window check.
+   *
+   * SECURITY: (resultId, sessionId) compound filter (SEC-001).
+   * Throws NotFoundException when no row matches.
+   */
+  async deleteResultByIdInHistory(resultId: string, sessionId: string): Promise<void> {
+    const deleted = await this.prisma.testResult.deleteMany({
+      where: { id: resultId, sessionId },
+    });
+    if (deleted.count === 0) {
+      throw new NotFoundException(`תוצאה ${resultId} לא נמצאה בסשן ${sessionId}`);
+    }
+  }
+
+  /**
+   * Deletes a full session inside a transaction.
+   *
+   * Steps inside the transaction:
+   *   1. Verify session exists and belongs to teacherId (404 vs 403 distinction).
+   *   2. Snapshot resultCount for the audit log.
+   *   3. Delete the session — FK Cascade removes TestResults automatically;
+   *      FK SetNull on AttendanceRecord.sessionId nulls those references.
+   *
+   * Returns { deletedResultCount, conductedAt } for the caller's audit entry.
+   */
+  async deleteSession(
+    sessionId: string,
+    teacherId: string,
+  ): Promise<{ deletedResultCount: number; conductedAt: Date }> {
+    return this.prisma.$transaction(async (tx) => {
+      const session = await tx.testSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          conductedAt: true,
+          class: { select: { teacherId: true } },
+          _count: { select: { results: true } },
+        },
+      });
+      if (session === null) {
+        throw new NotFoundException(`סשן ${sessionId} לא נמצא`);
+      }
+      if (session.class.teacherId !== teacherId) {
+        throw new ForbiddenException();
+      }
+      const deletedResultCount = session._count.results;
+      await tx.testSession.delete({ where: { id: sessionId } });
+      return { deletedResultCount, conductedAt: session.conductedAt };
+    });
   }
 
   /**

@@ -58,8 +58,15 @@ coverage/
 *.p8
 *.p12
 *.key
+*.pem
+*.pfx
 *.mobileprovision
 *.orig.*
+
+# Credentials & service account keys
+serviceAccountKey.json
+*-credentials.json
+*-service-account.json
 web-build/
 android/
 ios/

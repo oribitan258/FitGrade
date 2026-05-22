@@ -8,6 +8,7 @@ import { AuthRepository } from './auth.repository';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 /**
  * AuthModule — complete Google OAuth 2.0 + JWT authentication.
@@ -26,6 +27,7 @@ import { RefreshTokenBlacklistService } from './refresh-token-blacklist.service'
  */
 @Module({
   imports: [
+    AuditLogModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

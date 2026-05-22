@@ -52,7 +52,7 @@ import { useClassReport, useCommentsBank } from '@/hooks/use-reports';
 import { useSignalPageReady } from '@/components/tour/use-signal-page-ready';
 import { useGradingPolicy, updateClassGradingPolicy } from '@/hooks/use-grading-policy';
 import { useReportSettings } from '@/hooks/use-report-settings';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, getToken } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { ApiError, getHebrewGradeLabel } from '@fitgrade/types';
 import type { ReportRow } from '@fitgrade/types';
@@ -214,6 +214,25 @@ function buildTSVForTab(tab: TabId, rows: ReportRow[], edits: EditMap): string {
     case 'exemptions': return buildExemptionsTSV(rows, edits);
     case 'tests':      return buildGradesTSV(rows, edits); // same columns as grades
   }
+}
+
+// ─── Server-side file download ────────────────────────────────────────────────
+
+async function downloadServerFile(url: string, fallbackFilename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = fallbackFilename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objUrl);
 }
 
 // ─── CSV export ───────────────────────────────────────────────────────────────
@@ -1437,13 +1456,13 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
                     </td>
                     <td className="py-3 px-3 text-center tabular-nums">
                       {row.semA !== null
-                        ? <span className={cn('font-bold', gradeColor(row.semA.fitnessAvg))}>{row.semA.fitnessAvg}</span>
+                        ? <span className={cn('font-bold', gradeColor(row.semA.fitnessAvg))}>{getHebrewGradeLabel(row.semA.fitnessAvg)}</span>
                         : <span className="text-slate-300 text-xs">אין נתון</span>
                       }
                     </td>
                     <td className="py-3 px-3 text-center tabular-nums">
                       {row.semB !== null
-                        ? <span className={cn('font-bold', gradeColor(row.semB.fitnessAvg))}>{row.semB.fitnessAvg}</span>
+                        ? <span className={cn('font-bold', gradeColor(row.semB.fitnessAvg))}>{getHebrewGradeLabel(row.semB.fitnessAvg)}</span>
                         : <span className="text-slate-300 text-xs">אין נתון</span>
                       }
                     </td>
@@ -1458,7 +1477,7 @@ function FullYearView({ rowsA, rowsB, isLoading, classLabel, printMode = false }
                           : recommended >= 60 ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
                           : 'bg-red-50 text-red-700 ring-1 ring-red-200',
                       )}>
-                        {recommended}
+                        {getHebrewGradeLabel(recommended)}
                       </span>
                     </td>
                   </motion.tr>
@@ -1521,6 +1540,8 @@ export default function ReportsPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('grades');
   const [localEdits, setLocalEdits] = useState<EditMap>(new Map());
   const [saving, setSaving] = useState(false);
+  const [excelLoading, setExcelLoading] = useState(false);
+  const [excelError, setExcelError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [printMode, setPrintMode] = useState(false);
@@ -1961,22 +1982,40 @@ export default function ReportsPage(): React.JSX.Element {
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2 print:hidden">
-            {/* Export Excel — flat comparison table in Full Year mode; per-semester table otherwise */}
-            <Button
-              type="button"
-              variant="outline"
-              data-tour="export-csv"
-              disabled={showFullYear ? mergedForExport.length === 0 : sortedRows.length === 0}
-              onClick={() =>
-                showFullYear
-                  ? downloadFullYearCSV(mergedForExport, selectedClass?.name ?? '')
-                  : downloadCSV(sortedRows, localEdits, selectedClass?.name ?? '')
-              }
-              className="gap-2 rounded-xl border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 shadow-sm"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              ייצא לאקסל
-            </Button>
+            {/* Export Excel — server-side .xlsx for per-semester; client-side CSV for full-year */}
+            <div className="flex flex-col items-start gap-0.5">
+              <Button
+                type="button"
+                variant="outline"
+                data-tour="export-csv"
+                disabled={excelLoading || (showFullYear ? mergedForExport.length === 0 : sortedRows.length === 0)}
+                onClick={() => {
+                  if (showFullYear) {
+                    downloadFullYearCSV(mergedForExport, selectedClass?.name ?? '');
+                  } else {
+                    setExcelLoading(true);
+                    setExcelError(null);
+                    const semParam = activeSemester ? `?semester=${activeSemester}` : '';
+                    void downloadServerFile(
+                      `/api/exports/excel/${selectedClassId}${semParam}`,
+                      `דוח-${selectedClass?.name ?? selectedClassId}.xlsx`,
+                    ).catch(() => setExcelError('שגיאה בהורדת הקובץ — נסה שוב'))
+                      .finally(() => setExcelLoading(false));
+                  }
+                }}
+                className="gap-2 rounded-xl border-slate-200 bg-white/90 text-slate-700 hover:bg-slate-50 shadow-sm"
+              >
+                {excelLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                )}
+                ייצא לאקסל
+              </Button>
+              {excelError !== null && (
+                <p className="text-xs text-red-600">{excelError}</p>
+              )}
+            </div>
 
             {/* PDF — prints FullYearView (with chart + insights) in Full Year mode */}
             <Button

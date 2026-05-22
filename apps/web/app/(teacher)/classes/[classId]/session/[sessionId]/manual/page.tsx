@@ -456,11 +456,7 @@ export default function ManualSessionPage(): React.JSX.Element {
                       <p className="truncate text-sm font-semibold text-slate-800">
                         {student.firstName} {student.lastName}
                       </p>
-                      {student.nationalId && (
-                        <code className="font-mono text-xs text-slate-400">
-                          ת.ז ****{student.nationalId.slice(-4)}
-                        </code>
-                      )}
+                      <p className="font-mono text-xs text-slate-400">{student.studentCode}</p>
                     </div>
                   </div>
 

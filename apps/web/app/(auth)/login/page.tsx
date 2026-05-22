@@ -181,6 +181,18 @@ export default function LoginPage(): React.JSX.Element {
                 כניסה לתלמידים
               </a>
             </p>
+
+            <p className="text-center text-[11px]" style={{ color: 'rgba(100,116,139,0.70)' }}>
+              <a
+                href="/privacy"
+                className="transition-colors hover:underline"
+                style={{ color: 'rgba(100,116,139,0.70)' }}
+                onMouseEnter={(e) => { (e.target as HTMLAnchorElement).style.color = 'rgba(148,163,184,0.90)'; }}
+                onMouseLeave={(e) => { (e.target as HTMLAnchorElement).style.color = 'rgba(100,116,139,0.70)'; }}
+              >
+                מדיניות פרטיות
+              </a>
+            </p>
           </div>
         </div>
       </motion.div>

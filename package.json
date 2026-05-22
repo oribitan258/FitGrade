@@ -21,7 +21,7 @@
     "@playwright/test": "^1.49.0",
     "@types/node": "^25.6.0",
     "@xstate/test": "^0.5.0",
-    "turbo": "^2.0.0",
+    "turbo": "^2.9.14",
     "xstate": "^4.38.3"
   },
   "engines": {
@@ -31,5 +31,11 @@
   "packageManager": "pnpm@9.0.0",
   "dependencies": {
     "framer-motion": "^12.35.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "handlebars": ">=4.7.8",
+      "multer": ">=2.1.1"
+    }
   }
 }

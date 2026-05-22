@@ -3,6 +3,7 @@ import { AuditAction, FitnessInputType, Gender } from '@prisma/client';
 import { GradingService } from '../grading/grading.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { TestsRepository } from './tests.repository';
+import type { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { CreateSessionDto } from './dto/create-session.dto';
 import type { TestTypeResponseDto } from './dto/test-type-response.dto';
 import type { SessionResponseDto } from './dto/session-response.dto';
@@ -11,6 +12,7 @@ import type { SubmitResultDto } from './dto/submit-result.dto';
 import type { OverrideGradeDto } from './dto/override-grade.dto';
 import type { ResultResponseDto } from './dto/result-response.dto';
 import type { TestTypeNormsResponseDto } from './dto/norm-band-response.dto';
+import type { SessionHistoryRowDto } from './dto/session-history-row.dto';
 
 @Injectable()
 export class TestsService {
@@ -278,5 +280,145 @@ export class TestsService {
     });
 
     return result;
+  }
+
+  /**
+   * Returns paginated session history for a class.
+   * Verifies class ownership, then delegates to the repository.
+   * Total count is returned for the caller to emit as X-Total-Count header.
+   */
+  async getSessionsByClass(
+    classId: string,
+    teacherId: string,
+    pagination: PaginationQueryDto,
+  ): Promise<{ rows: SessionHistoryRowDto[]; total: number }> {
+    await this.testsRepository.verifyClassOwnership(classId, teacherId);
+    const [rows, total] = await this.testsRepository.findSessionsByClass(
+      classId,
+      pagination.take,
+      pagination.skip,
+    );
+    return { rows, total };
+  }
+
+  /**
+   * Edits the raw value of a result in history and recalculates the grade.
+   *
+   * 1. Verifies session ownership.
+   * 2. Applies the same validations as submitResult (MIN_TIME_SECONDS, gender restrictions).
+   * 3. Delegates grade recalculation to GradingService.
+   * 4. Updates the result via repository.
+   * 5. Emits RESULT_EDIT audit log with old/new values.
+   */
+  async editResultRawValue(
+    resultId: string,
+    sessionId: string,
+    newRawValue: number,
+    teacherId: string,
+  ): Promise<ResultResponseDto> {
+    const { testTypeId, inputType, testNameHe, classId } =
+      await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+
+    if (inputType === FitnessInputType.TIME && newRawValue < TestsService.MIN_TIME_SECONDS) {
+      throw new BadRequestException(`ערך זמן מינימלי הוא ${TestsService.MIN_TIME_SECONDS} שניות`);
+    }
+
+    const existingResult = await this.testsRepository.findResultInSession(resultId, sessionId);
+
+    if (inputType === FitnessInputType.TIME) {
+      const restrictionEntry = Object.entries(TestsService.DISTANCE_GENDER_RESTRICTIONS)
+        .find(([distanceKey]) => testNameHe.includes(distanceKey));
+      if (restrictionEntry !== undefined) {
+        const [, requiredGender] = restrictionEntry;
+        const studentGender = await this.gradingService.getStudentGender(existingResult.studentId);
+        const genderLabel = requiredGender === Gender.FEMALE ? 'בנות' : 'בנים';
+        if (studentGender !== requiredGender) {
+          throw new BadRequestException(`מבחן זה מיועד ל${genderLabel} בלבד`);
+        }
+      }
+    }
+
+    const calculatedGrade = await this.gradingService.calculateGrade(
+      existingResult.studentId,
+      testTypeId,
+      newRawValue,
+      classId,
+    );
+
+    const result = await this.testsRepository.updateResultRawValue(
+      resultId,
+      sessionId,
+      newRawValue,
+      calculatedGrade,
+    );
+
+    this.logger.log(
+      `Raw value edited: result=${resultId} session=${sessionId} oldValue=${existingResult.rawValue} newValue=${newRawValue} grade=${calculatedGrade} teacher=${teacherId}`,
+    );
+
+    void this.auditLogService.log({
+      action: AuditAction.RESULT_EDIT,
+      entityType: 'TestResult',
+      entityId: resultId,
+      actorId: teacherId,
+      oldValue: {
+        rawValue: existingResult.rawValue,
+        calculatedGrade: existingResult.calculatedGrade,
+      },
+      newValue: { rawValue: newRawValue, calculatedGrade },
+    });
+
+    return result;
+  }
+
+  /**
+   * Deletes a single result from history — no undo-window restriction.
+   * The confirmation dialog in the UI is the only safety gate.
+   *
+   * Verifies session ownership, snapshots the result for the audit log,
+   * then deletes.
+   */
+  async deleteResultInHistory(
+    resultId: string,
+    sessionId: string,
+    teacherId: string,
+  ): Promise<void> {
+    await this.testsRepository.findSessionWithOwnership(sessionId, teacherId);
+    const existingResult = await this.testsRepository.findResultInSession(resultId, sessionId);
+    await this.testsRepository.deleteResultByIdInHistory(resultId, sessionId);
+
+    this.logger.log(
+      `History result deleted: result=${resultId} session=${sessionId} student=${existingResult.studentId} teacher=${teacherId}`,
+    );
+
+    void this.auditLogService.log({
+      action: AuditAction.RESULT_EDIT,
+      entityType: 'TestResult',
+      entityId: resultId,
+      actorId: teacherId,
+      newValue: { deleted: true, history: true, studentId: existingResult.studentId },
+    });
+  }
+
+  /**
+   * Deletes an entire session.
+   * TestResults cascade-delete via FK; AttendanceRecord.sessionId is set to NULL via FK SetNull.
+   * Emits SESSION_DELETED audit log with result count and session date.
+   */
+  async deleteSession(sessionId: string, teacherId: string): Promise<void> {
+    const { deletedResultCount, conductedAt } =
+      await this.testsRepository.deleteSession(sessionId, teacherId);
+
+    this.logger.log(
+      `Session deleted: session=${sessionId} resultCount=${deletedResultCount} teacher=${teacherId}`,
+    );
+
+    void this.auditLogService.log({
+      action: AuditAction.SESSION_DELETED,
+      entityType: 'TestSession',
+      entityId: sessionId,
+      actorId: teacherId,
+      newValue: { resultCount: deletedResultCount, conductedAt },
+    });
   }
 }

@@ -50,6 +50,8 @@ enum AuditAction {
   STUDENT_ENROLLED
   STUDENT_REMOVED
   TALMIDAUT_ENTRY
+  SESSION_DELETED
+  AUTH_FAILURE
 }
 
 enum TestCategory {
