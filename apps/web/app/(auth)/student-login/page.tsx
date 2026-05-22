@@ -53,6 +53,15 @@ export default function StudentLoginPage(): React.JSX.Element {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  // Consent is stored in localStorage so it is only requested once per device.
+  // On first visit the key is absent → show the checkbox.
+  // After the student checks it and logs in successfully the key is written.
+  const [hasStoredConsent] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem('fitgrade-student-consent-v1') !== null,
+  );
+  const [consentChecked, setConsentChecked] = useState(false);
+  // Effective consent: already stored OR checked right now
+  const canSubmit = hasStoredConsent || consentChecked;
 
   const {
     register,
@@ -68,6 +77,8 @@ export default function StudentLoginPage(): React.JSX.Element {
         body: JSON.stringify({ nationalId: data.nationalId, password: data.password }),
       });
       setToken(response.accessToken);
+      // Persist consent so the checkbox is not shown on future logins from this device.
+      localStorage.setItem('fitgrade-student-consent-v1', new Date().toISOString());
       router.replace('/student-dashboard');
     } catch (err) {
       if (err instanceof ApiError) {
@@ -278,19 +289,69 @@ export default function StudentLoginPage(): React.JSX.Element {
               </div>
             </div>
 
+            {/* Consent checkbox — shown only on first login from this device */}
+            {!hasStoredConsent && (
+              <label className="flex cursor-pointer items-start gap-2.5 pt-1" dir="rtl">
+                <span className="relative mt-0.5 flex shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={consentChecked}
+                    onChange={(e) => { setConsentChecked(e.target.checked); }}
+                    className="peer sr-only"
+                    aria-required="true"
+                    aria-label="אישור תנאי שימוש"
+                  />
+                  <span
+                    className="flex h-4 w-4 items-center justify-center rounded border transition-all duration-150"
+                    style={{
+                      background: consentChecked ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.06)',
+                      borderColor: consentChecked ? 'transparent' : 'rgba(52,211,153,0.35)',
+                      boxShadow: consentChecked ? '0 0 8px rgba(16,185,129,0.45)' : 'none',
+                    }}
+                    aria-hidden="true"
+                  >
+                    {consentChecked && (
+                      <svg viewBox="0 0 12 10" fill="none" className="h-2.5 w-2.5" aria-hidden="true">
+                        <path d="M1.5 5L4.5 8L10.5 1.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                </span>
+                <span className="text-[11px] leading-[1.6]" style={{ color: 'rgba(148,163,184,0.70)' }}>
+                  קראתי ואני מסכים/ה ל
+                  <a href="/terms" target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => { e.stopPropagation(); }}
+                    className="font-semibold underline underline-offset-2"
+                    style={{ color: 'rgba(52,211,153,0.90)' }}>
+                    תנאי השימוש
+                  </a>
+                  {' '}ול
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => { e.stopPropagation(); }}
+                    className="font-semibold underline underline-offset-2"
+                    style={{ color: 'rgba(52,211,153,0.90)' }}>
+                    מדיניות הפרטיות
+                  </a>
+                  {' '}של FitGrade, ומבין/ה שמוסד החינוך מנהל את נתוני הכושר שלי לצורכי הערכה פדגוגית בלבד.
+                </span>
+              </label>
+            )}
+
             {/* Submit */}
             <motion.button
               type="submit"
-              disabled={isSubmitting}
-              whileHover={{ scale: 1.02, y: -2, boxShadow: '0 12px 40px rgba(16,185,129,0.50)' }}
-              whileTap={{ scale: 0.97 }}
+              disabled={isSubmitting || !canSubmit}
+              whileHover={canSubmit ? { scale: 1.02, y: -2, boxShadow: '0 12px 40px rgba(16,185,129,0.50)' } : {}}
+              whileTap={canSubmit ? { scale: 0.97 } : {}}
               transition={{ type: 'spring', stiffness: 380, damping: 24 }}
-              className="relative mt-1 flex h-[52px] w-full cursor-pointer items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="relative mt-1 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-sm font-bold text-white transition-opacity duration-150 disabled:cursor-not-allowed disabled:opacity-40"
               style={{
                 background: 'linear-gradient(135deg, #10b981 0%, #059669 60%, #047857 100%)',
-                boxShadow: '0 4px 24px rgba(16,185,129,0.45)',
+                boxShadow: canSubmit ? '0 4px 24px rgba(16,185,129,0.45)' : 'none',
+                cursor: canSubmit ? 'pointer' : 'not-allowed',
               }}
               aria-busy={isSubmitting}
+              aria-disabled={!canSubmit}
             >
               <span
                 className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 hover:opacity-100 transition-opacity"

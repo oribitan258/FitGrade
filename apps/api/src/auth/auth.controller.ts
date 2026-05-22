@@ -379,10 +379,11 @@ export class AuthController {
       // even if the attacker obtained a copy before the cookie was cleared.
       await this.authService.revokeRefreshToken(token);
     }
+    const isProd = process.env['NODE_ENV'] === 'production';
     res.clearCookie(REFRESH_COOKIE_NAME, {
       httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env['NODE_ENV'] === 'production',
+      sameSite: isProd ? 'none' : 'strict',
+      secure: isProd,
       path: '/',
     });
   }
@@ -390,15 +391,14 @@ export class AuthController {
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   private setRefreshCookie(res: Response, token: string): void {
+    const isProd = process.env['NODE_ENV'] === 'production';
     res.cookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
-      // 'strict' for the long-lived refresh token — it is only sent by the
-      // browser in same-site requests (programmatic fetch from our own origin).
-      // 'lax' is kept for the short-lived OAuth cookies (login_token,
-      // fitgrade_mobile_auth) because they must survive a cross-site redirect
-      // from accounts.google.com back to our callback URL.
-      sameSite: 'strict',
-      secure: process.env['NODE_ENV'] === 'production',
+      // In production the API (Render) and web (Vercel) are on different origins,
+      // so SameSite=None is required for the silent-refresh flow to work.
+      // In dev both run on localhost so Strict is safe and preferred.
+      sameSite: isProd ? 'none' : 'strict',
+      secure: isProd,
       maxAge: REFRESH_COOKIE_MAX_AGE_MS,
       path: '/',
     });

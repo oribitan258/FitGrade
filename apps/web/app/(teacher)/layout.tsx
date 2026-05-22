@@ -705,7 +705,17 @@ function TeacherShell({
       return;
     }
 
-    // 4. First-time teacher: lock into onboarding — but NOT while the tour is
+    // 4. Teacher has not accepted the current Terms of Service.
+    //    We use a versioned localStorage key so bumping the version forces
+    //    all existing teachers to re-consent after a ToS update.
+    //    The onboarding page IS the consent gate — exempt it to avoid a loop.
+    const hasConsented = localStorage.getItem('fitgrade-consent-v1') !== null;
+    if (!hasConsented && !isOnboarding) {
+      router.replace('/onboarding/welcome');
+      return;
+    }
+
+    // 5. First-time teacher: lock into onboarding — but NOT while the tour is
     //    actively running (it navigates to /dashboard etc. before setup completes).
     if (!teacher.isOnboardingComplete && !isOnboarding && !isTourActive) {
       router.replace('/onboarding/welcome');

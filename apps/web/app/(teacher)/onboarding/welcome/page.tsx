@@ -34,6 +34,13 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
   const { startTour } = useTour();
   const [consented, setConsented] = useState(false);
 
+  function handleStart(): void {
+    // Persist consent before navigating — the teacher layout checks this key
+    // on every route load, so it must be set before startTour() fires.
+    localStorage.setItem('fitgrade-consent-v1', new Date().toISOString());
+    startTour();
+  }
+
   return (
     <div className="h-screen w-full overflow-hidden flex items-start justify-center pt-8 p-4">
       <motion.div
@@ -193,7 +200,7 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
                 )}
               </span>
             </span>
-            <span className="text-[12px] leading-[1.6]" style={{ color: 'rgba(196,181,253,0.72)' }}>
+            <span className="text-[11.5px] leading-[1.7]" style={{ color: 'rgba(196,181,253,0.72)' }}>
               קראתי ואני מסכים/ה ל
               <a
                 href="/terms"
@@ -220,7 +227,11 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
               >
                 מדיניות הפרטיות
               </a>
-              {' '}של FitGrade. אני מצהיר/ה כי יש לי את ההרשאות הנדרשות ממוסד החינוך להזנת נתוני תלמידים.
+              {' '}של FitGrade, ומצהיר/ה בזאת כי:
+              {' '}(1) יש לי הרשאה מפורשת ממוסד החינוך להזין ולנהל נתוני תלמידים, לרבות של קטינים;
+              {' '}(2) אני נושא/ת באחריות המלאה לבטיחות הפיזית של התלמידים במהלך מבחני הכושר;
+              {' '}(3) הציונים שמפיקה המערכת הם כלי פדגוגי בלבד ואינם מהווים ייעוץ רפואי;
+              {' '}(4) לא אעשה שימוש בנתוני התלמידים מחוץ לצורכי ניהול ההוראה.
             </span>
           </label>
 
@@ -235,7 +246,7 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
           {/* ── CTA button — disabled until consent is given ─────────── */}
           <motion.button
             type="button"
-            onClick={startTour}
+            onClick={handleStart}
             disabled={!consented}
             whileHover={consented ? {
               scale: 1.03,
