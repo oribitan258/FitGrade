@@ -269,7 +269,7 @@ describe('GradingService', () => {
 
       await expect(
         service.calculateGrade('s', 'long-run-test', 480, 'class-grade1'),
-      ).rejects.toThrow('אין נתוני נורמה תואמים למבחן זה עבור שכבת גיל ומגדר אלו.');
+      ).rejects.toThrow('טבלת הנורמות למבחן זה עבור שכבת גיל ומגדר אלו אינה מוגדרת. פנה למנהל המערכת.');
     });
 
     it('propagates NotFoundException when test type does not exist', async () => {

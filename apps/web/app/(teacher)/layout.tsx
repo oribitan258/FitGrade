@@ -12,10 +12,11 @@ import type { LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
+import { SWRConfig } from 'swr';
 import { getToken, logout, silentRefresh } from '@/lib/api-client';
 import { SplashScreen } from '@/components/ui/splash-screen';
 import { Sidebar } from '@/components/layout/sidebar';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { BeepTestProvider, useBeepTestContext } from '@/contexts/beep-test-context';
 import { SemesterProvider, useSemester } from '@/contexts/semester-context';
@@ -216,6 +217,15 @@ function FloatingMenuButton(): React.JSX.Element {
             WebkitBackdropFilter: 'blur(16px)',
           } as React.CSSProperties}
         >
+          {/* Visually-hidden title + description — required by Radix Dialog for
+              screen-reader accessibility. Wrapping in `sr-only` keeps them out
+              of the visual layout. Without these, Radix emits a console
+              warning ("DialogContent requires a DialogTitle"). */}
+          <SheetTitle className="sr-only">תפריט ניווט</SheetTitle>
+          <SheetDescription className="sr-only">
+            ניווט בין עמודי המורה: ראשי, כיתות, מערכת שעות, דוחות והגדרות
+          </SheetDescription>
+
           {/* ── Layered theming system ── */}
           {/* Layer 0: Deep void backgrounds — full-bleed, cross-fade on toggle.   */}
           {/* CSS can't interpolate gradient strings so we keep BOTH layers mounted */}
@@ -678,8 +688,18 @@ function TeacherShell({
   const { teacher, isLoading: profileLoading, error: profileError } = useCurrentTeacher(tokenReady);
   const { isTourActive } = useTour();
 
-  // /settings is also exempted — tour lands there and the page handles completion
-  const isOnboarding = pathname.startsWith('/onboarding') || pathname.startsWith('/settings');
+  // Two related-but-distinct concepts:
+  //   isOnboarding — used by the redirect guards below. /settings is included
+  //     because the guided tour lands there for the final step; a teacher
+  //     mid-tour must not be bounced back to /onboarding/welcome.
+  //   hideChrome — used to hide the sidebar + floating hamburger. We hide chrome
+  //     during the *initial* onboarding flow only — i.e. on /onboarding/* or
+  //     while the tour is actively running. A returning teacher visiting
+  //     /settings normally must see the full nav chrome.
+  const isOnboardingPath = pathname.startsWith('/onboarding');
+  const isSettingsPath   = pathname.startsWith('/settings');
+  const isOnboarding     = isOnboardingPath || isSettingsPath;
+  const hideChrome       = isOnboardingPath || (isSettingsPath && isTourActive);
 
   // On mount: if no in-memory token, attempt a silent refresh from the
   // httpOnly refresh cookie. Redirect to login only if that also fails.
@@ -739,8 +759,9 @@ function TeacherShell({
       <BackgroundCanvas isTestActive={isTestActive} activeSemester={activeSemester} />
 
       {/* Sidebar + hamburger — hidden during onboarding so the full-screen
-          welcome/setup pages aren't interrupted by navigation chrome. */}
-      {!isOnboarding && (
+          welcome/setup pages aren't interrupted by navigation chrome. /settings
+          shows chrome unless the guided tour is actively running. */}
+      {!hideChrome && (
         <>
           <div className="relative z-10 flex-shrink-0 hidden md:flex print:hidden">
             <Sidebar />
@@ -757,10 +778,16 @@ function TeacherShell({
           'pt-0',
           'transition-[padding] duration-300',
         )}
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' } as React.CSSProperties}
+        style={{
+          paddingTop:    'env(safe-area-inset-top, 0px)',
+          // Reserve space at the bottom for the iOS home indicator + Android
+          // gesture pill so the last interactive row is never hidden under
+          // system chrome. No-op on desktop (env() resolves to 0).
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        } as React.CSSProperties}
       >
         {/* ── Semester accent line — hidden on onboarding pages ── */}
-        {!isOnboarding && (
+        {!hideChrome && (
           <motion.div
             className="hidden md:block sticky top-0 z-10 h-[3px] w-full shrink-0 print:hidden"
             animate={{
@@ -776,11 +803,11 @@ function TeacherShell({
           />
         )}
 
-        <div className={isOnboarding ? '' : 'pb-6 md:p-4 md:pb-6 lg:px-8 lg:pt-2 lg:pb-8 print:p-0'}>
+        <div className={hideChrome ? '' : 'pb-6 md:p-4 md:pb-6 lg:px-8 lg:pt-2 lg:pb-8 print:p-0'}>
           <AnimatePresence mode="wait">
             <motion.div
               key={pathname}
-              className={isOnboarding ? 'w-full h-full' : 'w-full md:max-w-7xl md:mx-auto'}
+              className={hideChrome ? 'w-full h-full' : 'w-full md:max-w-7xl md:mx-auto'}
               initial={{ opacity: 0, scale: 1.02, filter: 'blur(3px)' }}
               animate={{
                 opacity: 1, scale: 1, filter: 'blur(0px)',
@@ -813,12 +840,28 @@ export default function TeacherLayout({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <SemesterProvider>
-      <BeepTestProvider>
-        <TourProvider>
-          <TeacherShell>{children}</TeacherShell>
-        </TourProvider>
-      </BeepTestProvider>
-    </SemesterProvider>
+    <SWRConfig
+      value={{
+        // Teachers stay on a tab for an entire lesson — refocus-revalidate
+        // creates surprise refetches mid-lesson. Disable globally.
+        revalidateOnFocus:    false,
+        // Dedupe requests fired within 10 s — switching between two classes
+        // or re-mounting a hook on route change won't double-fetch.
+        dedupingInterval:     10_000,
+        // Show stale data while next fetch resolves — eliminates the white
+        // flash when navigating between class detail pages.
+        keepPreviousData:     true,
+        // One retry on transient errors; do not hammer the API on real outages.
+        errorRetryCount:      1,
+      }}
+    >
+      <SemesterProvider>
+        <BeepTestProvider>
+          <TourProvider>
+            <TeacherShell>{children}</TeacherShell>
+          </TourProvider>
+        </BeepTestProvider>
+      </SemesterProvider>
+    </SWRConfig>
   );
 }

@@ -318,12 +318,12 @@ export default function LessonPage(): React.JSX.Element {
   const [session, setSession]       = useState<SessionInfo | null>(null);
 
   // ── Absence state ──────────────────────────────────────────────────────────
-  const [absentIds, setAbsentIds]           = useState<Set<string>>(new Set());
-  const [absentLoading, setAbsentLoading]   = useState<Set<string>>(new Set());
+  // No `loading` set — toggles are fire-and-forget. Optimistic update IS the
+  // feedback; rollback on error happens silently in .catch().
+  const [absentIds, setAbsentIds] = useState<Set<string>>(new Set());
 
   // ── Injury / exemption state ────────────────────────────────────────────────
-  const [exemptIds, setExemptIds]           = useState<Set<string>>(new Set());
-  const [exemptLoading, setExemptLoading]   = useState<Set<string>>(new Set());
+  const [exemptIds, setExemptIds] = useState<Set<string>>(new Set());
 
   // ── Result entry state (mirrors manual/page.tsx pattern) ──────────────────
   const slotsRef        = useRef<SlotsMap>({});
@@ -400,89 +400,63 @@ export default function LessonPage(): React.JSX.Element {
   }
 
   // ── Toggle injury/exemption ────────────────────────────────────────────────
+  // Fire-and-forget: flip optimistic state synchronously, dispatch the request,
+  // roll back on failure. Rapid re-taps are allowed — server stores last write.
 
-  async function handleToggleExempt(studentId: string): Promise<void> {
-    if (exemptLoading.has(studentId)) return;
-
+  function handleToggleExempt(studentId: string): void {
     const willBeExempt = !exemptIds.has(studentId);
     const newStatus    = willBeExempt ? 'EXCUSED' : 'PRESENT';
 
-    // Optimistic UI update
-    setExemptLoading((prev) => new Set([...prev, studentId]));
     setExemptIds((prev) => {
       const next = new Set(prev);
       willBeExempt ? next.add(studentId) : next.delete(studentId);
       return next;
     });
 
-    // If student had a result and is now exempt, reset their slot
+    // If student had a result and is now exempt, reset their slot immediately.
+    // The DELETE request runs in the background; we don't wait for it.
     if (willBeExempt && slotsRef.current[studentId]?.hasResult) {
-      try {
-        await apiRequest(`/sessions/${session?.id}/results/${studentId}`, { method: 'DELETE' });
-      } catch {
-        // Non-critical — result still in DB but student is marked exempt
-      }
       patchSlot(studentId, emptySlot());
+      void apiRequest(`/sessions/${session?.id}/results/${studentId}`, { method: 'DELETE' })
+        .catch(() => { /* Non-critical — result still in DB but student is marked exempt */ });
     }
 
-    try {
-      await apiRequest(`/classes/${classId}/attendance`, {
-        method: 'POST',
-        body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
-      });
-    } catch (err) {
-      // Revert on failure
+    void apiRequest(`/classes/${classId}/attendance`, {
+      method: 'POST',
+      body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
+    }).catch((err: unknown) => {
       setExemptIds((prev) => {
         const next = new Set(prev);
         willBeExempt ? next.delete(studentId) : next.add(studentId);
         return next;
       });
       showToast(err instanceof ApiError ? err.message : 'שגיאה בשמירת הפטור');
-    } finally {
-      setExemptLoading((prev) => {
-        const next = new Set(prev);
-        next.delete(studentId);
-        return next;
-      });
-    }
+    });
   }
 
   // ── Toggle absence ─────────────────────────────────────────────────────────
 
-  async function handleToggleAbsent(studentId: string): Promise<void> {
-    if (absentLoading.has(studentId)) return;
-
+  function handleToggleAbsent(studentId: string): void {
     const willBeAbsent = !absentIds.has(studentId);
     const newStatus    = willBeAbsent ? 'ABSENT' : 'PRESENT';
 
-    // Optimistic update
-    setAbsentLoading((prev) => new Set([...prev, studentId]));
     setAbsentIds((prev) => {
       const next = new Set(prev);
       willBeAbsent ? next.add(studentId) : next.delete(studentId);
       return next;
     });
 
-    try {
-      await apiRequest(`/classes/${classId}/attendance`, {
-        method: 'POST',
-        body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
-      });
-    } catch (err) {
-      // Revert on failure
+    void apiRequest(`/classes/${classId}/attendance`, {
+      method: 'POST',
+      body:   JSON.stringify({ date: today, semester: activeSemester, records: [{ studentId, status: newStatus }] }),
+    }).catch((err: unknown) => {
       setAbsentIds((prev) => {
         const next = new Set(prev);
         willBeAbsent ? next.delete(studentId) : next.add(studentId);
         return next;
       });
       showToast(err instanceof ApiError ? err.message : 'שגיאה בשמירת החיסור');
-    } finally {
-      setAbsentLoading((prev) => {
-        const next = new Set(prev);
-        next.delete(studentId);
-        return next;
-      });
-    }
+    });
   }
 
   // ── Create session ─────────────────────────────────────────────────────────
@@ -780,7 +754,6 @@ export default function LessonPage(): React.JSX.Element {
                   {activeStudents.map((student, idx) => {
                     const slot     = slots[student.id] ?? emptySlot();
                     const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
-                    const isExemptLoading = exemptLoading.has(student.id);
 
                     return (
                       <motion.li
@@ -918,14 +891,14 @@ export default function LessonPage(): React.JSX.Element {
                             <AbsentToggle
                               studentId={student.id}
                               isAbsent={false}
-                              loading={absentLoading.has(student.id)}
-                              onToggle={(id) => { void handleToggleAbsent(id); }}
+                              loading={false}
+                              onToggle={(id) => { handleToggleAbsent(id); }}
                             />
                             <InjuryToggle
                               studentId={student.id}
                               isExempt={false}
-                              loading={isExemptLoading}
-                              onToggle={(id) => { void handleToggleExempt(id); }}
+                              loading={false}
+                              onToggle={(id) => { handleToggleExempt(id); }}
                             />
                           </div>
                         </div>
@@ -966,8 +939,7 @@ export default function LessonPage(): React.JSX.Element {
                     <ul>
                       <AnimatePresence initial={false}>
                         {absentStudents.map((student) => {
-                          const initials       = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
-                          const isAbsentLoading = absentLoading.has(student.id);
+                          const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
 
                           return (
                             <motion.li
@@ -993,8 +965,8 @@ export default function LessonPage(): React.JSX.Element {
                                 <AbsentToggle
                                   studentId={student.id}
                                   isAbsent={true}
-                                  loading={isAbsentLoading}
-                                  onToggle={(id) => { void handleToggleAbsent(id); }}
+                                  loading={false}
+                                  onToggle={(id) => { handleToggleAbsent(id); }}
                                 />
                               </div>
                             </motion.li>
@@ -1037,8 +1009,7 @@ export default function LessonPage(): React.JSX.Element {
                     <ul>
                       <AnimatePresence initial={false}>
                         {exemptStudents.map((student) => {
-                          const initials       = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
-                          const isExemptLoading = exemptLoading.has(student.id);
+                          const initials = `${student.firstName[0] ?? ''}${student.lastName[0] ?? ''}`;
 
                           return (
                             <motion.li
@@ -1065,8 +1036,8 @@ export default function LessonPage(): React.JSX.Element {
                                 <InjuryToggle
                                   studentId={student.id}
                                   isExempt={true}
-                                  loading={isExemptLoading}
-                                  onToggle={(id) => { void handleToggleExempt(id); }}
+                                  loading={false}
+                                  onToggle={(id) => { handleToggleExempt(id); }}
                                 />
                               </div>
                             </motion.li>

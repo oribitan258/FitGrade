@@ -4,6 +4,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Mobile baseline ───────────────────────────────────────────────────────
+ * 1. iOS Safari auto-zooms when an input has font-size < 16px. Forcing 16px
+ *    only on small viewports keeps designs that intentionally use smaller
+ *    text on desktop, while never triggering the zoom on mobile.
+ * 2. `touch-action: manipulation` removes the 300ms tap-delay on iOS.
+ * 3. overscroll-behavior contains rubber-band bounce inside scroll panes so
+ *    the whole page doesn't pull when a list is scrolled to the end.
+ * ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+button,
+[role='button'],
+a {
+  touch-action: manipulation;
+}
+
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
 /* ── Tour scroll behaviour ───────────────────────────────────────────────────
  * Tour-targeted elements declare themselves with `data-tour="<name>"`. When
  * react-joyride calls scrollIntoView on a target, browsers honour the
@@ -530,23 +557,49 @@ body.tour-active [id^="react-joyride"] {
     to   { transform: rotate(360deg); }
   }
 
-  .bg-icon-float {
-    animation: bg-icon-float var(--fi-dur, 14s) ease-in-out infinite;
-    animation-delay: var(--fi-delay, 0s);
-  }
+  /* All four bg-* animations:
+   *   - `will-change: transform` promotes the element to its own compositor
+   *     layer so the animation doesn't repaint sibling content each frame.
+   *   - `contain: layout paint` isolates layout/paint so they can't bleed
+   *     into ancestor reflows.
+   *   - Animations are gated on `prefers-reduced-motion: no-preference` so
+   *     OS-level reduced-motion users get a still background (accessibility
+   *     + battery on low-power devices). */
 
-  .bg-orb-y {
-    animation: bg-orb-y var(--orb-dur, 20s) ease-in-out infinite;
-    animation-delay: var(--orb-delay, 0s);
-  }
-
-  .bg-orb-x {
-    animation: bg-orb-x var(--orb-dur, 24s) ease-in-out infinite;
-    animation-delay: var(--orb-delay, 0s);
-  }
-
+  .bg-icon-float,
+  .bg-orb-y,
+  .bg-orb-x,
   .bg-liquid-wave {
-    animation: bg-liquid-wave 120s linear infinite;
+    will-change: transform;
+    contain: layout paint;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .bg-icon-float {
+      animation: bg-icon-float var(--fi-dur, 14s) ease-in-out infinite;
+      animation-delay: var(--fi-delay, 0s);
+    }
+
+    .bg-orb-y {
+      animation: bg-orb-y var(--orb-dur, 20s) ease-in-out infinite;
+      animation-delay: var(--orb-delay, 0s);
+    }
+
+    .bg-orb-x {
+      animation: bg-orb-x var(--orb-dur, 24s) ease-in-out infinite;
+      animation-delay: var(--orb-delay, 0s);
+    }
+
+    .bg-liquid-wave {
+      animation: bg-liquid-wave 120s linear infinite;
+    }
+  }
+
+  /* Also gate the ticker on the same media query — same rationale. */
+  @media (prefers-reduced-motion: reduce) {
+    .ticker-track {
+      animation: none;
+    }
   }
 }
 

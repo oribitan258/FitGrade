@@ -5,7 +5,11 @@
   "description": "FitGrade — PE grading & attendance system (Hebrew/RTL)",
   "scripts": {
     "build": "turbo build",
+    "build:prod": "turbo build --filter=@fitgrade/web --filter=@fitgrade/api",
     "dev": "turbo dev",
+    "start:web": "pnpm --filter=@fitgrade/web start",
+    "start:api": "pnpm --filter=@fitgrade/api start",
+    "preview": "turbo start --parallel --filter=@fitgrade/web --filter=@fitgrade/api",
     "lint": "turbo lint",
     "test": "turbo test",
     "clean": "turbo clean && rm -rf node_modules",
