@@ -39,8 +39,11 @@ const BG_ICONS: Array<{
 export default function LoginPage(): React.JSX.Element {
   return (
     <main
-      className="relative flex min-h-screen w-full items-center justify-center overflow-hidden p-4"
-      style={{ background: 'linear-gradient(135deg, #070b1a 0%, #0d1135 40%, #0a0720 100%)' }}
+      className="relative flex min-h-screen w-full items-center justify-center overflow-x-hidden p-4 py-8"
+      style={{
+        background: 'linear-gradient(135deg, #070b1a 0%, #0d1135 40%, #0a0720 100%)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+      }}
     >
       {/* ── Aurora orbs — dark indigo/violet ─────────────────────────── */}
       <motion.div

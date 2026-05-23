@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import tailwindcssAnimate from 'tailwindcss-animate';
 
 const config: Config = {
   // shadcn/ui requires class-based dark mode toggling
@@ -193,8 +194,10 @@ const config: Config = {
   		}
   	}
   },
-  // tailwindcss-animate is required by shadcn/ui components
-  plugins: [require('tailwindcss-animate')],
+  // tailwindcss-animate is required by shadcn/ui components.
+  // Imported at top of file (ESM) — `require()` here breaks under Node's
+  // ESM resolution when next.config.mjs is treated as an ES module.
+  plugins: [tailwindcssAnimate],
 };
 
 export default config;

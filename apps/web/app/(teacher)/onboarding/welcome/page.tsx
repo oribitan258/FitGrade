@@ -42,12 +42,20 @@ export default function OnboardingWelcomePage(): React.JSX.Element {
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden flex items-start justify-center pt-8 p-4">
+    // min-h-screen + overflow-y-auto so the card scrolls on viewports shorter
+    // than its content (e.g. mobile + long consent paragraph). Safe-area
+    // padding keeps the bottom CTA above iOS home indicator / Android nav bar.
+    <div
+      className="min-h-screen w-full flex items-start justify-center px-4 pt-8"
+      style={{
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+      }}
+    >
       <motion.div
         variants={CARD}
         initial="hidden"
         animate="show"
-        className="relative w-full max-w-[400px] overflow-hidden rounded-[28px] mx-4 sm:mx-0"
+        className="relative w-full max-w-[400px] overflow-hidden rounded-[28px]"
         style={{
           background:
             'linear-gradient(150deg, #1b0840 0%, #110624 45%, #090318 100%)',

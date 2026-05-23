@@ -109,9 +109,14 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
     const academicYear = now.getMonth() >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
     const name = `כיתה ${grade} ${classNumber}`;
     try {
+      // Note: `semester` is intentionally NOT sent. The Class model has no
+      // semester column — semester is tracked at the session, attendance, and
+      // talmidaut-record level. The local `semester` state is used only to
+      // pre-select the active semester after creation. Sending it would be
+      // stripped by the API's whitelist validator (returns 400).
       const created = await apiRequest<{ id: string }>('/classes', {
         method: 'POST',
-        body: JSON.stringify({ name, academicYear, semester, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }),
+        body: JSON.stringify({ name, academicYear, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }),
       });
       setCreatedId(created.id);
       setStep(2);

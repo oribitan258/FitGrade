@@ -110,8 +110,11 @@ export default function StudentLoginPage(): React.JSX.Element {
 
   return (
     <main
-      className="relative flex h-screen w-full items-center justify-center overflow-hidden p-4"
-      style={{ background: 'linear-gradient(135deg, #021a0e 0%, #032710 40%, #040d1a 100%)' }}
+      className="relative flex min-h-screen w-full items-center justify-center overflow-x-hidden p-4 py-8"
+      style={{
+        background: 'linear-gradient(135deg, #021a0e 0%, #032710 40%, #040d1a 100%)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+      }}
     >
       {/* ── Aurora orbs ──────────────────────────────────────────────── */}
       <motion.div
