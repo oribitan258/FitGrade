@@ -81,7 +81,9 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
   const [genderType,  setGenderType]  = useState<ClassGenderType>('MIXED');
   const [s1Loading,   setS1Loading]   = useState(false);
   const [s1Error,     setS1Error]     = useState<string | null>(null);
-  const [createdId,   setCreatedId]   = useState<string | null>(null);
+  // No DB write happens until the user finalizes step 2 (or explicitly skips
+  // student entry). createdId is only set transiently inside the step-2
+  // handler so the student-import API call can target the new class.
 
   // ── Step 2 state ────────────────────────────────────────────────────────────
   const [addMode,      setAddMode]      = useState<'manual' | 'excel'>('manual');
@@ -95,48 +97,45 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
 
   function reset(): void {
     setStep(1); setGrade("ז'"); setClassNumber('1'); setSemester('A'); setGenderType('MIXED');
-    setS1Loading(false); setS1Error(null); setCreatedId(null);
+    setS1Loading(false); setS1Error(null);
     setAddMode('manual'); setRows([makeRow()]); setExcelFile(null); setIsDragging(false);
     setS2Loading(false); setS2Error(null); setImportResult(null);
   }
 
-  // ── Step 1: create the class ────────────────────────────────────────────────
-  async function handleCreateClass(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+  // ── Step 1: just advance the UI; no DB write yet ───────────────────────────
+  function handleCreateClass(e: React.FormEvent<HTMLFormElement>): void {
     e.preventDefault();
-    setS1Loading(true); setS1Error(null);
+    setS1Error(null);
+    setStep(2);
+  }
+
+  // ── Helper: create the class record once the user finalizes ────────────────
+  // Note: `semester` is intentionally NOT sent. The Class model has no
+  // semester column — semester is tracked at the session, attendance, and
+  // talmidaut-record level. The local `semester` state is used only to
+  // pre-select the active semester after creation.
+  async function createClassNow(): Promise<string> {
     const now = new Date();
     const year = now.getFullYear();
     const academicYear = now.getMonth() >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
     const name = `כיתה ${grade} ${classNumber}`;
-    try {
-      // Note: `semester` is intentionally NOT sent. The Class model has no
-      // semester column — semester is tracked at the session, attendance, and
-      // talmidaut-record level. The local `semester` state is used only to
-      // pre-select the active semester after creation. Sending it would be
-      // stripped by the API's whitelist validator (returns 400).
-      const created = await apiRequest<{ id: string }>('/classes', {
-        method: 'POST',
-        body: JSON.stringify({ name, academicYear, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }),
-      });
-      setCreatedId(created.id);
-      setStep(2);
-    } catch (err: unknown) {
-      setS1Error(err instanceof Error ? err.message : 'שגיאה ביצירת הכיתה');
-    } finally {
-      setS1Loading(false);
-    }
+    const created = await apiRequest<{ id: string }>('/classes', {
+      method: 'POST',
+      body: JSON.stringify({ name, academicYear, genderType, gradeLevel: GRADE_OPTION_TO_INT[grade] }),
+    });
+    return created.id;
   }
 
-  // ── Step 2: add students ────────────────────────────────────────────────────
+  // ── Step 2: create the class AND add students atomically (from user POV) ───
   async function handleAddStudents(): Promise<void> {
-    if (!createdId) return;
     const inferGender = (): Gender => genderType === 'GIRLS' ? 'FEMALE' : 'MALE';
     setS2Loading(true); setS2Error(null);
     try {
+      const newClassId = await createClassNow();
       if (addMode === 'excel' && excelFile !== null) {
         const fd = new FormData();
         fd.append('file', excelFile);
-        const res = await apiUpload<ImportResult>(`/classes/${createdId}/students/import`, fd);
+        const res = await apiUpload<ImportResult>(`/classes/${newClassId}/students/import`, fd);
         setImportResult(res);
         router.refresh();
         return;
@@ -146,7 +145,7 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
       );
       await Promise.all(
         validRows.map((r) =>
-          apiRequest(`/classes/${createdId}/students`, {
+          apiRequest(`/classes/${newClassId}/students`, {
             method: 'POST',
             body: JSON.stringify({
               firstName:  r.firstName.trim(),
@@ -167,10 +166,19 @@ export function AddClassModal({ open, onClose }: AddClassModalProps): React.JSX.
     }
   }
 
-  function handleSkip(): void {
-    router.refresh();
-    onClose();
-    reset();
+  // Explicit "skip students" path — the user confirms they want an empty class.
+  async function handleSkip(): Promise<void> {
+    setS2Loading(true); setS2Error(null);
+    try {
+      await createClassNow();
+      router.refresh();
+      onClose();
+      reset();
+    } catch (err: unknown) {
+      setS2Error(err instanceof Error ? err.message : 'שגיאה ביצירת הכיתה');
+    } finally {
+      setS2Loading(false);
+    }
   }
 
   // ── Shared styles ───────────────────────────────────────────────────────────
