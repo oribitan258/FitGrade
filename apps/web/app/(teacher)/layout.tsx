@@ -818,7 +818,13 @@ function TeacherShell({
                 transition: { duration: 0.20, ease: 'easeIn' },
               }}
             >
-              {children}
+              {/* Children render ONLY after auth is established (ready=true).
+                  Previously they mounted under the splash overlay and fired
+                  SWR hooks while the access token was still missing — every
+                  query came back 401, and the dashboard cached the error,
+                  producing a red "load failed" panel as soon as the splash
+                  faded. Gating the mount eliminates the race. */}
+              {ready ? children : null}
             </motion.div>
           </AnimatePresence>
         </div>
