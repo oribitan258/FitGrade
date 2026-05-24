@@ -89,6 +89,23 @@ export function TourProvider({ children }: PropsWithChildren): React.JSX.Element
   const isActive            = deriveIsTourActive(state);
   const stepIndex           = currentStepIndex(state) ?? 0;
 
+  // ── Defensive: clear interceptor on every layout mount ─────────────────────
+  //
+  // The tour mock interceptor intercepts real production endpoints
+  // (/dashboard/stats, /classes, etc.). If a previous session left
+  // TOUR_MOCK.active=true — tour got stuck mid-step, user navigated away
+  // via URL bar, Joyride lost its tooltip, network failed during cleanup —
+  // mock data would leak into the real dashboard indefinitely. Clearing on
+  // mount guarantees a clean slate: the tour can only become active again
+  // via an explicit startTour() call, which re-runs the full seeding phase.
+  useEffect(() => {
+    clearFetcherInterceptor();
+    clearTourSchedule();
+    // Only runs once on mount; intentionally not depending on state to avoid
+    // clearing the interceptor that was JUST installed during the seeding phase.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // pushInFlightRef guards against double router.push if the navigating
   // effect re-runs before the pathname change lands.
   const pushInFlightRef = useRef<string | null>(null);
