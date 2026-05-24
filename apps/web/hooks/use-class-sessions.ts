@@ -12,7 +12,7 @@ import { ApiError } from '@fitgrade/types';
 import { getToken } from '@/lib/api-client';
 import type { SessionHistoryRow } from '@fitgrade/types';
 
-const API_BASE: string = process.env['API_URL'] ?? 'http://localhost:3001/api';
+const API_BASE: string = `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001'}/api`;
 
 export interface SessionPage {
   rows: SessionHistoryRow[];

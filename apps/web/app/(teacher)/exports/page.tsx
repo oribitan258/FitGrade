@@ -25,7 +25,7 @@ export default function ExportsPage(): React.JSX.Element {
       const semesterParam = activeSemester ? `?semester=${activeSemester}` : '';
       // apiRequest returns parsed JSON — for file downloads we fetch directly
       const token = getToken();
-      const API_BASE = process.env['API_URL'] ?? 'http://localhost:3001/api';
+      const API_BASE = `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001'}/api`;
       const res = await fetch(
         `${API_BASE}/reports/class/${selectedClassId}/export/csv${semesterParam}`,
         { headers: token ? { Authorization: `Bearer ${token}` } : {} },

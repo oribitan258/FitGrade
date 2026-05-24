@@ -12,9 +12,7 @@
 import { ApiError } from '@fitgrade/types';
 import { tryMockResponse } from './tour-fetcher';
 
-// process.env['API_URL'] is injected by next.config.ts and available in
-// both server and client bundles.
-const API_BASE: string = process.env['API_URL'] ?? 'http://localhost:3001/api';
+const API_BASE: string = `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001'}/api`;
 
 // ─── Token management (in-memory — never touches localStorage) ────────────
 

@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Activity, Dumbbell, Target, Timer, Trophy } from 'lucide-react';
 import { DevLoginButton } from './dev-login-button';
 
-const GOOGLE_AUTH_URL = `${process.env['API_URL'] ?? 'http://localhost:3001/api'}/auth/google`;
+const GOOGLE_AUTH_URL = `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001'}/api/auth/google`;
 
 // ─── Floating background sports icons (×12 — doubled density) ────────────────
 // Each icon continuously spins (full 360°) AND drifts large distances in x/y.
