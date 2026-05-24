@@ -105,31 +105,6 @@ const FLOAT_ICONS: FloatDef[] = [
   { src: '/sports-icons/football-player.png', w: 60,  insetInlineStart: '33%',  top: '90%', delay: 0.4, dur: 9.8,  blur: 2,   opacity: 0.30 },
 ];
 
-// ─── Demo roster (20 students) ──────────────────────────────────────────────────
-
-const DEMO_STUDENTS: SessionStudent[] = [
-  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209' },
-  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145' },
-  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312' },
-  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278' },
-  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163' },
-  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391' },
-  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224' },
-  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187' },
-  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356' },
-  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299' },
-  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134' },
-  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445' },
-  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267' },
-  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318' },
-  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203' },
-  { id: 's16', firstName: 'דנה',   lastName: 'רוז',     studentCode: '148' },
-  { id: 's17', firstName: 'יאיר',  lastName: 'שפירא',   studentCode: '271' },
-  { id: 's18', firstName: 'נועם',  lastName: 'חדד',     studentCode: '389' },
-  { id: 's19', firstName: 'ריקי',  lastName: 'בן-ארי',  studentCode: '215' },
-  { id: 's20', firstName: 'אביב',  lastName: 'קרן',     studentCode: '342' },
-];
-
 // ─── Rank badge style ────────────────────────────────────────────────────────────
 
 function rankBadgeStyle(rank: number): React.CSSProperties {
@@ -350,11 +325,7 @@ export default function LongDistanceRunPage(): React.ReactNode {
   const router = useRouter();
 
   const { data: session, isLoading: sessionLoading } = useTestSession(sessionId);
-  const sessionStudents: SessionStudent[] = (() => {
-    if (sessionLoading || session == null) return DEMO_STUDENTS;
-    if (session.students.length === 0) return [];
-    return session.students;
-  })();
+  const sessionStudents: SessionStudent[] = session?.students ?? [];
   const testName = session?.testNameHe ?? 'ריצת מרחק';
 
   // Populated by PreTestRosterSelection before the race begins

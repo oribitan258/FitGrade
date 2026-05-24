@@ -6,12 +6,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
   ChevronLeft,
-  Clock,
   Dumbbell,
   Flame,
   GraduationCap,
   Plus,
-  RefreshCw,
   Search,
   Target,
   Timer,
@@ -361,10 +359,6 @@ function ClassCard({ cls, index, tourAnchor }: { cls: ClassData; index: number; 
   const [hovered, setHovered] = useState(false);
   const { isTourActive } = useTour();
 
-  /** Deterministic metric bars — visually approximate, based on studentCount parity */
-  const attendancePct = Math.min(97, Math.max(58, 70 + ((cls.studentCount * 7 + index * 13) % 26)));
-  const progressPct  = Math.min(94, Math.max(50, 63 + ((cls.studentCount * 11 + index * 17) % 32)));
-
   /**
    * Cards whose name contains "ח'1" get a permanent liquid-glass ripple
    * (decorative orange/cyan pulse). Suppressed entirely while the onboarding
@@ -493,44 +487,10 @@ function ClassCard({ cls, index, tourAnchor }: { cls: ClassData; index: number; 
               </p>
             </div>
 
-            {/* Metric bars */}
-            <div className="space-y-2.5 mb-4">
-              {/* Attendance */}
-              <div className="flex items-center gap-2.5">
-                <Clock className="w-3 h-3 text-slate-400 shrink-0" aria-hidden="true" />
-                <span className="text-[11px] font-medium text-slate-500 shrink-0 w-12">נוכחות</span>
-                <div className="flex-1 h-1.5 rounded-full bg-white/50 overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: theme.bar1 }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${attendancePct}%` }}
-                    transition={{ delay: 0.28 + index * 0.07, duration: 0.9, ease: EASE }}
-                  />
-                </div>
-                <span className="text-[10px] font-bold text-slate-500 shrink-0 w-8 text-end">
-                  {attendancePct}%
-                </span>
-              </div>
-
-              {/* Progress */}
-              <div className="flex items-center gap-2.5">
-                <RefreshCw className="w-3 h-3 text-slate-400 shrink-0" aria-hidden="true" />
-                <span className="text-[11px] font-medium text-slate-500 shrink-0 w-12">התקדמות</span>
-                <div className="flex-1 h-1.5 rounded-full bg-white/50 overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full"
-                    style={{ background: theme.bar2 }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPct}%` }}
-                    transition={{ delay: 0.38 + index * 0.07, duration: 0.9, ease: EASE }}
-                  />
-                </div>
-                <span className="text-[10px] font-bold text-slate-500 shrink-0 w-8 text-end">
-                  {progressPct}%
-                </span>
-              </div>
-            </div>
+            {/* Attendance + progress bars removed — they previously rendered
+                fake percentages from a deterministic formula based on studentCount.
+                Re-add only when wired to a real per-class stats endpoint. */}
+            <div className="mb-4" />
 
             {/* Footer */}
             <div className="flex items-center justify-between">

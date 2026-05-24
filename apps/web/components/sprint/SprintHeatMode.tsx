@@ -137,26 +137,6 @@ const FLOAT_ICONS: FloatDef[] = [
   { src: '/sports-icons/football-player.png', w: 58,  left: '32%', top: '88%', delay: 0.4, dur: 9.5,  blur: 2,   opacity: 0.32 },
 ];
 
-// ─── Demo roster ───────────────────────────────────────────────────────────────
-
-const DEMO_STUDENTS: SessionStudent[] = [
-  { id: 's1',  firstName: 'נגה',   lastName: 'אלון',    studentCode: '209' },
-  { id: 's2',  firstName: 'עמית',  lastName: 'ביטון',   studentCode: '145' },
-  { id: 's3',  firstName: 'רוני',  lastName: 'כהן',     studentCode: '312' },
-  { id: 's4',  firstName: 'מיה',   lastName: 'לוי',     studentCode: '278' },
-  { id: 's5',  firstName: 'תומר',  lastName: 'דוד',     studentCode: '163' },
-  { id: 's6',  firstName: 'שירה',  lastName: 'מור',     studentCode: '391' },
-  { id: 's7',  firstName: 'יואב',  lastName: 'פרץ',     studentCode: '224' },
-  { id: 's8',  firstName: 'לילי',  lastName: 'אברהם',   studentCode: '187' },
-  { id: 's9',  firstName: 'אור',   lastName: 'שמש',     studentCode: '356' },
-  { id: 's10', firstName: 'כרמל',  lastName: 'גל',      studentCode: '299' },
-  { id: 's11', firstName: 'ליאב',  lastName: 'ניר',     studentCode: '134' },
-  { id: 's12', firstName: 'גלי',   lastName: 'הראל',    studentCode: '445' },
-  { id: 's13', firstName: 'יוני',  lastName: 'בן-דוד',  studentCode: '267' },
-  { id: 's14', firstName: 'ספיר',  lastName: 'עוז',     studentCode: '318' },
-  { id: 's15', firstName: 'אדם',   lastName: 'קליין',   studentCode: '203' },
-];
-
 // ─── Rank badge colours ────────────────────────────────────────────────────────
 
 function rankStyle(rank: number): React.CSSProperties {
@@ -571,8 +551,7 @@ export function SprintHeatMode({ testName: defaultTestName, activeStudents }: Sp
 
   // ── Session data ─────────────────────────────────────────────────────────────
   const { data: session } = useTestSession(sessionId);
-  const sessionStudents: SessionStudent[] =
-    session?.students && session.students.length > 0 ? session.students : DEMO_STUDENTS;
+  const sessionStudents: SessionStudent[] = session?.students ?? [];
   // activeStudents (from PreTestRosterSelection) takes priority over session data
   const students: SessionStudent[] =
     activeStudents && activeStudents.length > 0 ? activeStudents : sessionStudents;
