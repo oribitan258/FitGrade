@@ -1222,22 +1222,16 @@ const ATTENTION_ITEM = {
   show: { opacity: 1, x: 0, transition: { ease: [0.22, 1, 0.36, 1] as const, duration: 0.40 } },
 };
 
-// ─── Mock data for alerts & reminders ────────────────────────────────────────
+// ─── Alerts & reminders ───────────────────────────────────────────────────────
+// Currently no backend feed for either — render empty until data sources exist.
 
 type AlertVariant = 'warning' | 'info';
 
 interface MockAlert    { id: string; variant: AlertVariant; text: string }
 interface MockReminder { id: string; text: string; badge: string }
 
-const MOCK_ALERTS: MockAlert[] = [
-  { id: 'a1', variant: 'warning', text: "3 תלמידים נעדרו השבוע מכיתה ז' 2" },
-  { id: 'a2', variant: 'info',    text: "2 תלמידים חדשים מחכים לשיבוץ" },
-];
-
-const MOCK_REMINDERS: MockReminder[] = [
-  { id: 'r1', text: "לערוך מבחן ריצה לכיתה ט' 1", badge: 'בעוד 3 ימים' },
-  { id: 'r2', text: "לעדכן ציונים לסמסטר ב'",      badge: 'בעוד 5 ימים' },
-];
+const MOCK_ALERTS: MockAlert[] = [];
+const MOCK_REMINDERS: MockReminder[] = [];
 
 // Alert variant visual config
 const ALERT_VISUAL: Record<AlertVariant, { iconEl: React.JSX.Element; bg: string; border: string }> = {
@@ -1320,11 +1314,15 @@ function AttentionPanel({ onAddReminder }: AttentionPanelProps): React.JSX.Eleme
           <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" aria-hidden="true" />
           <span className="text-[9px] font-black uppercase tracking-[0.20em] text-slate-400">דורש טיפול</span>
         </div>
-        <motion.div variants={ATTENTION_STAGGER} initial="hidden" animate="show" className="flex flex-col gap-1.5">
-          {MOCK_ALERTS.map((alert) => (
-            <AlertRow key={alert.id} {...alert} />
-          ))}
-        </motion.div>
+        {MOCK_ALERTS.length === 0 ? (
+          <p className="text-xs text-slate-400 font-medium">אין התראות כרגע</p>
+        ) : (
+          <motion.div variants={ATTENTION_STAGGER} initial="hidden" animate="show" className="flex flex-col gap-1.5">
+            {MOCK_ALERTS.map((alert) => (
+              <AlertRow key={alert.id} {...alert} />
+            ))}
+          </motion.div>
+        )}
       </div>
 
       {/* Divider */}
@@ -1356,11 +1354,15 @@ function AttentionPanel({ onAddReminder }: AttentionPanelProps): React.JSX.Eleme
             <Plus className="h-3 w-3" aria-hidden="true" />
           </motion.button>
         </div>
-        <motion.div variants={ATTENTION_STAGGER} initial="hidden" animate="show" className="flex flex-col gap-2">
-          {MOCK_REMINDERS.map((reminder) => (
-            <ReminderRow key={reminder.id} {...reminder} />
-          ))}
-        </motion.div>
+        {MOCK_REMINDERS.length === 0 ? (
+          <p className="text-xs text-slate-400 font-medium">אין תזכורות פעילות</p>
+        ) : (
+          <motion.div variants={ATTENTION_STAGGER} initial="hidden" animate="show" className="flex flex-col gap-2">
+            {MOCK_REMINDERS.map((reminder) => (
+              <ReminderRow key={reminder.id} {...reminder} />
+            ))}
+          </motion.div>
+        )}
       </div>
     </motion.div>
   );
@@ -1860,38 +1862,19 @@ function formatSession(isoString: string): { day: string; month: string; dayLabe
   };
 }
 
-// ─── Mock / demo data ─────────────────────────────────────────────────────────
+// ─── Empty-state defaults ─────────────────────────────────────────────────────
+// Used as the fallback for the dashboard when the API hasn't responded yet or
+// returns nothing for a new teacher. All-zero values render correctly through
+// the existing CountUp / chart components.
 
-const MOCK_STATS: DashboardStats = {
-  overallFitnessAvg:    76,
-  overallAttendancePct: 88,
-  totalBelowNormCount:  4,
-  totalStudents:        67,
-  pendingResultsCount:  3,
-  classStats: [
-    { classId: 'cls-1', fitnessAvg: 79, attendancePct: 91, belowNormCount: 1 },
-    { classId: 'cls-2', fitnessAvg: 71, attendancePct: 84, belowNormCount: 2 },
-    { classId: 'cls-3', fitnessAvg: 82, attendancePct: 93, belowNormCount: 0 },
-  ],
-  recentSessions: [
-    { sessionId: 'sess-1', classId: 'cls-1', className: "י'1", testNameHe: 'ריצת 2000 מטר',   conductedAt: '2026-03-13T10:00:00.000Z' },
-    { sessionId: 'sess-2', classId: 'cls-2', className: "י'2", testNameHe: 'כפיפות בטן',      conductedAt: '2026-03-11T09:00:00.000Z' },
-    { sessionId: 'sess-3', classId: 'cls-3', className: "ט'1", testNameHe: 'שכיבות סמיכה',    conductedAt: '2026-03-10T11:00:00.000Z' },
-    { sessionId: 'sess-4', classId: 'cls-1', className: "י'1", testNameHe: 'קפיצה למרחק',     conductedAt: '2026-03-06T10:00:00.000Z' },
-    { sessionId: 'sess-5', classId: 'cls-2', className: "ח'2", testNameHe: 'ריצת מקום',       conductedAt: '2026-03-04T08:30:00.000Z' },
-  ],
-};
-
-
-const MOCK_UPCOMING_EVENT: EventData = {
-  id:          'evt-1',
-  title:       'יום ספורט בית-ספרי',
-  description: null,
-  eventDate:   '2026-03-25T09:00:00.000Z',
-  location:    'מגרש החוץ',
-  teacherId:   'teacher-mock',
-  createdAt:   '2026-03-01T00:00:00.000Z',
-  updatedAt:   '2026-03-01T00:00:00.000Z',
+const EMPTY_STATS: DashboardStats = {
+  overallFitnessAvg:    0,
+  overallAttendancePct: 0,
+  totalBelowNormCount:  0,
+  totalStudents:        0,
+  pendingResultsCount:  0,
+  classStats:           [],
+  recentSessions:       [],
 };
 
 // ─── SWR fetcher ──────────────────────────────────────────────────────────────
@@ -2395,9 +2378,8 @@ export default function DashboardPage(): React.JSX.Element {
 
   const isLoading = statsLoading;
 
-  const hasRealData           = Boolean(stats && stats.totalStudents > 0);
-  const effectiveStats        = hasRealData ? stats! : MOCK_STATS;
-  const effectiveEvent        = upcomingEvent ?? MOCK_UPCOMING_EVENT;
+  const effectiveStats        = stats ?? EMPTY_STATS;
+  const effectiveEvent        = upcomingEvent ?? null;
 
   const fitnessAvg     = effectiveStats.overallFitnessAvg;
   const attendancePct  = effectiveStats.overallAttendancePct;
@@ -2633,6 +2615,19 @@ export default function DashboardPage(): React.JSX.Element {
               <div className="animate-pulse space-y-2">
                 <div className="h-16 rounded-2xl bg-slate-100" />
                 <div className="h-4 w-24 rounded-xl bg-slate-100" />
+              </div>
+            ) : effectiveEvent === null ? (
+              <div
+                className="rounded-2xl p-4 text-center"
+                style={{
+                  background: 'rgba(255,255,255,0.40)',
+                  backdropFilter: 'blur(20px) saturate(160%)',
+                  WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  border: '1px solid rgba(148,163,184,0.20)',
+                }}
+              >
+                <p className="text-sm text-slate-500 font-medium">אין אירועים קרובים</p>
+                <p className="text-xs text-slate-400 mt-1">לחץ &quot;לכל האירועים&quot; כדי להוסיף</p>
               </div>
             ) : (() => {
               const days = Math.ceil(
