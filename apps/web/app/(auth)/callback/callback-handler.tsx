@@ -16,7 +16,8 @@ export function CallbackHandler(): null {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch('/api/auth/exchange', { method: 'POST', credentials: 'include' });
+        const apiUrl = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+        const res = await fetch(`${apiUrl}/api/auth/exchange`, { method: 'POST', credentials: 'include' });
         if (!res.ok) {
           router.replace('/login');
           return;

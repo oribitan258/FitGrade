@@ -189,10 +189,13 @@ export class AuthController {
       // exchange endpoint. The frontend /callback page calls POST /auth/exchange
       // to retrieve the token — it never appears in the URL, browser history, or logs.
       const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
+      const isProd = process.env['NODE_ENV'] === 'production';
       res.cookie(LOGIN_TOKEN_COOKIE, accessToken, {
         httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env['NODE_ENV'] === 'production',
+        // None+Secure in prod so the cross-origin POST from Vercel → Render
+        // sends the cookie; Lax in dev (same-origin localhost setup).
+        sameSite: isProd ? 'none' : 'lax',
+        secure: isProd,
         maxAge: LOGIN_TOKEN_COOKIE_TTL_MS,
         path: '/api/auth/exchange',
       });
