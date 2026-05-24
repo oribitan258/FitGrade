@@ -10,30 +10,13 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.fitgrade.app",
-      "associatedDomains": [
-        "applinks:api.fitgrade.com"
-      ]
+      "bundleIdentifier": "com.fitgrade.app"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "package": "com.fitgrade.app",
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "https",
-              "host": "api.fitgrade.com",
-              "pathPrefix": "/auth/callback"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        }
-      ]
+      "package": "com.fitgrade.app"
     },
     "plugins": [
       "expo-router",
