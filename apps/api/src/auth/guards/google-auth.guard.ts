@@ -11,4 +11,9 @@ import { AuthGuard } from '@nestjs/passport';
  * Always used together with @Public() so the global JwtAuthGuard skips these routes.
  */
 @Injectable()
-export class GoogleAuthGuard extends AuthGuard('google') {}
+export class GoogleAuthGuard extends AuthGuard('google') {
+  // Disable Passport session — we use JWT cookies, not express-session.
+  getAuthenticateOptions(): { session: boolean } {
+    return { session: false };
+  }
+}

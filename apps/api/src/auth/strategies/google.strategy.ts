@@ -25,7 +25,10 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       clientSecret: configService.getOrThrow<string>('GOOGLE_CLIENT_SECRET'),
       callbackURL: configService.getOrThrow<string>('GOOGLE_CALLBACK_URL'),
       scope: ['email', 'profile'],
-      state: true,
+      // state=true requires express-session middleware which we don't use
+      // (app is stateless JWT). Google's redirect_uri allowlist + SameSite
+      // cookies provide the CSRF posture instead.
+      state: false,
     });
   }
 
