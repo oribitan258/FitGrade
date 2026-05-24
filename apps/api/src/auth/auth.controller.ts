@@ -163,7 +163,7 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Google OAuth callback — redirects to web app or mobile app with access token' })
-  @ApiResponse({ status: 302, description: 'Redirect to /auth/callback?token=... (web) or fitgrade://auth/callback?token=... (mobile)' })
+  @ApiResponse({ status: 302, description: 'Redirect to /callback (web, token in httpOnly cookie) or fitgrade://auth/callback?code=... (mobile)' })
   @ApiResponse({ status: 401, description: 'OAuth failed' })
   async googleCallback(
     @Req() req: Request & { user: TeacherRecord; cookies: Record<string, string> },
@@ -186,7 +186,7 @@ export class AuthController {
       res.redirect(`${mobileScheme}auth/callback?code=${mobileCode}`);
     } else {
       // Web flow: store token in a short-lived httpOnly cookie scoped to the
-      // exchange endpoint. The frontend /auth/callback page calls POST /auth/exchange
+      // exchange endpoint. The frontend /callback page calls POST /auth/exchange
       // to retrieve the token — it never appears in the URL, browser history, or logs.
       const webUrl = this.configService.get<string>('WEB_URL', 'http://localhost:3000');
       res.cookie(LOGIN_TOKEN_COOKIE, accessToken, {
@@ -196,7 +196,7 @@ export class AuthController {
         maxAge: LOGIN_TOKEN_COOKIE_TTL_MS,
         path: '/api/auth/exchange',
       });
-      res.redirect(`${webUrl}/auth/callback`);
+      res.redirect(`${webUrl}/callback`);
     }
   }
 
