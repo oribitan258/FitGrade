@@ -204,11 +204,18 @@ export function TourProvider({ children }: PropsWithChildren): React.JSX.Element
     }
   }, [state, router]);
 
-  // ── Phase: finishing — push to /settings ─────────────────────────────────
+  // ── Phase: finishing — push to /settings, then advance immediately ──────
+  //
+  // The /settings push is UX-only: the page may mount slowly, fail to mount,
+  // or the user may bounce off it before its useEffect fires. Cleanup MUST
+  // run regardless, or the fetcher interceptor stays active and every
+  // post-tour page (dashboard, classes, etc.) keeps serving mock data
+  // instead of the new teacher's real (often empty) state.
   useEffect(() => {
     if (state.phase !== 'finishing') return;
     router.push('/settings');
-  }, [state.phase, router]);
+    dispatch({ type: 'SETTINGS_MOUNTED' });
+  }, [state.phase, router, dispatch]);
 
   // ── Total app lockdown — three-layer defense ─────────────────────────────
   //
