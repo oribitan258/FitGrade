@@ -240,6 +240,16 @@ export class ClassesService {
   }
 
   /**
+   * Soft-deletes a class. Sets deletedAt; cascaded data (enrollments,
+   * sessions, results, attendance) is preserved for historical reporting.
+   * Throws NotFoundException if the class doesn't belong to the teacher.
+   */
+  async deleteClass(classId: string, teacherId: string): Promise<void> {
+    await this.classesRepository.softDelete(classId, teacherId);
+    this.logger.log(`Class soft-deleted: class=${classId} teacher=${teacherId}`);
+  }
+
+  /**
    * Removes a student from a class roster.
    * Verifies teacher ownership, then hard-deletes the ClassEnrollment row.
    * Historical results and attendance records are preserved.

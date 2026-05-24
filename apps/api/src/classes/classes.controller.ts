@@ -131,6 +131,23 @@ export class ClassesController {
   }
 
   /**
+   * Soft-deletes a class. Sets deletedAt; the class is hidden from all
+   * teacher-facing queries but underlying data is preserved.
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Soft-delete a class' })
+  @ApiResponse({ status: 204, description: 'Class deleted' })
+  @ApiResponse({ status: 403, description: 'Class belongs to a different teacher' })
+  @ApiResponse({ status: 404, description: 'Class not found' })
+  async deleteClass(
+    @Param('id') classId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    await this.classesService.deleteClass(classId, user.sub);
+  }
+
+  /**
    * Removes a student from a class roster.
    * Hard-deletes the ClassEnrollment row; historical results/attendance preserved.
    * Verifies the class belongs to the teacher before deletion.

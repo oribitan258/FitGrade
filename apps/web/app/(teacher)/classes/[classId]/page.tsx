@@ -31,6 +31,7 @@ import {
   Sparkles,
   Target,
   Timer,
+  Trash2,
   TrendingUp,
   UserMinus,
   UserPlus,
@@ -2758,6 +2759,9 @@ export default function ClassDetailPage(): React.JSX.Element {
   const [isAiControlCenterOpen, setIsAiControlCenterOpen]     = useState(false);
   const [activeView, setActiveView]                           = useState<'list' | 'matrix'>('list');
   const [selectedTestId, setSelectedTestId]             = useState<string | null>(null);
+  const [isDeleteClassOpen, setIsDeleteClassOpen]             = useState(false);
+  const [deleteClassLoading, setDeleteClassLoading]           = useState(false);
+  const [deleteClassError, setDeleteClassError]               = useState<string | null>(null);
 
   // Today's attendance state
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -2787,6 +2791,17 @@ export default function ClassDetailPage(): React.JSX.Element {
     () => new Map((todayAttendance ?? []).map((r) => [r.studentId, r])),
     [todayAttendance],
   );
+
+  async function handleDeleteClass(): Promise<void> {
+    setDeleteClassLoading(true); setDeleteClassError(null);
+    try {
+      await apiRequest(`/classes/${classId}`, { method: 'DELETE' });
+      router.replace('/classes');
+    } catch (err: unknown) {
+      setDeleteClassError(err instanceof Error ? err.message : 'שגיאה במחיקת הכיתה');
+      setDeleteClassLoading(false);
+    }
+  }
 
   // Stable derived values — memoised so attendance toggles don't re-run these
   const testSummaries = useMemo(
@@ -3031,6 +3046,17 @@ export default function ClassDetailPage(): React.JSX.Element {
             )}>
               {attendancePct}% נוכחות
             </span>
+
+            {/* Delete class */}
+            <button
+              type="button"
+              onClick={() => { setIsDeleteClassOpen(true); }}
+              className="flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 transition-colors hover:bg-rose-100"
+              aria-label="מחק כיתה"
+            >
+              <Trash2 className="h-3 w-3" aria-hidden="true" />
+              מחק כיתה
+            </button>
           </div>
         </motion.div>
 
@@ -3632,6 +3658,44 @@ export default function ClassDetailPage(): React.JSX.Element {
         onOpenChange={setIsAddStudentOpen}
         onSuccess={() => { void mutateStudents(); }}
       />
+
+      {/* Delete class confirmation */}
+      <Dialog open={isDeleteClassOpen} onOpenChange={(v) => { if (!deleteClassLoading) { setIsDeleteClassOpen(v); if (!v) setDeleteClassError(null); } }}>
+        <DialogContent dir="rtl" className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-rose-700">מחיקת כיתה</DialogTitle>
+            <DialogDescription className="text-slate-600">
+              האם למחוק את הכיתה <strong>{cls ? formatClassWithGender(cls.name, cls.genderType) : ''}</strong>?
+              <br />
+              כל התלמידים, התוצאות והנתונים ההיסטוריים יוסתרו מהמערכת.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteClassError !== null && (
+            <p className="text-sm text-rose-600 font-semibold">{deleteClassError}</p>
+          )}
+          <div className="flex gap-2 mt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleteClassLoading}
+              onClick={() => { setIsDeleteClassOpen(false); }}
+              className="flex-1 rounded-xl"
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              disabled={deleteClassLoading}
+              onClick={() => { void handleDeleteClass(); }}
+              className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {deleteClassLoading ? (
+                <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />מוחק...</span>
+              ) : 'מחק לצמיתות'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AiDispatchModal
         open={isAiDispatchOpen}
         onOpenChange={setIsAiDispatchOpen}
