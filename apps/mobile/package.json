@@ -9,6 +9,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "build": "expo export",
+    "eas:build:preview": "eas build --profile preview --platform android",
+    "eas:build:prod": "eas build --profile production --platform android",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "test": "jest --watchAll=false",
     "test:watch": "jest --watchAll"
