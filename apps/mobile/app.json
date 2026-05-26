@@ -6,8 +6,13 @@
     "orientation": "portrait",
     "scheme": "fitgrade",
     "userInterfaceStyle": "light",
-    "platforms": ["ios", "android"],
-    "assetBundlePatterns": ["**/*"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.fitgrade.app"
@@ -26,7 +31,8 @@
         {
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
