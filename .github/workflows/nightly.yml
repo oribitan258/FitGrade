@@ -2,8 +2,7 @@ name: Nightly
 
 on:
   schedule:
-    # 02:00 Israel time (UTC+3 in summer / UTC+2 in winter) = 23:00 UTC
-    - cron: '0 23 * * *'
+    
   workflow_dispatch:
 
 env:
