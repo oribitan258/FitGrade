@@ -74,7 +74,7 @@ jobs:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
       - name: Upload Stryker report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: stryker-report
@@ -279,7 +279,7 @@ jobs:
           LOAD_TEST_STUDENT_ID: ${{ secrets.LOAD_TEST_STUDENT_ID }}
 
       - name: Upload Artillery nightly reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: perf-load-nightly
